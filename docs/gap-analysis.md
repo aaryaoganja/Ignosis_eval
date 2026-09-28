@@ -1,7 +1,7 @@
-# Gap analysis — repository state vs. Stage 1–4 artifacts
+# Gap analysis: repository state vs. Stage 1–4 artifacts
 
-_Status: written at the start of the infrastructure task (2026-09-28) and updated as the task finished.
-This document records **facts about the repository**, not measured results._
+_Written at the start of the infrastructure task (2026-09-28) and updated at its end. This document
+records **facts about the repository**, not measured results._
 
 ## 1. What the repository contained before this task
 
@@ -17,43 +17,73 @@ This document records **facts about the repository**, not measured results._
 | Benchmark cases / gold labels | None. |
 | Evaluator code / prompts | None. |
 
-Because nothing existed, no earlier decisions could be overwritten. Everything below is new.
+Nothing existed, so no earlier decision was overwritten.
 
-## 2. What that means for this task
+## 2. What was built (implementation, not results)
 
-The brief asked for the infrastructure to be built **from the Stage 4 Reliability Specification**. I built
-it from the requirements in the task brief itself. The brief names each contract field, each metric and
-each storage path, but it does not give formal definitions. Wherever the spec must have fixed a detail
-the brief doesn't state, the implementation makes an explicit, **provisional** choice and records it in
-one place. None of these choices is a claim about what the spec says.
+| Phase | Delivered | Where |
+|---|---|---|
+| 1 Data contracts | Canonical Input, Evaluation Record, Gold Label (+ Case Card, Profile, manifests), all typed, versioned and exported as JSON Schema | `src/ignosis_eval/contracts/`, `schemas/` |
+| 2 Benchmark structure | `dataset/ gold/ case_cards/ × {dev,holdout,redteam,calibration}`, manifests, integrity checks (pairs crossing splits, duplicate ids, missing/orphan gold, holdout marked dev, cross-split leakage, holdout registry) | `benchmark/`, `src/ignosis_eval/benchmark/` |
+| 3 Case-card authoring | Template, schema, rule engine (CC/CX/CP/CS), validation script | `benchmark/templates/`, `scripts/validate_case_cards.py` |
+| 4 Gold freeze | Canonicalization, SHA-256 file and tree hashes, benchmark and gold manifests, write-once history, read-only gold, fail-closed verification, audit-hook guard denying the evaluator process any access to gold, case cards and manifests | `src/ignosis_eval/integrity/` |
+| 5 Run manifest | Every field listed in the brief, schema-enforced | `contracts/run_manifest.py` |
+| 6 Result storage | Append-only `runs/<run_id>/…/rep_<k>/` + `scoring/<run_id>/…`, ledger | `runner/storage.py` |
+| 7 Scorer | Independent of the evaluator (import-boundary test); verifies before reading | `src/ignosis_eval/scoring/` |
+| 8 Evaluator interfaces | A, A+, B (stubs on a mock backend), K0 keyword floor; one shared contract | `src/ignosis_eval/evaluators/` |
+| 9 Metric definitions | 29 metrics + slices + language delta; k/n + %; Wilson / Clopper–Pearson with no fabricated intervals | `metrics/`, `stats/` |
+| 10 Runner | `ignosis-eval run` / `score` | `runner/experiment.py`, `cli.py` |
+| 11 Tests | 183 tests, all passing | `tests/` |
+| 12 Docs | README, CLAUDE.md, and the five docs in `docs/` | |
 
-### 2.1 Items that need reconciling with the Stage 1–4 artifacts
+## 3. Provisional choices to reconcile with the Stage 1–4 documents
 
 | # | Item | Where it lives | Current provisional choice |
 |---|---|---|---|
-| G1 | Gate / dimension / defect taxonomy, rubric version | `config/profiles/collections_placeholder.yaml` | Placeholder collections profile (5 gates, 3 dimensions, 11 defects). `status: placeholder`. |
-| G2 | Closed vocabularies (verdicts, gate statuses, attribution targets, outcome codes, routing) | `src/ignosis_eval/contracts/enums.py` | Minimal sets. Verdict ∈ {pass, fail, inconclusive, out_of_scope}. |
+| G1 | Gate / dimension / defect taxonomy, rubric version, capability map | `config/profiles/collections_placeholder.yaml` | Placeholder profile (5 gates, 3 dimensions, 11 defects), `status: placeholder`. |
+| G2 | Closed vocabularies (verdicts, gate statuses, attribution targets, outcome codes, routing) | `contracts/enums.py` | Minimal sets. |
 | G3 | Verdict ↔ evaluability invariant | `contracts/enums.py::EVALUABILITY_TO_VERDICTS` | evaluable → pass/fail; out_of_scope → out_of_scope; inconclusive → inconclusive. |
-| G4 | Gate precedence | `contracts/record_checks.py`, gold validator | Any gate FAIL ⇒ verdict FAIL. All gates are treated as critical. |
-| G5 | Critical-miss definition | `metrics/definitions.py::critical_misses` | Unit = (item, repetition, gold-required critical defect). A defect is detected if a finding with the same `defect_id` exists **or** its gate is FAIL. An abstention counts as a miss and is also reported separately. |
-| G6 | Unsupported pass | `metrics/definitions.py` | Two variants: gate-level (gold gate `inconclusive` → evaluator `pass`) and verdict-level (gold `inconclusive`/`out_of_scope` → evaluator `pass`). |
-| G7 | Integrity failure | `contracts/record_checks.py::IntegrityCode` | An item-rep counts as a failure when the record is missing, fails the schema, or has any listed invariant violation. |
-| G8 | Evidence faithfulness | `contracts/evidence.py` | A mechanical grounding check: turns exist, the normalized quote is a substring of the cited turns, and speaker and timestamps are consistent. |
-| G9 | Minimal-pair semantics | `metrics/definitions.py` | Target units = the symmetric difference of the members' gold defect sets. The verdict is used when that difference is empty. |
-| G10 | Interval policy | `stats/proportion.py::IntervalPolicy` | Wilson (default) and Clopper–Pearson (safety metrics). min n = 10. No interval when units are not independent (item×rep, or several units per item). |
-| G11 | Language-delta reference | `metrics/slices.py` | Most frequent language unless configured. Point delta only; no interval on the difference. |
-| G12 | Evaluator architectures A / A+ / B | `src/ignosis_eval/evaluators/` | **Plumbing stubs only.** The pipeline shapes (1 call / 2 calls / per-gate calls) exist to exercise the interfaces and may not match the spec. |
-| G13 | Routing rules and Dangerous-Win / Clean-Loss derivation inside evaluators | `evaluators/builder.py` | DW = win outcome + unrepaired critical/major finding. CL = loss outcome + no critical/major finding. |
-| G14 | Placeholder contact-hours window | profile description + mock heuristics | 08:00–19:00 local. Illustrative only. |
+| G4 | Gate precedence; gates treated as critical | `contracts/record_checks.py`, gold validator, `evaluators/builder.py` | Any gate FAIL ⇒ verdict FAIL. |
+| G5 | Critical-miss / detection rule | `metrics/matching.py`, `metrics/definitions.py` | Detected = same `defect_id` finding **or** its gate FAIL. An abstention counts as a miss and is also reported separately. |
+| G6 | Unsupported pass | `metrics/definitions.py` | Gate-level (gold inconclusive → PASS) and verdict-level (gold abstains → PASS). |
+| G7 | Integrity failure | `contracts/record_checks.py::IntegrityCode` | Missing or invalid record, or any listed invariant violation. |
+| G8 | Evidence faithfulness | `contracts/evidence.py` | Mechanical grounding check. |
+| G9 | Minimal-pair semantics | `metrics/definitions.py` | Target = symmetric difference of required gold defects; verdict used when that is empty. |
+| G10 | Interval policy | `stats/proportion.py` | Wilson default; Clopper–Pearson for safety metrics; min n = 10; no interval for non-independent units. |
+| G11 | Language delta | `metrics/slices.py` | Reference = most frequent language unless configured; point delta only. |
+| G12 | Architectures A / A+ / B | `evaluators/pipelines.py` | **Plumbing stubs** (1 call / call + verify / per-gate calls). Not the spec's designs. |
+| G13 | Evaluator aggregation: routing, DW/CL, inconclusive handling, attribution-dependent verdicts | `evaluators/builder.py` | See the module docstring. An ASR-attributed major defect does not fail the agent. |
+| G14 | Contact-hours window | `evaluators/heuristics.py` | 08:00–19:00 local (illustrative). |
 
-All metric functions tag their output with `"provisional": true` and
-`definitions_version = metrics/0.1.0-provisional` (`src/ignosis_eval/versions.py`). Once G1–G14 are
-reconciled with the specification, bump that version.
+Every metric in `metrics.json` carries `"provisional": true` and
+`metric_definitions_version = metrics/0.1.0-provisional`.
 
-## 3. What this task deliberately does not do
+## 4. What needs human input before the next phase
 
-- It does not tune or optimize prompts. Prompt files under `evaluators/prompts/` are marked stubs.
-- It does not author benchmark cases or gold labels. `benchmark/` has the structure, templates and
-  manifests, and no cases. The fixture cases under `tests/fixtures/` are test fixtures, not benchmark gold.
-- It does not report measured results. Nothing in the repository is a measured reliability number.
-- It has no UI and no production API.
+1. **Provide the Stage 1–4 documents** (above all the Stage 4 Reliability Specification) in the
+   repository, e.g. `docs/spec/`, so G1–G14 can be reconciled line by line.
+2. **The real evaluation profile.** Replace the placeholder with the Stage 1–3 taxonomy (gate and
+   defect ids, severities, capability requirements, outcome mapping).
+3. **The labeling protocol.** Who labels; blinding (author vs independent labeller); double-labelling
+   rate; adjudication rule; agreement targets. This is what `--labeling-protocol-version` must point to.
+4. **Benchmark sizing.** Case counts per split and scenario, sized from the target exact upper bounds
+   on critical misses (e.g. 0 misses out of n gives a 95% upper bound of 1 − 0.025^(1/n)), not from
+   convenience.
+5. **Audio policy.** Real vs synthetic (TTS) audio; storage (git-LFS, object storage, or committed);
+   the PII review process for any real audio.
+6. **Language coverage.** Which languages or code-mixes are in scope (fixtures use en-IN and
+   hi-Latn-IN), and the reference language for the language delta.
+7. **The model backend and budget** for A / A+ / B, and the repetition count R for the reliability
+   experiment.
+
+## 5. What this task deliberately did not do
+
+- No prompt tuning or optimization. The prompt files are marked `UNOPTIMIZED STUB PROMPT`.
+- No A / A+ / B design work. The real LLM backend is deliberately unwired (`AnthropicLLMClient`
+  raises).
+- No benchmark cases or gold labels. `benchmark/` is empty. `tests/fixtures/benchmark_smoke/` is a
+  synthetic test fixture. Its hand-written "gold" was never derived from evaluator output, but the mock
+  heuristics were written by the same author against the same fixtures. Mock/fixture agreement is
+  therefore circular and says nothing about evaluator quality.
+- No UI and no production API.
+- No measured results.

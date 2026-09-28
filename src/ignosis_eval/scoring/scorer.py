@@ -247,6 +247,13 @@ def score_run(
         warnings.append("Mock LLM backend: outputs are deterministic heuristics, not model judgements.")
     if not m.official:
         warnings.append("Non-official run (see docs/experiment-protocol.md for official-run requirements).")
+    fixture_items = sorted(i for i, c in inputs.cases.items() if "test_fixture" in c.tags)
+    if fixture_items:
+        warnings.append(f"{len(fixture_items)} item(s) are tagged test_fixture: synthetic test data, not benchmark "
+                        "cases.")
+    if "provisional" in METRIC_DEFINITIONS_VERSION:
+        warnings.append(f"Metric definitions are provisional ({METRIC_DEFINITIONS_VERSION}) pending reconciliation "
+                        "with the Stage 4 Reliability Specification.")
     metrics_doc = {
         "schema": "metrics/1.0.0",
         "run_id": run_id,

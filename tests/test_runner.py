@@ -79,7 +79,9 @@ def test_end_to_end_run_layout_manifest_and_scoring(smoke_root, tmp_path):
     assert len(rows) == 14
     metrics = res.metrics
     assert metrics["gold_version"] == "fixture-gold-1" and metrics["provisional_definitions"] is True
-    assert any("PLACEHOLDER" in w for w in metrics["warnings"])
+    warnings = " ".join(metrics["warnings"])
+    for needle in ("PLACEHOLDER", "mock", "Non-official", "test_fixture", "provisional"):
+        assert needle in warnings, needle
     assert metrics["metrics"]["integrity_failures"]["k"] == 0
     assert set(metrics["slices"]["by_input_mode"]) == {"audio_only", "audio_transcript", "transcript_only"}
     assert metrics["language_delta"]["reference"] == "en-IN"
