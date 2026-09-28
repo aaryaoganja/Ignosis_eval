@@ -67,6 +67,43 @@ def cmd_benchmark_register_holdout(args) -> int:
     return 0
 
 
+# ------------------------------------------------------------------------------------------ manifest / gold
+def cmd_manifest_build(args) -> int:
+    from ignosis_eval.integrity.freeze import build_benchmark_manifest
+
+    m = build_benchmark_manifest(args.benchmark_root, dataset_name=args.dataset_name,
+                                 dataset_version=args.dataset_version, created_by=args.created_by,
+                                 profile=_load_profile(args.profile), notes=args.notes)
+    print(f"benchmark manifest {m.dataset_name}@{m.dataset_version}: {len(m.cases)} cases, "
+          f"dataset_hash={m.dataset_hash}")
+    return 0
+
+
+def cmd_manifest_verify(args) -> int:
+    from ignosis_eval.integrity.freeze import verify_benchmark
+
+    m, sha = verify_benchmark(args.benchmark_root)
+    print(f"OK benchmark {m.dataset_name}@{m.dataset_version} ({len(m.cases)} cases) manifest_sha256={sha}")
+    return 0
+
+
+def cmd_gold_freeze(args) -> int:
+    from ignosis_eval.integrity.freeze import freeze_gold
+
+    g = freeze_gold(args.benchmark_root, gold_version=args.gold_version, frozen_by=args.frozen_by,
+                    labeling_protocol_version=args.labeling_protocol_version, profile=_load_profile(args.profile))
+    print(f"gold {g.gold_version}: {len(g.entries)} labels frozen, gold_hash={g.gold_hash}")
+    return 0
+
+
+def cmd_gold_verify(args) -> int:
+    from ignosis_eval.integrity.freeze import verify_gold
+
+    g, sha = verify_gold(args.benchmark_root)
+    print(f"OK gold {g.gold_version} ({len(g.entries)} labels) manifest_sha256={sha}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="ignosis-eval", description=__doc__)
     sub = p.add_subparsers(dest="group", required=True)
@@ -88,12 +125,44 @@ def build_parser() -> argparse.ArgumentParser:
     r = bm.add_parser("register-holdout", help="append current holdout cases to the holdout registry")
     r.add_argument("--benchmark-root", default="benchmark")
     r.set_defaults(func=cmd_benchmark_register_holdout)
+
+    mf = sub.add_parser("manifest", help="benchmark manifest").add_subparsers(dest="cmd", required=True)
+    b = mf.add_parser("build", help="hash the benchmark and write manifests/benchmark_manifest.json")
+    b.add_argument("--benchmark-root", default="benchmark")
+    b.add_argument("--dataset-name", required=True)
+    b.add_argument("--dataset-version", required=True)
+    b.add_argument("--created-by", required=True)
+    b.add_argument("--profile", default=DEFAULT_PROFILE)
+    b.add_argument("--notes", default=None)
+    b.set_defaults(func=cmd_manifest_build)
+    mv = mf.add_parser("verify", help="recompute hashes; exit non-zero on any drift")
+    mv.add_argument("--benchmark-root", default="benchmark")
+    mv.set_defaults(func=cmd_manifest_verify)
+
+    gd = sub.add_parser("gold", help="gold freeze").add_subparsers(dest="cmd", required=True)
+    f = gd.add_parser("freeze", help="canonicalize + hash gold, write gold manifest, mark read-only")
+    f.add_argument("--benchmark-root", default="benchmark")
+    f.add_argument("--gold-version", required=True)
+    f.add_argument("--frozen-by", required=True)
+    f.add_argument("--labeling-protocol-version", required=True)
+    f.add_argument("--profile", default=DEFAULT_PROFILE)
+    f.set_defaults(func=cmd_gold_freeze)
+    gv = gd.add_parser("verify", help="verify gold hashes against the gold manifest")
+    gv.add_argument("--benchmark-root", default="benchmark")
+    gv.set_defaults(func=cmd_gold_verify)
     return p
 
 
 def main(argv: list[str] | None = None) -> int:
+    from ignosis_eval.benchmark.checks import BenchmarkIntegrityError
+    from ignosis_eval.integrity.freeze import IntegrityError
+
     args = build_parser().parse_args(argv)
-    return args.func(args)
+    try:
+        return args.func(args)
+    except (IntegrityError, BenchmarkIntegrityError) as exc:
+        print(f"FAIL CLOSED: {exc}", file=sys.stderr)
+        return 3
 
 
 if __name__ == "__main__":

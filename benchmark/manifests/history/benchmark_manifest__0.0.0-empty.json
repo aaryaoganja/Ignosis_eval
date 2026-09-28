@@ -1,0 +1,16 @@
+{
+  "cases": [],
+  "created_at": "2026-09-28T15:47:59.071542Z",
+  "created_by": "infrastructure-setup",
+  "dataset_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "dataset_name": "ignosis-collections-benchmark",
+  "dataset_version": "0.0.0-empty",
+  "notes": "Empty: no benchmark cases have been authored yet.",
+  "schema_version": "benchmark_manifest/1.0.0",
+  "split_hashes": {
+    "calibration": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "dev": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "holdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "redteam": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+}

@@ -424,6 +424,8 @@ def build():
 
 def write():
     if ROOT.exists():
+        for p in [ROOT, *ROOT.rglob("*")]:  # frozen gold is read-only
+            p.chmod(p.stat().st_mode | 0o200)
         shutil.rmtree(ROOT)
     for c in build():
         split, cid = c["split"], c["case_id"]

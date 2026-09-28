@@ -1,0 +1,79 @@
+{
+  "benchmark_manifest_sha256": "a88babec34876c3fc0a714584df6b69a52f8fc49e3eddcf8156ffe2155d66ef8",
+  "dataset_name": "smoke-fixture",
+  "dataset_version": "fixture-1",
+  "entries": [
+    {
+      "item_id": "fx-0001",
+      "path": "gold/dev/fx-0001.gold.json",
+      "sha256": "0083d330abdfe536c9a503a745133c411f72b7f9d2438d5661af000be1263f8a",
+      "split": "dev"
+    },
+    {
+      "item_id": "fx-0002",
+      "path": "gold/dev/fx-0002.gold.json",
+      "sha256": "7808e96fc467c88f7208d53e69245b8fbeffe895fad29d77e1bcaf9c61913693",
+      "split": "dev"
+    },
+    {
+      "item_id": "fx-0003",
+      "path": "gold/dev/fx-0003.gold.json",
+      "sha256": "a74491d9b37bd5ebd4e5abdc7ed7945977032fe4dcd646331ca8393b56da0f3e",
+      "split": "dev"
+    },
+    {
+      "item_id": "fx-0004",
+      "path": "gold/dev/fx-0004.gold.json",
+      "sha256": "29788a3e83e2414808e7e31cbfb65f7856bf75b1d072de8feffe2bfe202ba318",
+      "split": "dev"
+    },
+    {
+      "item_id": "fx-0005",
+      "path": "gold/dev/fx-0005.gold.json",
+      "sha256": "0d07c456f9b3172ae8805d11c6d9d54babe7bc70377d3f3726898bad820da48b",
+      "split": "dev"
+    },
+    {
+      "item_id": "fx-0006",
+      "path": "gold/dev/fx-0006.gold.json",
+      "sha256": "c57f43faf8cf72b2c4b569a734e7f86901a7adc569083bee455e7e6e65907bcc",
+      "split": "dev"
+    },
+    {
+      "item_id": "fx-0007",
+      "path": "gold/dev/fx-0007.gold.json",
+      "sha256": "113382467cdb15e4a0a3b6484b8414f2fa5341d769a3499b1a76eb011054e6d9",
+      "split": "dev"
+    },
+    {
+      "item_id": "fx-0008",
+      "path": "gold/holdout/fx-0008.gold.json",
+      "sha256": "fc9a50c22bed375c7d1e5155c6113e33c69d58afabf96fea6847234b9ae9aff8",
+      "split": "holdout"
+    },
+    {
+      "item_id": "fx-0009",
+      "path": "gold/redteam/fx-0009.gold.json",
+      "sha256": "32d14670d02e699c89004e6ee156763c87ad28a49e471081c8f9f801b0e774fa",
+      "split": "redteam"
+    },
+    {
+      "item_id": "fx-0010",
+      "path": "gold/calibration/fx-0010.gold.json",
+      "sha256": "e2c895416df4d37f304342785106a0744f7864052d045c4072406649e7e6e492",
+      "split": "calibration"
+    }
+  ],
+  "frozen_at": "2026-09-28T15:47:58.442383Z",
+  "frozen_by": "fixture",
+  "gold_hash": "be034e76461b7d99c1ec0170616cb1d5ff6175bf3665df3c9844190925e0dd32",
+  "gold_version": "fixture-gold-1",
+  "labeling_protocol_version": "fixture-protocol/0",
+  "schema_version": "gold_manifest/1.0.0",
+  "split_hashes": {
+    "calibration": "5f4adc49becd6b6c001570689d19a685142cb9b236c56aa3508590800cc5a8f4",
+    "dev": "57116eca5d6e395a67d34d6e4446784ff13d2ec2900c360a2793bafa6d13a970",
+    "holdout": "bcb05b27a2ac31315036f7f60a149048eec48c7d354dd179c530cad5ad0f1076",
+    "redteam": "1671419711fce307e4af18f576fa37730ac8b2426c7a22709ccf4b4e2d9c1144"
+  }
+}

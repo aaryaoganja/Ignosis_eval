@@ -62,7 +62,6 @@ class CaseEntry(Contract):
     metadata: CaseMetadata
     input_path: NonEmptyStr
     case_card_path: NonEmptyStr
-    gold_path: str | None = None  # relative path if a gold file exists; gold hashes live in the gold manifest
     files: list[FileHash]  # every benchmark file of the case except gold (input, audio, sidecars, card)
     content_fingerprint: Sha256Hex  # modality content only; used to detect cross-split leakage
 
