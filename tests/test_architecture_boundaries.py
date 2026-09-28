@@ -20,6 +20,8 @@ FORBIDDEN = {
     "stats": ["ignosis_eval.evaluators", "ignosis_eval.runner", "ignosis_eval.scoring", "ignosis_eval.metrics"],
     "metrics": ["ignosis_eval.evaluators", "ignosis_eval.runner"],
     "scoring": ["ignosis_eval.evaluators", "ignosis_eval.runner"],
+    "pipeline": ["ignosis_eval.contracts.gold_label", "ignosis_eval.integrity.freeze", "ignosis_eval.scoring",
+                 "ignosis_eval.metrics", "ignosis_eval.runner", "ignosis_eval.benchmark", "ignosis_eval.evaluators"],
     "evaluators": ["ignosis_eval.contracts.gold_label", "ignosis_eval.integrity.freeze", "ignosis_eval.scoring",
                    "ignosis_eval.metrics", "ignosis_eval.runner", "ignosis_eval.benchmark"],
 }
