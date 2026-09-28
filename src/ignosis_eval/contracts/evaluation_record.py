@@ -24,6 +24,7 @@ from ignosis_eval.contracts.enums import (
     AttributionBasis,
     CheckStatus,
     Confidence,
+    ConfidenceSource,
     CriticalStatus,
     DangerousWin,
     DimensionStatus,
@@ -34,6 +35,7 @@ from ignosis_eval.contracts.enums import (
     GateId,
     GateStatus,
     InputMode,
+    MeasurementBasis,
     OosReason,
     OutcomeAttribution,
     ReasonCode,
@@ -107,7 +109,14 @@ class Finding(Contract):
     evidence: list[Evidence] = Field(min_length=1)
     anchor_turn: int | None = Field(default=None, ge=1)
     evidence_unverified: bool = False
+    measurement_basis: MeasurementBasis | None = None  # TRT-06 only (AJ-02)
     description: str | None = None  # English only (P-3)
+
+    @model_validator(mode="after")
+    def _basis(self) -> "Finding":
+        if self.measurement_basis is not None and self.code != "TRT-06":
+            raise ValueError(f"{self.code}: measurement_basis is recorded only on TRT-06 findings (AJ-02)")
+        return self
 
 
 class CheckStatusEntry(Contract):
@@ -205,8 +214,9 @@ class ExperimentMeta(Contract):
 
 
 class EvaluationRecord(RecordBody):
-    schema_version: Literal["evaluation_record/2.0.0"] = EVALUATION_RECORD_SCHEMA
+    schema_version: Literal["evaluation_record/2.1.0"] = EVALUATION_RECORD_SCHEMA
     record_status: RecordStatus
+    confidence_source: ConfidenceSource | None = None  # AJ-06: A = SELF_REPORTED; A+, B, K0 = COMPUTED
     system: SystemInfo
     contract_version: NonEmptyStr
     rubric_version: NonEmptyStr
@@ -227,6 +237,8 @@ class EvaluationRecord(RecordBody):
             return self
         if self.verdict is None or self.within_scope_complete is None or self.evaluability is None:
             raise ValueError("OK records require verdict, within_scope_complete and evaluability")
+        if self.confidence_source is None:
+            raise ValueError("OK records state their confidence_source (AJ-06)")
         present = {g.gate for g in self.gates}
         missing = [g.value for g in GATE_IDS if g not in present]
         if missing:

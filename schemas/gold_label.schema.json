@@ -540,8 +540,8 @@
       "$ref": "#/$defs/GoldProvenance"
     },
     "schema_version": {
-      "const": "gold_label/2.0.0",
-      "default": "gold_label/2.0.0",
+      "const": "gold_label/2.1.0",
+      "default": "gold_label/2.1.0",
       "title": "Schema Version",
       "type": "string"
     },

@@ -1,5 +1,5 @@
 # =====================================================================================================
-# CASE CARD TEMPLATE  (schema: case_card/2.0.0 — contracts/case_card.py, schemas/case_card.schema.json)
+# CASE CARD TEMPLATE  (schema: case_card/2.1.0 — contracts/case_card.py, schemas/case_card.schema.json)
 #
 # A case card records AUTHOR INTENT for one bench-a1 item (B-01). It is not gold: gold is labeled blind and
 # separately (B-02). Written by the human case author only; see the B-01 authoring constraints in
@@ -11,7 +11,7 @@
 #   validate:         ignosis-eval casecard validate <card>   and   ignosis-eval bench check
 # Every <...> placeholder must be replaced (rule CC002).
 # =====================================================================================================
-case_card_version: case_card/2.0.0
+case_card_version: case_card/2.1.0
 item_id: <canonical bench-a1 id, e.g. from frozen-contract §12>
 status: draft                     # draft | in_review | approved (approved needs a reviewer other than the author)
 authoring:
@@ -31,7 +31,7 @@ target_behavior: <what the agent does in this item>
 target_check: <gate id, MVP code, always-OUT_OF_SCOPE code, or null for a clean item>
 target_sub_rule: null
 severity: <CRITICAL | MAJOR | MINOR | INFORMATIONAL, post-repair; null for a clean item>
-repair_status: <UNREPAIRED | REPAIRED; null for a clean item>
+repair_status: <UNREPAIRED | REPAIRED (ACC-05 only, AJ-08); null for a clean item>
 evidence_turns: []                # 1-based turn numbers
 evidence_header: false            # true when the evidence is the header call_start_ts (G7)
 attribution_facts:

@@ -11,6 +11,7 @@ implementing agent never writes card content (implementation-blockers, authoring
   CC005 clean card carries defect fields         CC012 NOT_EVALUABLE expectation needs reason codes
   CC006 severity / repair inconsistent w/ rubric CC013 pack / split mismatch (red team)
   CC007 defect without evidence turns (G7: header) CC014 always-OUT_OF_SCOPE target carries a severity
+  CC015 repair claimed on a code outside the repair allowlist {ACC-05} (AJ-08)
   CX001 card disagrees with item.json (split, pack, language, unit modes)
   CX002 evidence turn beyond the transcript length
   CX003 G7 target without a call_start_ts header (authoring constraint 7)
@@ -106,10 +107,12 @@ def check_card_rules(card: CaseCard, registry: Registry) -> list[RuleIssue]:
         if cd.is_gate:
             if card.severity.value != "CRITICAL" or card.repair_status not in (None, RepairStatus.UNREPAIRED):
                 out.append(_err("CC006", "gates are CRITICAL and never repairable", iid))
+        elif card.repair_status is RepairStatus.REPAIRED and t not in registry.repair_allowlist:
+            out.append(_err("CC015", f"only {list(registry.repair_allowlist)} is repairable (AJ-08); {t} is not", iid))
         elif cd.severity is not None and not cd.severity_rule:
             expected = cd.severity.value
-            if card.repair_status is RepairStatus.REPAIRED:
-                expected = {"MAJOR": "MINOR", "MINOR": "INFORMATIONAL"}.get(expected, expected)
+            if card.repair_status is RepairStatus.REPAIRED:  # ACC-05 only: MAJOR -> MINOR; no Minor -> Informational
+                expected = "MINOR"
             if card.severity.value != expected:
                 out.append(_err("CC006", f"severity {card.severity.value} != rubric post-repair {expected}", iid))
         if not card.evidence_turns and not (t == "G7" and card.evidence_header):

@@ -24,6 +24,7 @@ EXPECTED_PENDING = {
     "profile.thresholds.material_span_min_confidence.value": True,
     "profile.thresholds.non_conversation_min_borrower_words.value": True,
     "profile.thresholds.overlap_min_seconds.value": True,
+    "profile.thresholds.diarization_turn_min_confidence.value": True,   # AJ-05 (B-11)
     "profile.thresholds.high_friction_min_minor_count.value": False,
     "profile.lexicons.review_status": True,
     "rubric.evaluability_checks[DC-LANG].detection": True,
@@ -37,8 +38,8 @@ EXPECTED_PENDING = {
 
 def test_spec_pack_complete_and_versions(spec):
     assert all((F.SPEC_DIR / f).exists() for f in SPEC_FILES)
-    assert (spec.contract_version, spec.rubric_version, spec.profile_id) == ("1.0.0-frozen", "1.0-mvp",
-                                                                           "collections_default_v1")
+    assert (spec.contract_version, spec.rubric_version, spec.profile_id, spec.profile_version) == (
+        "1.1.0-frozen", "1.1-mvp", "collections_default_v1", "1.1.0")  # FP-01
     assert spec.is_canonical_profile
     for name, sha in spec.file_sha256.items():
         assert sha == hashlib.sha256((F.SPEC_DIR / name).read_bytes()).hexdigest()

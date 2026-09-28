@@ -1,4 +1,4 @@
-# Experiment Protocol — FROZEN (contract `1.0.0-frozen`)
+# Experiment Protocol — FROZEN (contract `1.1.0-frozen`)
 
 This protocol governs every benchmark run of K0, A, A+ and B. Metric definitions are in `scoring-spec.md`. Items marked `PENDING_HUMAN_SIGNOFF` must be resolved and recorded in the run manifest before the corresponding step can run.
 
@@ -47,8 +47,8 @@ This protocol governs every benchmark run of K0, A, A+ and B. Metric definitions
 | System | Execution |
 |---|---|
 | K0 | Deterministic. Runs once per unit; the result is replicated as reps 1–5 for metric computation. |
-| A | One LLM call per unit per rep. |
-| A+ | **Derived from A's stored raw output of the same rep.** Applies the verifier, confidence ceiling, attribution rules and verdict engine. No LLM call. |
+| A | One LLM call per unit per rep. Only schema validation and the shared front-end merge (not-evaluable short-circuit; pre-checks) are applied; `confidence_source: SELF_REPORTED` (AJ-06). |
+| A+ | **Derived from A's stored raw output of the same rep.** Applies the eight ordered steps of `rubric.yaml › architecture_application.A_PLUS` (capability filter, external-truth filter, evidence verifier, confidence cap, status re-map, attribution, repair allowlist, verdict and tags). No LLM call. |
 | B | Extraction call, then the rule engine, then a batched judgment call if any judgment was triggered. |
 
 ## P-5. Units and repetitions

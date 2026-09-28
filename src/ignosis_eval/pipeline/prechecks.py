@@ -107,18 +107,26 @@ def precheck_pol01b(turns: list[Turn], spec: Spec) -> list[Finding]:
     return out
 
 
-def run_frontend(turns: list[Turn], header: TranscriptHeader, input_mode: InputMode, spec: Spec) -> FrontendResult:
+def run_frontend(turns: list[Turn], header: TranscriptHeader, input_mode: InputMode, spec: Spec, *,
+                 role_mapping_confidence: float = 1.0, diarized: bool = False) -> FrontendResult:
     steps: list[FrontendCheck] = []
     reasons: list[ReasonCode] = []
     status = EvaluabilityStatus.EVALUABLE
 
+    # DC-00 (AJ-05): call-level role mapping only; no agent or no borrower turn -> NOT_EVALUABLE
     role_min = float(spec.threshold("role_confidence_min"))
-    if not turns or min(t.role_confidence for t in turns) < role_min:
+    roles = {t.role for t in turns}
+    if role_mapping_confidence < role_min or Role.AGENT not in roles or Role.BORROWER not in roles:
         status = EvaluabilityStatus.NOT_EVALUABLE
         reasons.append(ReasonCode.ROLE_UNCERTAIN)
     steps.append(FrontendCheck(check="DC-00", status="done"))
 
     steps.append(FrontendCheck(check="DC-01-transcript-markers", status="done"))
+    steps.append(FrontendCheck(check="DC-01-unknown-role-turns", status="done",
+                               note="UNKNOWN-labeled turns are span-unreliable (AJ-05)"))
+    if diarized:
+        steps.append(FrontendCheck(check="DC-01-diarization-turn", status="pending_signoff", blocker="B-06/B-11",
+                                   note="diarization_turn_min_confidence is PENDING (AJ-05)"))
     if input_mode in (InputMode.AUDIO, InputMode.AUDIO_TRANSCRIPT):
         steps.append(FrontendCheck(check="DC-01-audio", status="pending_signoff", blocker="B-06/B-11",
                                    note="asr_low_confidence_word / asr_unreliable_call_share are PENDING"))
@@ -135,8 +143,8 @@ def run_frontend(turns: list[Turn], header: TranscriptHeader, input_mode: InputM
     if input_mode is InputMode.AUDIO_TRANSCRIPT:
         steps.append(FrontendCheck(check="DC-DIV", status="not_implemented",
                                    note="needs the deterministic normalizer (B-04) and extraction"))
-    steps.append(FrontendCheck(check="EVALUABILITY-PARTIAL", status="not_implemented",
-                               note="PARTIAL is enumerated but not defined by the spec; never emitted"))
+    steps.append(FrontendCheck(check="EVALUABILITY-PARTIAL", status="not_applicable",
+                               note="PARTIAL is derived after evaluation by the verdict engine (V7, AJ-04)"))
 
     prechecks = [precheck_g7(header, input_mode, spec)]
     steps.append(FrontendCheck(check="G7", status="done"))

@@ -100,3 +100,15 @@ def test_abstention_targets_remapped_and_errors(spec):
     with pytest.raises(GoldDerivationError):
         derive_mode_gold(F.gold("ZZ-G02"), facts(), spec.rubric)  # wrong item
     assert UnitMode.A.value == "A"
+
+
+
+def test_gold_rejects_repair_outside_allowlist():
+    """AJ-08: only ACC-05 can carry REPAIRED in gold."""
+    from pydantic import ValidationError
+
+    F.gold("ZZ-G01", findings=[{"code": "ACC-05", "anchor_turns": [3], "severity": "MINOR",
+                                "repair_status": "REPAIRED"}], verdict="MEETS_BAR")
+    with pytest.raises(ValidationError, match="AJ-08"):
+        F.gold("ZZ-G01", findings=[{"code": "UND-01", "anchor_turns": [3], "severity": "MINOR",
+                                    "repair_status": "REPAIRED"}], verdict="MEETS_BAR")

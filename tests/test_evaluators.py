@@ -45,7 +45,8 @@ def test_a_one_schema_retry_then_ok(tmp_path, spec):
     a, ni, ctx = _a(tmp_path, spec, ["not json", F.body_json(_g3_record())])
     rec = a.evaluate(ni, ctx)
     assert rec.record_status.value == "OK" and rec.gate("G3").status.value == "FAIL"
-    assert rec.gate("G7").status.value == "PASS"  # A is raw: nothing post-processed (A+ corrects this)
+    assert rec.confidence_source.value == "SELF_REPORTED" and rec.gate("G3").confidence.value == "HIGH"  # AJ-06
+    assert rec.gate("G7").status.value == "OUT_OF_SCOPE"  # front-end merge: pre-checks replace A's own values
 
 
 def test_transport_errors_retried_and_not_counted_as_schema_retries(tmp_path, spec):
@@ -118,8 +119,8 @@ class StubRuleEngine(RuleEngine):
 def test_b_interfaces(tmp_path, spec):
     ni = F.make_ni(spec)
     event_type = spec.rubric["extraction_vocabulary"]["borrower_event_types"][0]
-    ex = {"events": [{"type": event_type, "turn": 2, "quote": "stub borrower line beta", "role": "BORROWER",
-                      "confidence": "MEDIUM"}]}
+    ex = {"events": [{"id": "e1", "type": event_type, "turn": 2, "quote": "stub borrower line beta",
+                      "role": "BORROWER", "confidence": "MEDIUM", "strength": "explicit"}]}
     assert ExtractionOutput.model_validate(ex).check_vocabulary(spec) == []
     F.write_replay(tmp_path / "replay", "b_extract", ni, [json.dumps(ex)])
     client = ReplayLLMClient(tmp_path / "replay")
@@ -128,8 +129,9 @@ def test_b_interfaces(tmp_path, spec):
     rec = EvaluatorB(client, spec, rule_engine=StubRuleEngine(), sleep=NO_SLEEP).evaluate(
         ni, EvaluationContext(repetition=1, spec=spec))
     assert rec.record_status.value == "OK" and rec.gate("G7").status.value == "OUT_OF_SCOPE"
-    F.write_replay(tmp_path / "replay2", "b_extract", ni, ['{"events": [{"type": "not_a_vocab_event", "turn": 1, '
-                                                            '"quote": "x", "role": "AGENT", "confidence": "LOW"}]}'] * 2)
+    F.write_replay(tmp_path / "replay2", "b_extract", ni, ['{"events": [{"id": "e1", "type": "not_a_vocab_event", '
+                                                            '"turn": 1, "quote": "x", "role": "AGENT", '
+                                                            '"confidence": "LOW"}]}'] * 2)
     rec = EvaluatorB(ReplayLLMClient(tmp_path / "replay2"), spec, rule_engine=StubRuleEngine(),
                      sleep=NO_SLEEP).evaluate(ni, EvaluationContext(repetition=1, spec=spec))
     assert rec.record_status.value == "EVALUATION_FAILED"
@@ -164,3 +166,86 @@ def test_prompt_rubric_section_is_generated(spec):
     assert "seed_candidates_unreviewed" not in text  # unreviewed lexicon seeds never reach a prompt
     h = prompt_hashes(("a_holistic",), spec)
     assert set(h) == {"a_holistic", "rubric_section"}
+
+
+# ------------------------------------------------------------------ AJ-06: A (uncorrected baseline) vs A+
+def _a_violating_record():
+    """A's raw output with deliberate H1 / H6 / repair / confidence violations (synthetic stub quotes)."""
+    from ignosis_eval.contracts.enums import RepairStatus
+
+    und = F.finding("UND-01", [2], quote="stub borrower line beta", role="BORROWER", severity="MINOR"
+                    ).model_copy(update={"repair_status": RepairStatus.REPAIRED})
+    return F.record(
+        gates={"G3": F.gate("G3", "FAIL", critical_status="CONFIRMED", confidence="HIGH",
+                            evidence=[F.ev(3, "stub agent line gamma")]),
+               "G4": F.gate("G4", "FAIL", critical_status="CONFIRMED", confidence="HIGH",
+                            evidence=[F.ev(5, "words the agent never said")])},
+        findings=[F.finding("PLT-02", [1], severity="MINOR"),            # H6: perception code in TRANSCRIPT
+                  F.finding("ACC-01", [1]),                                # H1: always-OUT_OF_SCOPE (external truth)
+                  und])                                                    # repair flag on a non-allowlisted code
+
+
+def test_a_keeps_violations_a_plus_removes_them(tmp_path, spec):
+    a, ni, ctx = _a(tmp_path, spec, [F.body_json(_a_violating_record())])
+    a_rec = a.evaluate(ni, ctx)
+    assert ctx.trace.usage["llm_calls"] == 1
+    codes = {f.code for f in a_rec.findings}
+    assert {"PLT-02", "ACC-01", "UND-01"} <= codes                         # A is not filtered (can violate H1/H6)
+    assert a_rec.confidence_source.value == "SELF_REPORTED"
+    assert a_rec.gate("G4").confidence.value == "HIGH" and a_rec.gate("G4").critical_status.value == "CONFIRMED"
+    und_a = next(f for f in a_rec.findings if f.code == "UND-01")
+    assert (und_a.repair_status.value, und_a.severity.value) == ("REPAIRED", "MINOR")
+
+    calls_before = ctx.trace.usage["llm_calls"]
+    rec, log = APlusDeriver(spec).derive(a_rec, a_final_raw_output(ctx.trace.responses), ni, spec)
+    assert ctx.trace.usage["llm_calls"] == calls_before                    # A+ makes zero LLM calls
+    assert rec.confidence_source.value == "COMPUTED" and rec.system.system == "A+"
+    codes = {f.code for f in rec.findings}
+    assert "PLT-02" not in codes and "ACC-01" not in codes                  # capability + external-truth filters
+    g4 = rec.gate("G4")
+    assert g4.evidence_unverified and g4.critical_status.value == "SUSPECTED"  # evidence verifier
+    assert rec.gate("G3").confidence.value == "MEDIUM"                     # cap: no lexicon hit, no extraction
+    und = next(f for f in rec.findings if f.code == "UND-01")
+    assert (und.repair_status.value, und.severity.value) == ("UNREPAIRED", "MAJOR")  # repair allowlist {ACC-05}
+    assert rec.verdict.value == "CRITICAL_FAIL"
+
+
+def test_a_plus_steps_follow_rubric_order(tmp_path, spec):
+    a, ni, ctx = _a(tmp_path, spec, [F.body_json(_a_violating_record())])
+    a_rec = a.evaluate(ni, ctx)
+    _, log = APlusDeriver(spec).derive(a_rec, a_final_raw_output(ctx.trace.responses), ni, spec)
+    order = []
+    for e in log.entries:
+        if not e["step"][0].isdigit():
+            continue  # the "derive" provenance entry
+        n, name = e["step"].split("-", 1)
+        if not order or order[-1][0] != int(n):
+            order.append((int(n), name.replace("-", "_")))
+    nums = [n for n, _ in order]
+    assert nums == sorted(nums), f"A+ steps out of order: {nums}"
+    ordered = spec.rubric["architecture_application"]["A_PLUS"]["ordered_steps"]
+    for n, name in order:
+        if n >= 1:
+            assert ordered[n - 1] == name
+    assert {n for n, _ in order} >= {1, 2, 3, 4, 5, 6, 7}
+    assert spec.rubric["architecture_application"]["A_PLUS"]["llm_calls"] == 0
+
+
+def test_a_short_circuits_not_evaluable_without_llm_call(tmp_path, spec):
+    ni = F.make_ni(spec, (("AGENT", "stub agent line alpha"), ("AGENT", "stub agent line beta")))
+    assert ni.frontend.evaluability_status.value == "NOT_EVALUABLE"
+    F.write_replay(tmp_path / "replay", "a_evaluate", ni, [F.body_json(_g3_record())])
+    ctx = EvaluationContext(repetition=1, spec=spec, trace=TraceSink())
+    rec = EvaluatorA(ReplayLLMClient(tmp_path / "replay"), spec, sleep=NO_SLEEP).evaluate(ni, ctx)
+    assert ctx.trace.usage.get("llm_calls", 0) == 0
+    assert rec.verdict.value == "NOT_EVALUABLE" and rec.confidence_source.value == "SELF_REPORTED"
+    assert rec.evaluability.status.value == "NOT_EVALUABLE"
+
+
+def test_a_merge_applies_precheck_failures(tmp_path, spec):
+    ni = F.make_ni(spec, header={"call_start_ts": "2026-09-28T21:00:00+05:30"})  # outside the calling window
+    F.write_replay(tmp_path / "replay", "a_evaluate", ni, [F.body_json(F.record())])
+    ctx = EvaluationContext(repetition=1, spec=spec, trace=TraceSink())
+    rec = EvaluatorA(ReplayLLMClient(tmp_path / "replay"), spec, sleep=NO_SLEEP).evaluate(ni, ctx)
+    assert rec.gate("G7").status.value == "FAIL" and rec.verdict.value == "CRITICAL_FAIL"
+    assert rec.critical_status.value == "CONFIRMED"

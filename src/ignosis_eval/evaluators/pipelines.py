@@ -1,12 +1,13 @@
 """Evaluators A, A+ and B — reconciled with frozen-contract §11 and experiment-protocol P-3/P-4.
 
-A   shared front end -> ONE structured LLM call -> schema validation (1 retry, then EVALUATION_FAILED).
-    The LLM emits findings, confidence and verdict; nothing is post-processed (A is the raw baseline).
-A+  derived from A's stored raw output of the same rep: evidence verifier, confidence ceiling, attribution
-    rules and the deterministic verdict engine (engine/finalize.py, the same modules B uses). No LLM call,
-    no prompt of its own, no tuning.
-B   extraction (LLM #1) -> evidence verifier -> rule engine -> targeted batched judgments (LLM #2, only if
-    triggered) -> attribution -> verdict. The rule engine is the next build phase (interface only).
+Applied per rubric.yaml › architecture_application (AJ-06):
+A   shared front end -> ONE structured LLM call -> schema validation (1 retry, then EVALUATION_FAILED) -> front-end
+    merge only (not-evaluable short-circuit: no LLM call; pre-checks G7/G8/G9/POL-01b). confidence_source
+    SELF_REPORTED; no capability / external-truth filter (A must be able to violate H1 and H6).
+A+  derived from A's stored raw output of the same rep through the eight ordered deterministic steps of
+    engine/finalize.py (the same modules B uses). Zero LLM calls, no prompt of its own, no tuning; COMPUTED.
+B   extraction (LLM #1) -> extraction verifier (quotes, responds_to ids) -> rule engine -> targeted batched
+    judgments (LLM #2, only if triggered) -> finalize. The full rule engine is the next build phase.
 Prompts are unoptimized stubs (evaluators/prompts/); the rubric section is generated from the spec.
 """
 
@@ -16,10 +17,12 @@ import json
 from collections.abc import Callable
 
 from ignosis_eval.contracts.canonical_input import NormalizedInput
-from ignosis_eval.contracts.enums import RecordStatus, System
-from ignosis_eval.contracts.evaluation_record import EvaluationRecord, Evidence, RecordBody
+from ignosis_eval.contracts.enums import ConfidenceSource, RecordStatus, System
+from ignosis_eval.contracts.evaluation_record import EvaluationRecord, RecordBody
 from ignosis_eval.contracts.run_manifest import SystemConfig, TransportRetryPolicy
-from ignosis_eval.engine.finalize import DerivationLog, Facts, finalize, verify_evidence
+from ignosis_eval.engine.extraction import verify_extraction
+from ignosis_eval.engine.finalize import DerivationLog, Facts, finalize
+from ignosis_eval.engine.frontend_merge import merge_frontend, not_evaluable_short_circuit, short_circuit_record
 from ignosis_eval.evaluators.base import EvaluationContext, Evaluator, input_sha256
 from ignosis_eval.evaluators.builder import failed_record, parse_ok_record
 from ignosis_eval.evaluators.judgement import (
@@ -79,6 +82,8 @@ class EvaluatorA(_LLMSystem):
 
     def evaluate(self, ni: NormalizedInput, ctx: EvaluationContext) -> EvaluationRecord:
         spec, info = ctx.spec, self.system_info()
+        if not_evaluable_short_circuit(ni):  # front-end merge: no LLM call on a NOT_EVALUABLE call
+            return short_circuit_record(ni, spec, info, ConfidenceSource.SELF_REPORTED)
         content = render("a_holistic", profile_id=spec.profile_id, profile_version=spec.profile_version,
                          gates=rubric_section(spec), defects="(see the generated rubric section above)",
                          input_mode=ni.input_mode.value, capabilities=capability_summary(ni, spec),
@@ -86,7 +91,9 @@ class EvaluatorA(_LLMSystem):
         req = self._request("a_evaluate", content, ni, ctx)
         rec, _raw, err, attempts = structured_call(self._recording(ctx), req,
                                                    lambda c: parse_ok_record(c, ni, spec, info))
-        return rec if rec is not None else failed_record(ni, spec, info, err or "schema-invalid", attempts)
+        if rec is None:
+            return failed_record(ni, spec, info, err or "schema-invalid", attempts)
+        return merge_frontend(rec, ni)  # pre-checks only; nothing else is applied to A
 
 
 def a_final_raw_output(trace_responses: list[dict]) -> str | None:
@@ -116,6 +123,9 @@ class APlusDeriver:
                spec: Spec) -> tuple[EvaluationRecord, DerivationLog]:
         log = DerivationLog()
         info = self.system_info()
+        if not_evaluable_short_circuit(ni) and a_record is not None and a_record.record_status is RecordStatus.OK:
+            log.add("derive", "record", "A short-circuited on a NOT_EVALUABLE front end; deterministic V2 record")
+            return short_circuit_record(ni, spec, info, ConfidenceSource.COMPUTED), log
         if a_record is None or a_record.record_status is RecordStatus.EVALUATION_FAILED or a_raw_output is None:
             log.add("derive", "record", "A produced no valid output in this rep -> A+ EVALUATION_FAILED")
             return failed_record(ni, spec, info, "A output unavailable or EVALUATION_FAILED", 0), log
@@ -134,6 +144,8 @@ class EvaluatorB(_LLMSystem):
 
     def evaluate(self, ni: NormalizedInput, ctx: EvaluationContext) -> EvaluationRecord:
         spec, info = ctx.spec, self.system_info()
+        if not_evaluable_short_circuit(ni):  # shared front end: no LLM call on a NOT_EVALUABLE call
+            return short_circuit_record(ni, spec, info, ConfidenceSource.COMPUTED)
         rec_client = self._recording(ctx)
         content = render("b_extraction", rubric_section=rubric_section(spec), input_mode=ni.input_mode.value,
                          transcript=render_transcript(ni))
@@ -151,9 +163,8 @@ class EvaluatorB(_LLMSystem):
         ex, _, err, attempts = structured_call(rec_client, self._request("b_extract", content, ni, ctx), parse_extraction)
         if ex is None:
             return failed_record(ni, spec, info, err or "schema-invalid extraction", attempts)
-        threshold = float(spec.threshold("quote_match_min"))
-        ex = ex.model_copy(update={"events": [e for e in ex.events if verify_evidence(
-            Evidence(turn=e.turn, quote=e.quote, role=e.role), ni, threshold)[0]]})
+        log = DerivationLog()
+        ex = verify_extraction(ex, ni, spec, log)
         result = self.rule_engine.apply(ex, ni, spec)
         if result.judgments_needed:
             jcontent = render("b_judgments", judgments=judgment_text(spec, result.judgments_needed),
@@ -169,4 +180,4 @@ class EvaluatorB(_LLMSystem):
             if ans is None:
                 return failed_record(ni, spec, info, err or "schema-invalid judgments", attempts)
             result = self.rule_engine.integrate(result, ans, spec)
-        return finalize(result.body, ni, spec, system=info, facts=result.facts)
+        return finalize(result.body, ni, spec, system=info, facts=result.facts, log=log)

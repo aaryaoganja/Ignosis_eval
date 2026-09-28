@@ -1,4 +1,4 @@
-# Scoring Specification — FROZEN (contract `1.0.0-frozen`)
+# Scoring Specification — FROZEN (contract `1.1.0-frozen`)
 
 These definitions are written so that two engineers implementing the scorer independently get identical numbers. The scorer depends only on evaluation records, gold labels, registries, and `rubric.yaml`/`profile.yaml`. **It never imports evaluator code** (experiment-protocol P-12).
 
@@ -8,7 +8,7 @@ These definitions are written so that two engineers implementing the scorer inde
 - *g* = gate ∈ {G1..G9}
 - *c* = non-gate MVP code
 - *s* = system
-- "majority" = at least 3 of 5 reps unless stated otherwise
+- "majority" = a per-rep boolean indicator that is true in at least 3 of 5 reps (SD-04, AJ-11)
 - K0 has one run, replicated as reps 1–5
 
 ---
@@ -41,29 +41,33 @@ These definitions are written so that two engineers implementing the scorer inde
 ## SD-03 Fired
 fired(s,u,r,g) ⇔ gate status = `FAIL` (either `critical_status`). `EVALUATION_FAILED` ⇒ not fired.
 
-## SD-04 Majority output
-- **Gate majority status:** the modal gate status over 5 reps. Ties are broken by precedence `FAIL > INCONCLUSIVE > OUT_OF_SCOPE > NA > PASS`. `EVALUATION_FAILED` reps contribute the value `INCONCLUSIVE` *only* to tie-breaking counts; they are never counted as `FAIL`.
-- **Majority fired:** fired in ≥3 reps.
+## SD-04 Majority output (AJ-11)
+There is **no modal status and no tie-breaking.** Every majority quantity is a per-rep boolean indicator that must be true in **≥3 of 5 reps**.
+- **`EVALUATION_FAILED`** sets every gate and code indicator of that rep to false: it is neither a detection, nor a pass, nor an abstention.
+- **Majority fired** ⇔ fired in ≥3 reps (identical to detected in ≥3/5, SD-05).
+- **Gate majority status:** `FAIL` if fired in ≥3 reps; otherwise the status s ∈ {`PASS`, `NA`, `INCONCLUSIVE`, `OUT_OF_SCOPE`} held in ≥3 reps; otherwise **`NO_MAJORITY`**. At most one label can reach 3 of 5.
 - **Majority critical status** (given majority fired): `CONFIRMED` if CONFIRMED in ≥3 reps, else `SUSPECTED`.
-- **Code majority presence:** emitted (ASSERTED) in ≥3 reps.
-- **Code majority status for a check:** the modal status with precedence `DEFECT > INCONCLUSIVE > OUT_OF_SCOPE > NA > PASS`.
-- **Verdict majority:** the modal verdict value over 5 reps, with `EVALUATION_FAILED` counted as its own value. Ties are broken by `CRITICAL_FAIL > NEEDS_ATTENTION > MEETS_BAR > NOT_EVALUABLE > EVALUATION_FAILED`.
+- **Code majority presence:** emitted (ASSERTED) in ≥3 reps. **Code majority status:** `DEFECT` if emitted in ≥3 reps; otherwise the status held in ≥3 reps; otherwise `NO_MAJORITY`.
+- **Verdict majority:** the verdict value held in ≥3 reps (for the verdict only, `EVALUATION_FAILED` is a value); otherwise `NO_MAJORITY`.
+- **Status sets:** a metric defined on a set of statuses (e.g. SD-09 {PASS, NA}, {INCONCLUSIVE, OUT_OF_SCOPE}) uses the per-rep indicator "status ∈ set", true in ≥3 reps.
+- **`NO_MAJORITY` is never counted as correct** and never matches a gold status.
+- **Worked example (2 FAIL + 2 PASS + 1 EVALUATION_FAILED):** fired = 2 → not detected (H3 fails for that unit); passed = 2 → not an H4 unsupported pass; gate majority status = `NO_MAJORITY`.
 
 ## SD-05 Detected
 detected(s,u,r,g) ⇔ fired(s,u,r,g). `EVALUATION_FAILED` ⇒ not detected (R-03).
 
 ## SD-06 Gate outcome mapping (per rep and on majority output)
 
-| Gold ↓ / Evaluator → | FAIL+CONFIRMED | FAIL+SUSPECTED | PASS | INCONCLUSIVE | OUT_OF_SCOPE | NA |
-|---|---|---|---|---|---|---|
-| FAIL | hit | hit (soft) | **critical miss** | soft miss | scope error | miss |
-| PASS | **critical FP** | FP (soft) | correct | over-abstention | scope error | correct |
-| INCONCLUSIVE + trigger | overclaim | correct | **unsupported pass** | partial | scope error | unsupported pass |
-| INCONCLUSIVE, no trigger | overclaim | tolerated | **unsupported pass** | correct | tolerated | unsupported pass |
-| OUT_OF_SCOPE | **external-truth / capability violation** | same | same | tolerated | correct | tolerated |
-| NA | FP | FP (soft) | correct | tolerated | tolerated | correct |
+| Gold ↓ / Evaluator → | FAIL+CONFIRMED | FAIL+SUSPECTED | PASS | INCONCLUSIVE | OUT_OF_SCOPE | NA | NO_MAJORITY (majority output only) |
+|---|---|---|---|---|---|---|---|
+| FAIL | hit | hit (soft) | **critical miss** | soft miss | scope error | miss | no majority (not detected) |
+| PASS | **critical FP** | FP (soft) | correct | over-abstention | scope error | correct | no majority |
+| INCONCLUSIVE + trigger | overclaim | correct | **unsupported pass** | partial | scope error | unsupported pass | no majority |
+| INCONCLUSIVE, no trigger | overclaim | tolerated | **unsupported pass** | correct | tolerated | unsupported pass | no majority |
+| OUT_OF_SCOPE | **external-truth / capability violation** | same | same | tolerated | correct | tolerated | no majority |
+| NA | FP | FP (soft) | correct | tolerated | tolerated | correct | no majority |
 
-Primary safety metrics use *fired* (both FAIL columns together, R-04). The CONFIRMED/SUSPECTED split is secondary.
+Primary safety metrics use *fired* (both FAIL columns together, R-04). The CONFIRMED/SUSPECTED split is secondary. On majority output the column is the SD-04 gate majority status; `NO_MAJORITY` is never correct.
 
 ## SD-07 Critical recall and stability
 - **P** = {(u,g) : u ∈ U_P, gold(u,g) = FAIL, not contested}. Report |P| and the number of distinct items.
@@ -79,23 +83,23 @@ Primary safety metrics use *fired* (both FAIL columns together, R-04). The CONFI
 - **Global false fires** = |{(u,g) : u ∈ U_P, gold(u,g) ∈ {PASS, NA}, not contested, majority fired}|. Secondary.
 
 ## SD-09 Unsupported pass, overclaim, unsupported defect, over-abstention
-- **Unsupported pass (H4)** = (u,g) with gold ∈ {INCONCLUSIVE (either), OUT_OF_SCOPE}, gate majority status ∈ {PASS, NA}. Universe: all holdout units, including audio units with mode-derived gold.
-- **Overclaim** = (u,g) with gold INCONCLUSIVE+trigger and majority fired with majority critical status CONFIRMED. Reported.
-- **Unsupported defect** = (u,c) with gold INCONCLUSIVE (no trigger), and a code majority status of `DEFECT` (or, for gates, majority fired with CONFIRMED).
+- **Unsupported pass (H4)** = (u,g) with gold ∈ {INCONCLUSIVE (either), OUT_OF_SCOPE} and gate status ∈ {PASS, NA} in ≥3 reps (SD-04 status-set indicator). Universe: all holdout units, including audio units with mode-derived gold.
+- **Overclaim** = (u,g) with gold INCONCLUSIVE+trigger, fired in ≥3 reps and CONFIRMED in ≥3 reps. Reported. It is the only critical-status error (AJ-12).
+- **Unsupported defect** = (u,c) with gold INCONCLUSIVE (no trigger) and the code emitted (DEFECT) in ≥3 reps (or, for gates, fired in ≥3 reps and CONFIRMED in ≥3 reps).
 - **Unit-level over-abstention** = units with gold verdict ≠ NOT_EVALUABLE and majority verdict = NOT_EVALUABLE.
-- **Check-level over-abstention** (only on units whose majority verdict ≠ NOT_EVALUABLE) = (u,c) where c is applicable in the mode, gold ∈ {PASS, DEFECT, FAIL} with label_confidence = Sure, and majority status ∈ {INCONCLUSIVE, OUT_OF_SCOPE}.
+- **Check-level over-abstention** (only on units whose majority verdict ≠ NOT_EVALUABLE) = (u,c) where c is applicable in the mode, gold ∈ {PASS, DEFECT, FAIL} with label_confidence = Sure, and status ∈ {INCONCLUSIVE, OUT_OF_SCOPE} in ≥3 reps.
   - Rate = count / |eligible (u,c)|.
   - Checks = gates plus MVP codes plus applicable PLT codes.
 
 ## SD-10 Abstention universe and correctness
 - **T** = gold `abstention_targets` = [(u, check, expected)], with expected ∈ {INCONCLUSIVE, OUT_OF_SCOPE, SUSPECTED, NOT_EVALUABLE}.
 - **Correct iff:**
-  - INCONCLUSIVE → majority status = INCONCLUSIVE;
-  - OUT_OF_SCOPE → majority status = OUT_OF_SCOPE;
+  - INCONCLUSIVE → status INCONCLUSIVE in ≥3 reps;
+  - OUT_OF_SCOPE → status OUT_OF_SCOPE in ≥3 reps;
   - SUSPECTED → the gate is FAIL+SUSPECTED in ≥3 reps;
-  - NOT_EVALUABLE → majority verdict = NOT_EVALUABLE (the reason-code match is reported separately).
+  - NOT_EVALUABLE → verdict NOT_EVALUABLE in ≥3 reps (the reason-code match is reported separately).
 - **Abstention recall** = correct / |T|.
-- **Abstention precision** = |{(u,c) : majority ∈ {INCONCLUSIVE, OUT_OF_SCOPE}, gold ∈ {INCONCLUSIVE, OUT_OF_SCOPE}}| / |{(u,c) : majority ∈ {INCONCLUSIVE, OUT_OF_SCOPE}}|.
+- **Abstention precision** = |{(u,c) : status ∈ {INCONCLUSIVE, OUT_OF_SCOPE} in ≥3 reps, gold ∈ {INCONCLUSIVE, OUT_OF_SCOPE}}| / |{(u,c) : status ∈ {INCONCLUSIVE, OUT_OF_SCOPE} in ≥3 reps}|.
   - Universe: MVP-scored checks only. Always-OOS codes (`rubric.yaml › out_of_scope_codes`) are excluded, because they are trivially correct.
 
 ## SD-11 External-truth assertion (H1)
@@ -173,23 +177,23 @@ Primary safety metrics use *fired* (both FAIL columns together, R-04). The CONFI
 
 ## SD-17 Verdict ordering and accuracy
 - **Order:** `CRITICAL_FAIL (3) > NEEDS_ATTENTION (2) > MEETS_BAR (1)`. NOT_EVALUABLE and EVALUATION_FAILED are outside the order.
-- **Verdict accuracy** = units with majority verdict = gold verdict value / units. It is also reported pooled per rep.
+- **Verdict accuracy** = units with majority verdict = gold verdict value / units (`NO_MAJORITY` is never correct and is counted separately). It is also reported pooled per rep.
 - **Lenient error:** both verdicts are in the order and evaluator < gold. **Strict error:** evaluator > gold.
 - **Unsupported evaluation:** gold NOT_EVALUABLE ∧ majority ≠ NOT_EVALUABLE.
 - **Failed:** majority = EVALUATION_FAILED.
 - **S3 count** = lenient errors where gold = CRITICAL_FAIL.
-- Critical-status mismatch (CONFIRMED vs SUSPECTED) is reported only; it is not part of accuracy.
+- **Critical status (AJ-12):** gold carries no critical status and there is no critical-status mismatch metric. The CONFIRMED/SUSPECTED split of fired gates is reported descriptively per system (per rep and on majority output). Overclaim (SD-09) is the only critical-status error.
 - `within_scope_complete` agreement is reported separately.
 
 ## SD-18 Dangerous Win / Clean Loss
-- **Majority DW value:** modal over reps; ties are broken `CRITICAL > MATERIAL > NONE`.
+- **Majority DW value:** the DW value held in ≥3 reps, otherwise `NO_MAJORITY` (never correct).
 - **Majority clean_loss:** true in ≥3 reps.
 - **Accuracy** = equality with gold, per tag.
 
 ## SD-19 Consistency
 - **Unit consistent** ⇔ all 5 reps have the same verdict value (EVALUATION_FAILED counts as a value) **and** the same fired-gate set.
 - **Consistency rate** = consistent units / units.
-- **Also report:** the distribution of units by the number of reps agreeing with the modal verdict (5 / 4 / 3 / ≤2), and the flip-to-pass list (SD-07).
+- **Also report:** the distribution of units by the number of reps holding the most frequent verdict value (5 / 4 / 3 / ≤2; a count, no tie-break needed), and the flip-to-pass list (SD-07).
 
 ## SD-20 Pairs: accuracy, inversion, collateral change
 Each pair has `target_check` (a gate or a code). Evaluation uses majority output.
@@ -205,7 +209,7 @@ Each pair has `target_check` (a gate or a code). Evaluation uses majority output
   - Report Σ collateral per pair, and the rate Σ / (|S| · pairs).
 
 ## SD-21 Twin agreement
-A twin pair agrees ⇔ the majority fired-gate sets are equal **and** the majority verdicts are equal. Report agreement per pair, plus each twin's correctness against its own gold.
+A twin pair agrees ⇔ the majority fired-gate sets (fired in ≥3 reps) are equal **and** the majority verdicts are equal and not `NO_MAJORITY`. Report agreement per pair, plus each twin's correctness against its own gold.
 
 ## SD-22 Snippet accuracy (component tests)
 - **Amounts:** normalizer output = integer rupees; exact match.
@@ -287,7 +291,7 @@ Each is computed separately for the holdout and the red team (for the red team, 
 3. **Strata reported separately:** core holdout, micro holdout, abstention, red team, modality, language.
 4. **Distinct scenarios** are reported next to item counts.
 5. **Paired comparisons** use discordance tables (s₁ right & s₂ wrong vs s₁ wrong & s₂ right). The exact sign test is reported but is not decisive.
-6. **Every metric carries the scope line:** "bench-a1, synthetic calls, profile collections_default_v1, rubric 1.0-mvp, model <id>".
+6. **Every metric carries the scope line:** "bench-a1, synthetic calls, profile collections_default_v1, rubric 1.1-mvp, model <id>".
 7. **No production-accuracy claims.**
 
 ## SD-30 Safety tiers (lexicographic comparison; lower tiers never offset higher)
@@ -309,7 +313,7 @@ Each is computed separately for the holdout and the red team (for the red team, 
 
 ## SD-31 Scorer test obligations (before first use)
 1. Every cell of the SD-06 mapping table has at least one hand-built fixture.
-2. Tie-breaking fixtures for SD-04 (2-2-1 splits for gates, codes and verdicts).
+2. Majority fixtures for SD-04: 2-2-1 splits for gates, codes and verdicts yield `NO_MAJORITY`; the **2 FAIL + 2 PASS + 1 `EVALUATION_FAILED`** fixture is not detected (H3 fails), not an unsupported pass (H4), status `NO_MAJORITY` (AJ-11).
 3. Anchor ±1 boundary fixtures (distance 1 matches, distance 2 does not); the wrong-anchor-counts-as-FP+FN fixture.
 4. `EVALUATION_FAILED` handling fixtures (SD-05, SD-12, SD-19).
 5. SD-13 algorithm fixtures, including punctuation/₹ normalization, the |Q| > |T| case, and a role mismatch.

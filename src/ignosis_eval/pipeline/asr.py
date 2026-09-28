@@ -27,13 +27,14 @@ class ASRTurn:
     text: str
     start_s: float
     end_s: float
-    role_confidence: float
+    diarization_confidence: float | None  # turn-level speaker confidence (DC-01, AJ-05); None for a channel split
     word_confidences: tuple[float, ...] | None = None
 
 
 @dataclass(frozen=True)
 class ASRResult:
     turns: tuple[ASRTurn, ...]
+    mapping_confidence: float  # DC-00 call-level speaker/channel -> agent/borrower mapping confidence (AJ-05)
     engine: str
     model: str | None
     version: str
@@ -63,11 +64,14 @@ class ASRAdapter(ABC):
 
 def _load(path: Path, adapter: ASRAdapter) -> ASRResult:
     data = json.loads(path.read_text(encoding="utf-8"))
+    if "mapping_confidence" not in data:
+        raise ASRUnavailableError(f"{path.name}: cached ASR lacks the call-level mapping_confidence (DC-00)")
     turns = tuple(ASRTurn(Role(t["role"]), t["text"], float(t["start_s"]), float(t["end_s"]),
-                          float(t.get("role_confidence", 0.0)),
+                          None if t.get("diarization_confidence") is None else float(t["diarization_confidence"]),
                           tuple(t["word_confidences"]) if t.get("word_confidences") is not None else None)
                   for t in data["turns"])
-    return ASRResult(turns, adapter.engine, adapter.model, adapter.version, adapter.params_sha256)
+    return ASRResult(turns, float(data["mapping_confidence"]), adapter.engine, adapter.model, adapter.version,
+                     adapter.params_sha256)
 
 
 @dataclass
@@ -83,8 +87,9 @@ class ReplayASR(ASRAdapter):
         return _load(p, self)
 
     @staticmethod
-    def write_cache_entry(cache_dir: Path, adapter: ASRAdapter, audio_sha256: str, turns: list[dict]) -> Path:
+    def write_cache_entry(cache_dir: Path, adapter: ASRAdapter, audio_sha256: str, turns: list[dict],
+                          mapping_confidence: float) -> Path:
         cache_dir.mkdir(parents=True, exist_ok=True)
         p = cache_dir / adapter.cache_key(audio_sha256)
-        p.write_text(canonical_json_pretty({"turns": turns}), encoding="utf-8")
+        p.write_text(canonical_json_pretty({"mapping_confidence": mapping_confidence, "turns": turns}), encoding="utf-8")
         return p

@@ -11,6 +11,7 @@
   B012 registry references an unknown item             B014 pair target_check is not a rubric check
   B013 pair transcripts differ in length by more than 10% (warning; authoring constraint 4, measured in words)
   B015 real (non-synthetic) item without the pii_reviewed tag on its card
+  B016 TRT-06 monologue item that does not exceed both 30 s and 80 words (warning; FP-14 / AJ-02)
 """
 
 from __future__ import annotations
@@ -97,6 +98,25 @@ def _from_rule(ri: RuleIssue) -> Issue:
     return Issue("B020", ri.severity, f"{ri.rule_id} {ri.message}", ri.item_id)
 
 
+def _monologue_warnings(turns: list[int], parsed, spec: Spec, item_id: str) -> list[Issue]:
+    """FP-14: monologue items should exceed both monologue_max_seconds and monologue_max_words so that TRT-06 holds
+    in every mode (duration basis when timestamped or in audio, word basis otherwise; AJ-02)."""
+    max_s, max_w = float(spec.threshold("monologue_max_seconds")), int(spec.threshold("monologue_max_words"))
+    out: list[Issue] = []
+    for n in turns:
+        if not 1 <= n <= len(parsed.turns):
+            continue
+        t = parsed.turns[n - 1]
+        if len(t.text.split()) <= max_w:
+            out.append(Issue("B016", "warning", f"TRT-06 turn {n} has <= {max_w} words", item_id))
+        if t.start_s is not None and t.end_s is not None and (t.end_s - t.start_s) <= max_s:
+            out.append(Issue("B016", "warning", f"TRT-06 turn {n} lasts <= {max_s:g} s", item_id))
+        if t.start_s is None:
+            out.append(Issue("B016", "warning", f"TRT-06 turn {n} has no timestamps: its duration (> {max_s:g} s) "
+                                                "cannot be checked from the transcript", item_id))
+    return out
+
+
 def check_bench(layout: BenchLayout, spec: Spec, *, scopes: tuple[str, ...] = ("dev",),
                 require_gold: bool = False) -> BenchReport:
     rep = BenchReport()
@@ -150,6 +170,8 @@ def check_bench(layout: BenchLayout, spec: Spec, *, scopes: tuple[str, ...] = ("
                         has_call_start_ts=(parsed.header.call_start_ts is not None) if parsed else None,
                         truncated=parsed.header.truncated_start if parsed else None)]
                     rep.issues += [_from_rule(i) for i in check_card_against_registries(card, registries)]
+                    if card.target_check == "TRT-06" and parsed is not None:
+                        rep.issues += _monologue_warnings(card.evidence_turns, parsed, spec, meta.item_id)
                     if not meta.synthetic and "pii_reviewed" not in card.tags:
                         add(Issue("B015", "error", "real (non-synthetic) items need the pii_reviewed tag", meta.item_id))
                 if ip.gold_path.exists():

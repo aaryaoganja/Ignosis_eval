@@ -117,6 +117,15 @@
       "title": "Confidence",
       "type": "string"
     },
+    "ConfidenceSource": {
+      "description": "AJ-06: A reports the LLM's own labels (SELF_REPORTED); A+, B and K0 compute them.",
+      "enum": [
+        "SELF_REPORTED",
+        "COMPUTED"
+      ],
+      "title": "ConfidenceSource",
+      "type": "string"
+    },
     "CriticalStatus": {
       "enum": [
         "CONFIRMED",
@@ -416,6 +425,17 @@
           "$ref": "#/$defs/FindingState",
           "default": "ASSERTED"
         },
+        "measurement_basis": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MeasurementBasis"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "repair_status": {
           "$ref": "#/$defs/RepairStatus",
           "default": "UNREPAIRED"
@@ -610,6 +630,15 @@
       "title": "InputMode",
       "type": "string"
     },
+    "MeasurementBasis": {
+      "description": "AJ-02: TRT-06 measures duration when the turn has timestamps, otherwise words.",
+      "enum": [
+        "duration",
+        "word_count"
+      ],
+      "title": "MeasurementBasis",
+      "type": "string"
+    },
     "OosReason": {
       "enum": [
         "EXTERNAL_DATA_REQUIRED",
@@ -726,7 +755,8 @@
         "EXTERNAL_DATA_REQUIRED",
         "LANGUAGE_UNSUPPORTED",
         "TRANSCRIPT_TRUNCATED",
-        "STAGE_UNKNOWN"
+        "STAGE_UNKNOWN",
+        "NO_AGENT_TURN_AFTER_REQUEST"
       ],
       "title": "ReasonCode",
       "type": "string"
@@ -875,6 +905,17 @@
       "title": "Checks",
       "type": "array"
     },
+    "confidence_source": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ConfidenceSource"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
     "contract_version": {
       "minLength": 1,
       "title": "Contract Version",
@@ -999,8 +1040,8 @@
       "type": "string"
     },
     "schema_version": {
-      "const": "evaluation_record/2.0.0",
-      "default": "evaluation_record/2.0.0",
+      "const": "evaluation_record/2.1.0",
+      "default": "evaluation_record/2.1.0",
       "title": "Schema Version",
       "type": "string"
     },

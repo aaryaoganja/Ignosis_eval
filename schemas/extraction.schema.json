@@ -1,0 +1,619 @@
+{
+  "$defs": {
+    "Commitment": {
+      "additionalProperties": false,
+      "description": "extraction_vocabulary.commitment_fields (typed; firmness decides the positive outcome, AJ-09).",
+      "properties": {
+        "amount_norm": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Amount Norm"
+        },
+        "amount_raw": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Amount Raw"
+        },
+        "borrower_confirmation_quote": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Borrower Confirmation Quote"
+        },
+        "confirmed_turn": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confirmed Turn"
+        },
+        "date_norm": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Date Norm"
+        },
+        "date_raw": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Date Raw"
+        },
+        "firmness": {
+          "anyOf": [
+            {
+              "enum": [
+                "firm",
+                "soft",
+                "conditional"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Firmness"
+        },
+        "hedge_quote": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hedge Quote"
+        },
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "mode_raw": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mode Raw"
+        },
+        "proposed_turn": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Proposed Turn"
+        },
+        "readback_turn": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Readback Turn"
+        },
+        "readback_values_raw": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Readback Values Raw"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "Commitment",
+      "type": "object"
+    },
+    "Confidence": {
+      "enum": [
+        "HIGH",
+        "MEDIUM",
+        "LOW"
+      ],
+      "title": "Confidence",
+      "type": "string"
+    },
+    "ExtractedEvent": {
+      "additionalProperties": false,
+      "description": "event_common + the type-specific AJ-07 fields.",
+      "properties": {
+        "basis_stated": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Basis Stated"
+        },
+        "category": {
+          "anyOf": [
+            {
+              "enum": [
+                "late_fee_per_terms",
+                "credit_bureau_reporting_per_terms",
+                "legal_recourse_per_agreement_general",
+                "arrest",
+                "police",
+                "jail",
+                "visit_home_or_workplace",
+                "inform_family_employer_references",
+                "public_shaming",
+                "absolute_permanent_credit_ban",
+                "other_consequence"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Category"
+        },
+        "claims_human": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Claims Human"
+        },
+        "confidence": {
+          "$ref": "#/$defs/Confidence"
+        },
+        "corrects": {
+          "anyOf": [
+            {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Corrects"
+        },
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "items": {
+          "anyOf": [
+            {
+              "items": {
+                "enum": [
+                  "loan_existence",
+                  "amount",
+                  "overdue_status",
+                  "loan_details"
+                ],
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Items"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "enum": [
+                "acknowledge",
+                "clarify"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Kind"
+        },
+        "negated": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Negated"
+        },
+        "new_value_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "New Value Id"
+        },
+        "offer_type": {
+          "anyOf": [
+            {
+              "enum": [
+                "settlement",
+                "principal_reduction",
+                "restructure",
+                "tenure_change",
+                "penalty_waiver",
+                "fee_reversal",
+                "discount",
+                "other_term_change"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Offer Type"
+        },
+        "quote": {
+          "title": "Quote",
+          "type": "string"
+        },
+        "responds_to": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Responds To",
+          "type": "array"
+        },
+        "role": {
+          "$ref": "#/$defs/Role"
+        },
+        "route": {
+          "anyOf": [
+            {
+              "enum": [
+                "dispute",
+                "verification",
+                "hardship",
+                "human_transfer",
+                "callback",
+                "care_protocol",
+                "stop_honored",
+                "escalation"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Route"
+        },
+        "strength": {
+          "anyOf": [
+            {
+              "enum": [
+                "explicit",
+                "implicit",
+                "ambiguous"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Strength"
+        },
+        "turn": {
+          "minimum": 1,
+          "title": "Turn",
+          "type": "integer"
+        },
+        "type": {
+          "minLength": 1,
+          "title": "Type",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "enum": [
+                "received",
+                "not_received",
+                "pending",
+                "will_verify"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "turn",
+        "quote",
+        "role",
+        "confidence"
+      ],
+      "title": "ExtractedEvent",
+      "type": "object"
+    },
+    "IdentityCheck": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "quote": {
+          "title": "Quote",
+          "type": "string"
+        },
+        "result": {
+          "enum": [
+            "affirmed",
+            "denied",
+            "unclear"
+          ],
+          "title": "Result",
+          "type": "string"
+        },
+        "turn": {
+          "minimum": 1,
+          "title": "Turn",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "turn",
+        "quote",
+        "result"
+      ],
+      "title": "IdentityCheck",
+      "type": "object"
+    },
+    "Role": {
+      "description": "frozen-contract.md \u00a72.3 role labels (CUSTOMER is an accepted alias of BORROWER at parse time).",
+      "enum": [
+        "AGENT",
+        "BORROWER",
+        "OTHER",
+        "UNKNOWN"
+      ],
+      "title": "Role",
+      "type": "string"
+    },
+    "StatedValue": {
+      "additionalProperties": false,
+      "description": "extraction_schema.agent_stated_values item.",
+      "properties": {
+        "amount_norm": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Amount Norm"
+        },
+        "component_of": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Component Of"
+        },
+        "date_norm": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Date Norm"
+        },
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "quote": {
+          "title": "Quote",
+          "type": "string"
+        },
+        "turn": {
+          "minimum": 1,
+          "title": "Turn",
+          "type": "integer"
+        },
+        "type": {
+          "enum": [
+            "payable_total",
+            "emi",
+            "late_fee",
+            "due_date",
+            "other_charge"
+          ],
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "turn",
+        "quote"
+      ],
+      "title": "StatedValue",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "agent_stated_values": {
+      "items": {
+        "$ref": "#/$defs/StatedValue"
+      },
+      "title": "Agent Stated Values",
+      "type": "array"
+    },
+    "call_end": {
+      "additionalProperties": true,
+      "title": "Call End",
+      "type": "object"
+    },
+    "call_frame": {
+      "additionalProperties": true,
+      "title": "Call Frame",
+      "type": "object"
+    },
+    "commitments": {
+      "items": {
+        "$ref": "#/$defs/Commitment"
+      },
+      "title": "Commitments",
+      "type": "array"
+    },
+    "events": {
+      "items": {
+        "$ref": "#/$defs/ExtractedEvent"
+      },
+      "title": "Events",
+      "type": "array"
+    },
+    "identity_checks": {
+      "items": {
+        "$ref": "#/$defs/IdentityCheck"
+      },
+      "title": "Identity Checks",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "extraction/1.0.0",
+      "default": "extraction/1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "turn_languages": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Turn Languages",
+      "type": "object"
+    }
+  },
+  "title": "ExtractionOutput",
+  "type": "object"
+}

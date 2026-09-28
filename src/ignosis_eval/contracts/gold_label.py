@@ -32,6 +32,8 @@ from ignosis_eval.versions import GOLD_LABEL_SCHEMA
 # The full label_confidence vocabulary belongs to the labeling protocol (B-10, pending); only the value
 # the scorer relies on is fixed here.
 LABEL_CONFIDENCE_SURE = "Sure"
+# rubric.yaml › repair_rules.allowlist (AJ-08); a drift test keeps this equal to the rubric.
+REPAIRABLE_CODES = frozenset({"ACC-05"})
 
 
 class GoldGate(Contract):
@@ -83,7 +85,7 @@ class GoldVerdict(Contract):
 
 class GoldOutcome(Contract):
     dispositions: list[Disposition] = Field(default_factory=list)
-    positive: bool = False
+    positive: bool = False  # AJ-09: PTP_STATED is positive only if firm (full or partial amount); labeler applies it
 
 
 class GoldTags(Contract):
@@ -120,7 +122,7 @@ class Adjudication(Contract):
 
 
 class GoldLabel(Contract):
-    schema_version: Literal["gold_label/2.0.0"] = GOLD_LABEL_SCHEMA
+    schema_version: Literal["gold_label/2.1.0"] = GOLD_LABEL_SCHEMA
     item_id: ItemId
     split: Split
     gates: dict[GateId, GoldGate]
@@ -159,6 +161,8 @@ class GoldLabel(Contract):
         if len(non_gate_findings) != len(set(non_gate_findings)):
             errs.append("duplicate non-gate finding codes (fold repeated instances into one finding)")
         for f in self.findings:
+            if f.repair_status is RepairStatus.REPAIRED and f.code not in REPAIRABLE_CODES:
+                errs.append(f"{f.code}: only {sorted(REPAIRABLE_CODES)} can be repaired (AJ-08)")
             if f.code in {g.value for g in GATE_IDS}:
                 gg = self.gates.get(GateId(f.code))
                 if gg is not None and gg.status not in (GateStatus.FAIL, GateStatus.INCONCLUSIVE):

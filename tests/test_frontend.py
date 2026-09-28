@@ -40,7 +40,7 @@ def test_transcript_unit(tmp_path, spec):
     assert pre == {"G7": "OUT_OF_SCOPE", "G8": "NA", "G9": "NA"}  # default profile: G8/G9 lists empty
     statuses = {s.check: s.status for s in ni.frontend.steps}
     assert statuses["DC-02"] == "pending_signoff" and statuses["DC-LANG"] == "pending_signoff"
-    assert statuses["EVALUABILITY-PARTIAL"] == "not_implemented"
+    assert statuses["EVALUABILITY-PARTIAL"] == "not_applicable"  # derived by the verdict engine (V7, AJ-04)
 
 
 def test_unlabeled_transcript_not_evaluable(tmp_path, spec):
@@ -78,7 +78,7 @@ def test_truncation_header_reason(spec):
     p = parse_txt("# truncated_start: true\nAGENT: stub\nBORROWER: stub\n")
     from ignosis_eval.contracts.canonical_input import Turn
 
-    turns = [Turn(turn=i, role=t.role, text=t.text, role_confidence=1.0) for i, t in enumerate(p.turns, 1)]
+    turns = [Turn(turn=i, role=t.role, text=t.text) for i, t in enumerate(p.turns, 1)]
     fr = run_frontend(turns, p.header, InputMode.TRANSCRIPT, spec)
     assert "TRANSCRIPT_TRUNCATED" in [r.value for r in fr.reason_codes]
 
@@ -94,8 +94,9 @@ def test_audio_units_need_cached_asr(tmp_path, spec):
 
     sha = hashlib.sha256((d / "a.wav").read_bytes()).hexdigest()
     ReplayASR.write_cache_entry(tmp_path / "cache", asr, sha, [
-        {"role": "AGENT", "text": "stub asr alpha", "start_s": 0.0, "end_s": 1.0, "role_confidence": 0.99},
-        {"role": "BORROWER", "text": "stub asr beta", "start_s": 1.2, "end_s": 2.0, "role_confidence": 0.99}])
+        {"role": "AGENT", "text": "stub asr alpha", "start_s": 0.0, "end_s": 1.0, "diarization_confidence": 0.99},
+        {"role": "BORROWER", "text": "stub asr beta", "start_s": 1.2, "end_s": 2.0, "diarization_confidence": 0.99}],
+        mapping_confidence=0.97)
     ni_a = build_normalized_input(meta, d, UnitMode.A, spec, asr)
     assert ni_a.header.call_start_ts is None  # R-08: never from audio
     assert {g.gate.value: g.status.value for g in ni_a.frontend.prechecks}["G7"] == "OUT_OF_SCOPE"
@@ -113,3 +114,83 @@ def test_platform_transcript_requires_declared_provenance(tmp_path, spec):
     with pytest.raises(NormalizationError):
         build_normalized_input(meta, d, UnitMode.A_T_PLATFORM, spec)
     assert json.loads(json.dumps(meta.model_dump(mode="json")))["unit_modes"] == ["A+T-platform"]
+
+
+# ------------------------------------------------------------------ AJ-05: call-level role gate, UNKNOWN turns
+def _turns(*roles):
+    from ignosis_eval.contracts.canonical_input import Turn
+    from ignosis_eval.contracts.enums import Role
+
+    return [Turn(turn=i, role=Role(r), text=f"stub {r.lower()} line {i}", unreliable=r == "UNKNOWN")
+            for i, r in enumerate(roles, 1)]
+
+
+@pytest.mark.parametrize("mapping,expected", [(1.0, "EVALUABLE"), (0.85, "EVALUABLE"), (0.8499, "NOT_EVALUABLE"),
+                                              (0.2, "NOT_EVALUABLE")])
+def test_dc00_call_level_mapping_confidence(spec, mapping, expected):
+    assert spec.threshold("role_confidence_min") == 0.85
+    fr = run_frontend(_turns("AGENT", "BORROWER", "AGENT"), TranscriptHeader(), InputMode.TRANSCRIPT, spec,
+                      role_mapping_confidence=mapping)
+    assert fr.evaluability_status.value == expected
+    if expected == "NOT_EVALUABLE":
+        assert [r.value for r in fr.reason_codes] == ["ROLE_UNCERTAIN"]
+
+
+@pytest.mark.parametrize("roles", [("AGENT", "AGENT"), ("BORROWER", "BORROWER"), ("AGENT", "UNKNOWN", "OTHER"),
+                                   ("UNKNOWN", "UNKNOWN")])
+def test_dc00_needs_both_an_agent_and_a_borrower_turn(spec, roles):
+    fr = run_frontend(_turns(*roles), TranscriptHeader(), InputMode.TRANSCRIPT, spec)
+    assert fr.evaluability_status.value == "NOT_EVALUABLE" and [r.value for r in fr.reason_codes] == ["ROLE_UNCERTAIN"]
+
+
+def test_unknown_turns_are_span_unreliable_not_call_level(tmp_path, spec):
+    text = "AGENT: stub agent line one\nBORROWER: stub borrower line two\nUNKNOWN: stub unknown line three\n" \
+           "AGENT: stub agent line four\n"
+    meta, d = _item(tmp_path, text)
+    ni = build_normalized_input(meta, d, UnitMode.TRANSCRIPT, spec)
+    assert ni.frontend.evaluability_status.value == "EVALUABLE"  # an UNKNOWN turn does not make the call NE
+    assert ni.role_mapping_confidence == 1.0  # transcript role labels
+    assert [t.unreliable for t in ni.turns] == [False, False, True, False]
+    steps = {s.check: s.status for s in ni.frontend.steps}
+    assert steps["DC-01-unknown-role-turns"] == "done" and "DC-01-diarization-turn" not in steps
+
+
+def test_unknown_turn_evidence_is_low_confidence(spec):
+    from ignosis_eval.contracts.evaluation_record import RecordBody, SystemInfo
+    from ignosis_eval.engine.finalize import Facts, finalize
+
+    ni = F.make_ni(spec, (("AGENT", "stub agent line alpha"), ("BORROWER", "stub borrower line beta"),
+                          ("UNKNOWN", "stub unknown line gamma")))
+    assert ni.turns[2].unreliable
+    body = RecordBody(gates=[F.gate("G4", "FAIL", evidence=[F.ev(3, "stub unknown line gamma", "UNKNOWN")])])
+    rec = finalize(body, ni, spec, system=SystemInfo(system="B", version="t"), facts=Facts(det_confirmed={"G4": True}))
+    g4 = rec.gate("G4")
+    assert g4.confidence.value == "LOW" and g4.critical_status.value == "SUSPECTED"  # never CONFIRMED on an UNKNOWN span
+
+
+def test_diarized_turn_threshold_is_pending(spec):
+    fr = run_frontend(_turns("AGENT", "BORROWER"), TranscriptHeader(), InputMode.AUDIO, spec,
+                      role_mapping_confidence=0.97, diarized=True)
+    step = {s.check: s for s in fr.steps}["DC-01-diarization-turn"]
+    assert step.status == "pending_signoff" and step.blocker == "B-06/B-11"
+    with pytest.raises(Exception, match="PENDING"):
+        spec.threshold("diarization_turn_min_confidence")
+
+
+def test_asr_cache_requires_mapping_confidence(tmp_path, spec):
+    import hashlib
+
+    meta, d = _item(tmp_path, F.stub_transcript(), modes=("A",), audio=True)
+    asr = ReplayASR(engine="stub", version="0", cache_dir=tmp_path / "cache")
+    sha = hashlib.sha256((d / "a.wav").read_bytes()).hexdigest()
+    (tmp_path / "cache").mkdir()
+    (tmp_path / "cache" / asr.cache_key(sha)).write_text(json.dumps({"turns": [
+        {"role": "AGENT", "text": "stub asr alpha", "start_s": 0.0, "end_s": 1.0}]}))
+    with pytest.raises(ASRUnavailableError, match="mapping_confidence"):
+        build_normalized_input(meta, d, UnitMode.A, spec, asr)
+    ReplayASR.write_cache_entry(tmp_path / "cache", asr, sha, [
+        {"role": "AGENT", "text": "stub asr alpha", "start_s": 0.0, "end_s": 1.0, "diarization_confidence": 0.5},
+        {"role": "BORROWER", "text": "stub asr beta", "start_s": 1.2, "end_s": 2.0}], mapping_confidence=0.6)
+    ni = build_normalized_input(meta, d, UnitMode.A, spec, asr)
+    assert ni.role_mapping_confidence == 0.6 and ni.frontend.evaluability_status.value == "NOT_EVALUABLE"
+    assert ni.turns[0].diarization_confidence == 0.5

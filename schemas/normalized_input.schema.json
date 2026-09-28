@@ -304,6 +304,17 @@
           "$ref": "#/$defs/FindingState",
           "default": "ASSERTED"
         },
+        "measurement_basis": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MeasurementBasis"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "repair_status": {
           "$ref": "#/$defs/RepairStatus",
           "default": "UNREPAIRED"
@@ -580,6 +591,15 @@
       "title": "InputMode",
       "type": "string"
     },
+    "MeasurementBasis": {
+      "description": "AJ-02: TRT-06 measures duration when the turn has timestamps, otherwise words.",
+      "enum": [
+        "duration",
+        "word_count"
+      ],
+      "title": "MeasurementBasis",
+      "type": "string"
+    },
     "OosReason": {
       "enum": [
         "EXTERNAL_DATA_REQUIRED",
@@ -600,7 +620,8 @@
         "EXTERNAL_DATA_REQUIRED",
         "LANGUAGE_UNSUPPORTED",
         "TRANSCRIPT_TRUNCATED",
-        "STAGE_UNKNOWN"
+        "STAGE_UNKNOWN",
+        "NO_AGENT_TURN_AFTER_REQUEST"
       ],
       "title": "ReasonCode",
       "type": "string"
@@ -689,6 +710,20 @@
           "default": null,
           "title": "Asr Text"
         },
+        "diarization_confidence": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Diarization Confidence"
+        },
         "end_s": {
           "anyOf": [
             {
@@ -716,13 +751,6 @@
         },
         "role": {
           "$ref": "#/$defs/Role"
-        },
-        "role_confidence": {
-          "default": 1.0,
-          "maximum": 1.0,
-          "minimum": 0.0,
-          "title": "Role Confidence",
-          "type": "number"
         },
         "start_s": {
           "anyOf": [
@@ -823,9 +851,15 @@
     "input_mode": {
       "$ref": "#/$defs/InputMode"
     },
+    "role_mapping_confidence": {
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Role Mapping Confidence",
+      "type": "number"
+    },
     "schema_version": {
-      "const": "normalized_input/2.0.0",
-      "default": "normalized_input/2.0.0",
+      "const": "normalized_input/2.1.0",
+      "default": "normalized_input/2.1.0",
       "title": "Schema Version",
       "type": "string"
     },
@@ -844,6 +878,7 @@
     "input_mode",
     "unit_mode",
     "has_timestamps",
+    "role_mapping_confidence",
     "turns",
     "frontend"
   ],

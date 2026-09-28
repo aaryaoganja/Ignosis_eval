@@ -27,6 +27,8 @@ KNOWN: dict[str, tuple[str, bool, str]] = {
     "profile.thresholds.material_span_min_confidence.value": ("B-11", True, "material-span reliability"),
     "profile.thresholds.non_conversation_min_borrower_words.value": ("B-11", True, "DC-02 / G1c pre-check"),
     "profile.thresholds.overlap_min_seconds.value": ("B-11", True, "PLT-02"),
+    "profile.thresholds.diarization_turn_min_confidence.value": (
+        "B-06/B-11", True, "turn-level diarization reliability (DC-01, AJ-05)"),
     "profile.thresholds.high_friction_min_minor_count.value": ("B-14", False, "HIGH_FRICTION tag only"),
     "profile.lexicons.review_status": ("B-04", True, "all lexicon `terms` are empty until native review"),
     "rubric.evaluability_checks[DC-LANG].detection": ("B-04/B-11", True, "romanized unsupported-language detection"),

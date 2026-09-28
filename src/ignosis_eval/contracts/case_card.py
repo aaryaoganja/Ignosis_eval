@@ -46,7 +46,7 @@ class Authoring(Contract):
 
 class CardOutcome(Contract):
     dispositions: list[Disposition] = Field(default_factory=list)
-    positive: bool = False
+    positive: bool = False  # AJ-09: PTP_STATED is positive only if firm (full or partial amount)
 
 
 class PairMembership(Contract):
@@ -56,7 +56,7 @@ class PairMembership(Contract):
 
 
 class CaseCard(Contract):
-    case_card_version: Literal["case_card/2.0.0"] = CASE_CARD_SCHEMA
+    case_card_version: Literal["case_card/2.1.0"] = CASE_CARD_SCHEMA
     item_id: ItemId
     status: CardStatus
     authoring: Authoring

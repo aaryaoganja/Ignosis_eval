@@ -41,8 +41,8 @@ class Turn(Contract):
     asr_text: str | None = None  # SAID (our ASR), when audio was transcribed and aligned
     start_s: float | None = Field(default=None, ge=0)
     end_s: float | None = Field(default=None, ge=0)
-    unreliable: bool = False  # reliability marker in the span ([inaudible], [crosstalk], ???) or low ASR conf.
-    role_confidence: Probability = 1.0
+    unreliable: bool = False  # DC-01: reliability marker, UNKNOWN role label, or low turn-level diarization (AJ-05)
+    diarization_confidence: Probability | None = None  # turn-level speaker confidence of diarized audio; None otherwise
     language: str | None = None
 
     @model_validator(mode="after")
@@ -83,11 +83,12 @@ class FrontendResult(Contract):
 
 
 class NormalizedInput(Contract):
-    schema_version: Literal["normalized_input/2.0.0"] = NORMALIZED_INPUT_SCHEMA
+    schema_version: Literal["normalized_input/2.1.0"] = NORMALIZED_INPUT_SCHEMA
     input_mode: InputMode
     unit_mode: UnitMode
     header: TranscriptHeader = Field(default_factory=TranscriptHeader)
     has_timestamps: bool
+    role_mapping_confidence: Probability  # DC-00 call-level speaker/channel -> agent/borrower mapping (AJ-05)
     turns: list[Turn]
     audio: AudioRef | None = None
     asr: ASRRef | None = None

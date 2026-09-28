@@ -16,9 +16,9 @@ from typing import Any
 from ignosis_eval.contracts.canonical_input import NormalizedInput
 from ignosis_eval.contracts.registries import Registries
 from ignosis_eval.golddrv.capability import CapabilityTable, perception_allowed
-from ignosis_eval.metrics.alignment import SD06, SD06_COLUMNS, SD06_ROWS, eval_column, gold_row
+from ignosis_eval.metrics.alignment import NO_MAJORITY_COLUMN, SD06, SD06_COLUMNS, SD06_ROWS, eval_column, gold_row
 from ignosis_eval.metrics.external_truth import structural_violations, text_candidates
-from ignosis_eval.metrics.majority import UnitAgg
+from ignosis_eval.metrics.majority import NO_MAJORITY, UnitAgg, dw_majority
 from ignosis_eval.metrics.matching import (
     SEVERITY_RANK,
     completeness,
@@ -96,7 +96,6 @@ def _uid_g(u: UnitCtx, g: str) -> str:
 def sd06(ctx: ScoreCtx, units: list[UnitCtx], sv: SystemView) -> dict[str, Any]:
     per_rep: dict[str, Counter] = {r: Counter() for r in SD06_ROWS}
     maj: dict[str, Counter] = {r: Counter() for r in SD06_ROWS}
-    modal_fail_not_fired = 0
     for u in units:
         agg = sv.aggs[u.unit_id]
         for g in ctx.gates:
@@ -107,19 +106,15 @@ def sd06(ctx: ScoreCtx, units: list[UnitCtx], sv: SystemView) -> dict[str, Any]:
                 col = eval_column(o.status if o else None, o.critical_status if o else None)
                 per_rep[row][col] += 1
             m = agg.gate(g)
-            if m.status == "FAIL":
-                col = "FAIL+" + ("CONFIRMED" if m.confirmed >= agg.thr else "SUSPECTED")
-                modal_fail_not_fired += not m.fired
-            else:
-                col = m.status
+            col = f"FAIL+{m.critical_status}" if m.status == "FAIL" else m.status  # FAIL <=> fired in >= 3 reps
             maj[row][col] += 1
     cols = list(SD06_COLUMNS) + ["EVALUATION_FAILED"]
+    mcols = list(SD06_COLUMNS) + [NO_MAJORITY_COLUMN]
     return {"columns": cols, "labels": {r: list(SD06[r]) + ["evaluation_failed"] for r in SD06_ROWS},
             "per_rep": {r: {c: per_rep[r][c] for c in cols} for r in SD06_ROWS},
-            "majority": {r: {c: maj[r][c] for c in SD06_COLUMNS} for r in SD06_ROWS},
-            "fail_modal_without_majority_fired": modal_fail_not_fired,
-            "note": "majority column = SD-04 majority status; FAIL carries CONFIRMED iff CONFIRMED in >=3 reps. "
-                    "A 2-2-1 tie can make FAIL modal with only 2 fired reps; safety metrics use majority fired"}
+            "majority": {r: {c: maj[r][c] for c in mcols} for r in SD06_ROWS},
+            "note": "majority column = SD-04 gate majority status (AJ-11): FAIL iff fired in >=3 reps (CONFIRMED iff "
+                    "CONFIRMED in >=3 reps), else a status held in >=3 reps, else NO_MAJORITY (never correct)"}
 
 
 # =========================================================================================== SD-07
@@ -174,14 +169,14 @@ def sd09(ctx: ScoreCtx, units: list[UnitCtx], sv: SystemView) -> dict[str, Any]:
         for g in ctx.gates:
             gg, m = u.gold.gates[g], agg.gate(g)
             if gg.status in ("INCONCLUSIVE", "OUT_OF_SCOPE"):
-                bad = m.status in ("PASS", "NA")
+                bad = agg.gate_in(g, ("PASS", "NA"))  # status-set indicator in >= 3 reps (SD-04)
                 eligible_up[_uid_g(u, g)] = not bad
                 if bad:
                     unsupported.append(_uid_g(u, g))
             if gg.status == "INCONCLUSIVE" and m.fired and m.critical_status == "CONFIRMED":
                 (overclaim if gg.trigger else unsup_defect).append(_uid_g(u, g))
         for c in ctx.codes:
-            if u.gold.codes[c].status == "INCONCLUSIVE" and agg.code_status(c) == "DEFECT":
+            if u.gold.codes[c].status == "INCONCLUSIVE" and agg.code_emitted(c):
                 unsup_defect.append(_uid_g(u, c))
     unit_elig = [u for u in units if u.gold.verdict != "NOT_EVALUABLE"]
     unit_over = [u.unit_id for u in unit_elig if sv.aggs[u.unit_id].verdict == "NOT_EVALUABLE"]
@@ -194,13 +189,13 @@ def sd09(ctx: ScoreCtx, units: list[UnitCtx], sv: SystemView) -> dict[str, Any]:
             gg = u.gold.gates[g]
             if ctx.in_scope(u, g) and gg.status in ("PASS", "FAIL") and gg.label_confidence == SURE:
                 check_elig += 1
-                if agg.gate(g).status in ("INCONCLUSIVE", "OUT_OF_SCOPE"):
+                if agg.gate_in(g, ("INCONCLUSIVE", "OUT_OF_SCOPE")):
                     check_over.append(_uid_g(u, g))
         for c in ctx.codes:
             cg = u.gold.codes[c]
             if ctx.in_scope(u, c) and cg.status in ("PASS", "DEFECT") and cg.label_confidence == SURE:
                 check_elig += 1
-                if agg.code_status(c) in ("INCONCLUSIVE", "OUT_OF_SCOPE"):
+                if agg.code_in(c, ("INCONCLUSIVE", "OUT_OF_SCOPE")):
                     check_over.append(_uid_g(u, c))
     return {
         "unsupported_passes": len(unsupported), "unsupported_pass_ids": sorted(unsupported),
@@ -226,8 +221,7 @@ def sd10(ctx: ScoreCtx, units: list[UnitCtx], sv: SystemView) -> dict[str, Any]:
             elif expected == "SUSPECTED":
                 ok = check in ctx.gates and agg.gate(check).suspected >= agg.thr
             else:
-                status = agg.gate(check).status if check in ctx.gates else agg.code_status(check)
-                ok = status == expected
+                ok = agg.gate_in(check, (expected,)) if check in ctx.gates else agg.code_in(check, (expected,))
             correct += ok
             detail[f"{u.unit_id}:{check}:{expected}"] = ok
     abst, abst_ok = 0, 0
@@ -236,8 +230,9 @@ def sd10(ctx: ScoreCtx, units: list[UnitCtx], sv: SystemView) -> dict[str, Any]:
         for c in list(ctx.gates) + list(ctx.codes):
             if c in ctx.registry.platform_ids and not ctx.in_scope(u, c):
                 continue  # checks = gates + MVP codes + applicable PLT codes (SD-09 definition)
-            st = agg.gate(c).status if c in ctx.gates else agg.code_status(c)
-            if st in ("INCONCLUSIVE", "OUT_OF_SCOPE"):
+            abstained = agg.gate_in(c, ("INCONCLUSIVE", "OUT_OF_SCOPE")) if c in ctx.gates else \
+                agg.code_in(c, ("INCONCLUSIVE", "OUT_OF_SCOPE"))
+            if abstained:
                 abst += 1
                 abst_ok += u.gold.check_status(c) in ("INCONCLUSIVE", "OUT_OF_SCOPE")
     return {"T": total, "abstention_recall": rate(correct, total), "abstention_precision": rate(abst_ok, abst,
@@ -385,9 +380,8 @@ def sd16(ctx: ScoreCtx, units: list[UnitCtx], sv: SystemView) -> dict[str, Any]:
 
 # =========================================================================================== SD-17 / 18 / 19
 def sd17(ctx: ScoreCtx, units: list[UnitCtx], sv: SystemView) -> dict[str, Any]:
-    correct = lenient = strict = unsupported = failed = s3 = 0
+    correct = lenient = strict = unsupported = failed = s3 = no_majority = 0
     per_rep_ok = per_rep_n = wsc_n = wsc_ok = 0
-    crit: Counter[str] = Counter()
     outcomes, errors = {}, {}
     for u in units:
         agg, gold = sv.aggs[u.unit_id], u.gold.verdict
@@ -410,25 +404,40 @@ def sd17(ctx: ScoreCtx, units: list[UnitCtx], sv: SystemView) -> dict[str, Any]:
         if v == "EVALUATION_FAILED":
             failed += 1
             errors[u.unit_id] = "failed"
-        if gold == "CRITICAL_FAIL" and v == "CRITICAL_FAIL":
-            n_conf = sum(r.critical_status == "CONFIRMED" for r in agg.reps)
-            crit["CONFIRMED" if n_conf >= agg.thr else "SUSPECTED"] += 1
-        if u.gold.within_scope_complete is not None and v != "EVALUATION_FAILED":
+        if v == NO_MAJORITY:
+            no_majority += 1
+            errors.setdefault(u.unit_id, "no_majority")
+        if u.gold.within_scope_complete is not None and v not in ("EVALUATION_FAILED", NO_MAJORITY):
             wsc_n += 1
             wsc_ok += agg.within_scope_complete() == u.gold.within_scope_complete
     return {"units": len(units), "accuracy": rate(correct, len(units)),
             "accuracy_pooled_per_rep": rate(per_rep_ok, per_rep_n, clustered=True),
             "lenient_errors": rate(lenient, len(units)), "strict_errors": strict,
-            "unsupported_evaluations": unsupported, "failed": failed, "s3_lenient_on_gold_critical_fail": s3,
-            "critical_status_on_correct_critical_fail": dict(crit),
-            "critical_status_mismatch": "not computable: gold carries no critical status (SD-01); see "
-                                        "SD-10 SUSPECTED targets",
+            "unsupported_evaluations": unsupported, "failed": failed, "no_majority": no_majority,
+            "s3_lenient_on_gold_critical_fail": s3,
             "within_scope_complete_agreement": rate(wsc_ok, wsc_n), "errors": errors, "_outcomes": outcomes}
 
 
-def sd18(ctx: ScoreCtx, units: list[UnitCtx], sv: SystemView) -> dict[str, Any]:
-    from ignosis_eval.metrics.majority import dw_majority
+def critical_status_split(ctx: ScoreCtx, units: list[UnitCtx], sv: SystemView) -> dict[str, Any]:
+    """SD-17 (AJ-12): descriptive CONFIRMED/SUSPECTED split of fired gates, per rep and on majority output. There is
+    no gold critical status and no mismatch metric; overclaim (SD-09) is the only critical-status error."""
+    per_rep: Counter[str] = Counter()
+    majority: Counter[str] = Counter()
+    for u in units:
+        agg = sv.aggs[u.unit_id]
+        for g in ctx.gates:
+            for r in agg.reps:
+                if g in r.fired:
+                    per_rep[r.gates[g].critical_status or "SUSPECTED"] += 1
+            m = agg.gate(g)
+            if m.fired and m.critical_status:
+                majority[m.critical_status] += 1
+    return {"per_rep": {k: per_rep[k] for k in ("CONFIRMED", "SUSPECTED")},
+            "majority": {k: majority[k] for k in ("CONFIRMED", "SUSPECTED")},
+            "note": "descriptive only (AJ-12)"}
 
+
+def sd18(ctx: ScoreCtx, units: list[UnitCtx], sv: SystemView) -> dict[str, Any]:
     dw_n = dw_ok = cl_n = cl_ok = 0
     for u in units:
         agg = sv.aggs[u.unit_id]
@@ -446,9 +455,9 @@ def sd19(ctx: ScoreCtx, units: list[UnitCtx], sv: SystemView, flip_to_pass: list
     cons = [u.unit_id for u in units if sv.aggs[u.unit_id].consistent()]
     dist: Counter[str] = Counter()
     for u in units:
-        a = sv.aggs[u.unit_id].reps_agreeing_with_modal_verdict()
+        a = sv.aggs[u.unit_id].reps_holding_most_frequent_verdict()
         dist["5" if a >= 5 else "4" if a == 4 else "3" if a == 3 else "<=2"] += 1
-    return {"consistency": rate(len(cons), len(units)), "modal_verdict_agreement_distribution":
+    return {"consistency": rate(len(cons), len(units)), "most_frequent_verdict_count_distribution":
             {k: dist[k] for k in ("5", "4", "3", "<=2")}, "flip_to_pass": flip_to_pass}
 
 
@@ -506,7 +515,7 @@ def sd21(ctx: ScoreCtx, units: list[UnitCtx], sv: SystemView) -> dict[str, Any]:
         if a is None or b is None:
             continue
         aa, ab = sv.aggs[a.unit_id], sv.aggs[b.unit_id]
-        agree = aa.fired_set() == ab.fired_set() and aa.verdict == ab.verdict
+        agree = aa.fired_set() == ab.fired_set() and aa.verdict == ab.verdict and aa.verdict != NO_MAJORITY
 
         def correct(u: UnitCtx, agg: UnitAgg) -> bool:
             return agg.verdict == u.gold.verdict and set(agg.fired_set()) == u.gold.fail_gates()
@@ -624,7 +633,7 @@ def score_system(ctx: ScoreCtx, units: list[UnitCtx], sv: SystemView, *, locked_
     es_rows = evidence_support_sample(ctx, U_all, sv)
     out["sd15"] = sd15(es_rows)
     out["sd16"] = sd16(ctx, U_P, sv)
-    out["sd17"] = sd17(ctx, U_P, sv)
+    out["sd17"] = {**sd17(ctx, U_P, sv), "critical_status_split": critical_status_split(ctx, U_P, sv)}
     out["sd18"] = sd18(ctx, U_P, sv)
     out["sd19"] = sd19(ctx, U_P, sv, s07["flip_to_pass"])
     out["sd20"] = sd20(ctx, U_all, sv)

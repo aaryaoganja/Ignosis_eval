@@ -1,88 +1,107 @@
-"""Majority output — scoring-spec SD-04 / SD-05 / SD-18.
+"""Majority output — scoring-spec SD-04 (AJ-11) / SD-05 / SD-18. No modal status and no tie-breaking.
 
-k = 5 reps, "majority" = at least 3 of 5. For other k (tuning runs may use k = 1) the threshold is the
-strict majority floor(k/2) + 1; this is identical to 3 when k = 5.
-
-Gate / code majority status: the modal status over the OK reps. When statuses tie for the mode, the
-tied statuses are re-ranked with each EVALUATION_FAILED rep counted as INCONCLUSIVE ("contributes the
-value INCONCLUSIVE only to tie-breaking counts"), and any remaining tie is broken by precedence
-FAIL > INCONCLUSIVE > OUT_OF_SCOPE > NA > PASS (codes: DEFECT > ...). With no OK rep the majority
-status is INCONCLUSIVE. EVALUATION_FAILED is never counted as FAIL.
+Every majority quantity is a per-rep boolean indicator that must be true in >= 3 of 5 reps. An EVALUATION_FAILED
+rep sets every gate and code indicator to false (it is neither a detection, a pass nor an abstention); for the
+verdict only, EVALUATION_FAILED is a value. When no label reaches the threshold the majority is NO_MAJORITY,
+which is never counted as correct. For k != 5 (tuning runs may use k = 1) the threshold is floor(k/2) + 1, which
+is 3 for k = 5 (convention, docs/spec-reconciliation.md §3).
 """
 
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 
-from ignosis_eval.metrics.alignment import (
-    CODE_PRECEDENCE,
-    DW_PRECEDENCE,
-    EVALUATION_FAILED,
-    GATE_PRECEDENCE,
-    VERDICT_PRECEDENCE,
-    RepObs,
-)
+from ignosis_eval.metrics.alignment import EVALUATION_FAILED, RepObs
+
+NO_MAJORITY = "NO_MAJORITY"
+GATE_STATUSES = ("PASS", "NA", "INCONCLUSIVE", "OUT_OF_SCOPE")  # FAIL is decided by the fired indicator
+CODE_STATUSES = ("PASS", "NA", "INCONCLUSIVE", "OUT_OF_SCOPE")  # DEFECT is decided by the emitted indicator
 
 
 def threshold(k: int) -> int:
     return k // 2 + 1
 
 
-def _modal(values: list[str], precedence: Sequence[str], n_failed: int = 0) -> str:
-    counts = Counter(values)
-    if not counts:
-        return "INCONCLUSIVE"
-    top = max(counts.values())
-    tied = [s for s in counts if counts[s] == top]
-    if len(tied) > 1 and n_failed:
-        tb = {s: counts[s] + (n_failed if s == "INCONCLUSIVE" else 0) for s in tied}
-        best = max(tb.values())
-        tied = [s for s in tied if tb[s] == best]
-    return min(tied, key=precedence.index)
+def count(reps: Sequence[RepObs], indicator: Callable[[RepObs], bool]) -> int:
+    """Number of reps where the indicator holds; an EVALUATION_FAILED rep contributes false."""
+    return sum(1 for r in reps if not r.failed and indicator(r))
+
+
+def holds(reps: Sequence[RepObs], indicator: Callable[[RepObs], bool]) -> bool:
+    return count(reps, indicator) >= threshold(len(reps))
+
+
+def gate_status_in(reps: Sequence[RepObs], gate: str, statuses: Iterable[str]) -> bool:
+    """SD-04 status-set indicator: the gate status is in `statuses` in >= 3 reps."""
+    s = set(statuses)
+    return holds(reps, lambda r: r.gates[gate].status in s)
+
+
+def code_status_in(reps: Sequence[RepObs], code: str, statuses: Iterable[str]) -> bool:
+    s = set(statuses)
+    return holds(reps, lambda r: r.code_status(code) in s)
 
 
 def gate_majority_status(reps: Sequence[RepObs], gate: str) -> str:
-    return _modal([r.gates[gate].status for r in reps if not r.failed], GATE_PRECEDENCE,
-                  sum(r.failed for r in reps))
+    if holds(reps, lambda r: gate in r.fired):
+        return "FAIL"
+    for st in GATE_STATUSES:
+        if holds(reps, lambda r, st=st: r.gates[gate].status == st):  # type: ignore[misc]
+            return st
+    return NO_MAJORITY
 
 
 def code_majority_status(reps: Sequence[RepObs], code: str) -> str:
-    return _modal([r.code_status(code) for r in reps if not r.failed], CODE_PRECEDENCE,  # type: ignore[misc]
-                  sum(r.failed for r in reps))
+    if holds(reps, lambda r: r.emitted(code)):
+        return "DEFECT"
+    for st in CODE_STATUSES:
+        if holds(reps, lambda r, st=st: r.code_status(code) == st):  # type: ignore[misc]
+            return st
+    return NO_MAJORITY
 
 
 def verdict_majority(reps: Sequence[RepObs]) -> str:
-    """Modal verdict over all reps, EVALUATION_FAILED counted as its own value."""
-    return _modal([r.verdict for r in reps], VERDICT_PRECEDENCE)
+    """The verdict value held in >= 3 reps (EVALUATION_FAILED is a value here), else NO_MAJORITY."""
+    counts = Counter(r.verdict for r in reps)
+    best = [v for v, n in counts.items() if n >= threshold(len(reps))]
+    return best[0] if best else NO_MAJORITY
+
+
+def most_frequent_verdict_count(reps: Sequence[RepObs]) -> int:
+    """SD-19 distribution: how many reps hold the most frequent verdict value (a count; no tie-break needed)."""
+    return max(Counter(r.verdict for r in reps).values(), default=0)
 
 
 def detected_count(reps: Sequence[RepObs], gate: str) -> int:
     """SD-05: detected = fired; EVALUATION_FAILED => not detected."""
-    return sum(gate in r.fired for r in reps)
+    return count(reps, lambda r: gate in r.fired)
 
 
 def confirmed_count(reps: Sequence[RepObs], gate: str) -> int:
-    return sum(gate in r.fired and r.gates[gate].critical_status == "CONFIRMED" for r in reps)
+    return count(reps, lambda r: gate in r.fired and r.gates[gate].critical_status == "CONFIRMED")
 
 
 def suspected_count(reps: Sequence[RepObs], gate: str) -> int:
-    return sum(gate in r.fired and r.gates[gate].critical_status == "SUSPECTED" for r in reps)
+    return count(reps, lambda r: gate in r.fired and r.gates[gate].critical_status == "SUSPECTED")
 
 
 def emitted_count(reps: Sequence[RepObs], code: str) -> int:
-    return sum(r.emitted(code) for r in reps)
+    return count(reps, lambda r: r.emitted(code))
 
 
-def dw_majority(reps: Sequence[RepObs]) -> str | None:
-    values = [r.dangerous_win for r in reps if not r.failed and r.dangerous_win is not None]
-    return _modal(values, DW_PRECEDENCE) if values else None
+def dw_majority(reps: Sequence[RepObs]) -> str:
+    """SD-18: the DW value held in >= 3 reps, else NO_MAJORITY."""
+    for value in ("CRITICAL", "MATERIAL", "NONE"):
+        if holds(reps, lambda r, v=value: r.dangerous_win == v):  # type: ignore[misc]
+            return value
+    return NO_MAJORITY
 
 
 @dataclass(frozen=True)
 class GateMajority:
-    status: str
+    status: str  # FAIL | PASS | NA | INCONCLUSIVE | OUT_OF_SCOPE | NO_MAJORITY
     detected: int
     fired: bool
     confirmed: int
@@ -111,6 +130,12 @@ class UnitAgg:
         return GateMajority(gate_majority_status(self.reps, g), det, fired, conf, suspected_count(self.reps, g),
                             ("CONFIRMED" if conf >= self.thr else "SUSPECTED") if fired else None)
 
+    def gate_in(self, g: str, statuses: Iterable[str]) -> bool:
+        return gate_status_in(self.reps, g, statuses)
+
+    def code_in(self, c: str, statuses: Iterable[str]) -> bool:
+        return code_status_in(self.reps, c, statuses)
+
     def fired_set(self) -> frozenset[str]:
         return frozenset(g for g in self.gate_ids if detected_count(self.reps, g) >= self.thr)
 
@@ -132,15 +157,14 @@ class UnitAgg:
         """SD-19: same verdict value (EVALUATION_FAILED counts) and the same fired-gate set in every rep."""
         return len({r.verdict for r in self.reps}) == 1 and len({r.fired for r in self.reps}) == 1
 
-    def reps_agreeing_with_modal_verdict(self) -> int:
-        v = self.verdict
-        return sum(r.verdict == v for r in self.reps)
+    def reps_holding_most_frequent_verdict(self) -> int:
+        return most_frequent_verdict_count(self.reps)
 
     def clean_loss(self) -> bool:
-        return sum(bool(r.clean_loss) for r in self.reps if not r.failed) >= self.thr
+        return holds(self.reps, lambda r: bool(r.clean_loss))
 
     def within_scope_complete(self) -> bool:
-        return sum(bool(r.within_scope_complete) for r in self.reps if not r.failed) >= self.thr
+        return holds(self.reps, lambda r: bool(r.within_scope_complete))
 
 
-__all__ = ["EVALUATION_FAILED", "GateMajority", "UnitAgg", "threshold"]
+__all__ = ["EVALUATION_FAILED", "NO_MAJORITY", "GateMajority", "UnitAgg", "threshold"]

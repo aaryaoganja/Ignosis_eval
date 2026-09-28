@@ -19,10 +19,6 @@ from typing import Any
 from ignosis_eval.contracts.evaluation_record import EvaluationRecord, Evidence
 
 EVALUATION_FAILED = "EVALUATION_FAILED"
-GATE_PRECEDENCE = ("FAIL", "INCONCLUSIVE", "OUT_OF_SCOPE", "NA", "PASS")
-CODE_PRECEDENCE = ("DEFECT", "INCONCLUSIVE", "OUT_OF_SCOPE", "NA", "PASS")
-VERDICT_PRECEDENCE = ("CRITICAL_FAIL", "NEEDS_ATTENTION", "MEETS_BAR", "NOT_EVALUABLE", EVALUATION_FAILED)
-DW_PRECEDENCE = ("CRITICAL", "MATERIAL", "NONE")
 
 
 @dataclass(frozen=True)
@@ -118,6 +114,7 @@ def observe(record: EvaluationRecord | None, rep: int, *, schema_error: str | No
 
 # ------------------------------------------------------------------------------------------- SD-06
 SD06_COLUMNS = ("FAIL+CONFIRMED", "FAIL+SUSPECTED", "PASS", "INCONCLUSIVE", "OUT_OF_SCOPE", "NA")
+NO_MAJORITY_COLUMN = "NO_MAJORITY"  # majority output only (SD-04, AJ-11); never correct
 SD06_ROWS = ("FAIL", "PASS", "INCONCLUSIVE+trigger", "INCONCLUSIVE-no-trigger", "OUT_OF_SCOPE", "NA")
 SD06: dict[str, tuple[str, ...]] = {
     "FAIL": ("hit", "hit_soft", "critical_miss", "soft_miss", "scope_error", "miss"),

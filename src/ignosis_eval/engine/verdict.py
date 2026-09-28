@@ -23,14 +23,18 @@ from ignosis_eval.contracts.enums import (
 from ignosis_eval.contracts.evaluation_record import CheckStatusEntry, Finding, GateResult, Outcome, Tags
 from ignosis_eval.spec.registry import Registry
 
-_DOWNGRADE = {Severity.MAJOR: Severity.MINOR, Severity.MINOR: Severity.INFORMATIONAL}
-
-
 def apply_repair(f: Finding, registry: Registry) -> Finding:
-    """repair_rules: an explicitly repaired Major becomes Minor; a repaired Minor becomes Informational.
-    Gates are never repairable (gate outcomes are GateResults, not findings)."""
-    if f.repair_status is RepairStatus.REPAIRED and f.code not in registry.gate_ids and f.severity in _DOWNGRADE:
-        return f.model_copy(update={"severity": _DOWNGRADE[f.severity]})
+    """repair_rules (AJ-08): the allowlist is {ACC-05}. A repaired ACC-05 is MINOR, an unrepaired one MAJOR. A
+    repair flag on any other code is ignored (reset to UNREPAIRED, and a fixed-severity code gets its rubric
+    severity back): it is scored as unrepaired. There is no Minor -> Informational repair; gates are never
+    repairable (gate outcomes are GateResults, not findings)."""
+    if f.code in registry.repair_allowlist:
+        sev = Severity.MINOR if f.repair_status is RepairStatus.REPAIRED else Severity.MAJOR
+        return f.model_copy(update={"severity": sev}) if f.severity is not sev else f
+    if f.repair_status is RepairStatus.REPAIRED:
+        cd = registry.checks.get(f.code)
+        base = cd.severity if cd is not None and cd.severity is not None and not cd.severity_rule else f.severity
+        return f.model_copy(update={"repair_status": RepairStatus.UNREPAIRED, "severity": base})
     return f
 
 
@@ -42,6 +46,19 @@ class VerdictResult:
     gates: list[GateResult]
     findings: list[Finding]
     checks: list[CheckStatusEntry]
+    evaluability: EvaluabilityStatus = EvaluabilityStatus.EVALUABLE
+
+
+def derive_evaluability(gates: list[GateResult], checks: list[CheckStatusEntry], registry: Registry
+                        ) -> EvaluabilityStatus:
+    """V7 (AJ-04): PARTIAL iff at least one in-scope check ends INCONCLUSIVE. OUT_OF_SCOPE checks are not
+    INCONCLUSIVE; a gate reported FAIL/SUSPECTED from an in-span trigger is FAIL, not INCONCLUSIVE; codes
+    NOT_EVALUATED_IN_MVP are never emitted and are ignored if present."""
+    not_eval = set(registry.not_evaluated)
+    if any(g.status is GateStatus.INCONCLUSIVE for g in gates) or any(
+            c.status is CheckStatus.INCONCLUSIVE and c.code not in not_eval for c in checks):
+        return EvaluabilityStatus.PARTIAL
+    return EvaluabilityStatus.EVALUABLE
 
 
 def decide(*, evaluability: EvaluabilityStatus, reason_codes: list[ReasonCode], gates: list[GateResult],
@@ -62,37 +79,33 @@ def decide(*, evaluability: EvaluabilityStatus, reason_codes: list[ReasonCode], 
         for cid in registry.mvp_code_ids:
             if cid not in explicit and not any(f.code == cid for f in kept_findings):
                 new_checks.append(CheckStatusEntry(code=cid, status=CheckStatus.INCONCLUSIVE, reason_codes=reason_codes))
+        ne = EvaluabilityStatus.NOT_EVALUABLE
         if failed_pre:
             cs = CriticalStatus.CONFIRMED if any(g.critical_status is CriticalStatus.CONFIRMED for g in failed_pre) \
                 else CriticalStatus.SUSPECTED
-            return VerdictResult(Verdict.CRITICAL_FAIL, cs, False, new_gates, kept_findings, new_checks)
-        return VerdictResult(Verdict.NOT_EVALUABLE, None, False, new_gates, kept_findings, new_checks)
+            return VerdictResult(Verdict.CRITICAL_FAIL, cs, False, new_gates, kept_findings, new_checks, ne)
+        return VerdictResult(Verdict.NOT_EVALUABLE, None, False, new_gates, kept_findings, new_checks, ne)
 
-    wsc = not any(g.status is GateStatus.INCONCLUSIVE for g in gates) \
-        and not any(c.status is CheckStatus.INCONCLUSIVE for c in checks) \
-        and not any(f.finding_state is FindingState.POSSIBLE for f in findings)  # V7
+    ev = derive_evaluability(gates, checks, registry)  # V7 (AJ-04)
+    wsc = ev is EvaluabilityStatus.EVALUABLE and not any(f.finding_state is FindingState.POSSIBLE for f in findings)
     failed = [g for g in gates if g.status is GateStatus.FAIL]
     if failed:  # V3
         cs = CriticalStatus.CONFIRMED if any(g.critical_status is CriticalStatus.CONFIRMED for g in failed) \
             else CriticalStatus.SUSPECTED
-        return VerdictResult(Verdict.CRITICAL_FAIL, cs, wsc, gates, findings, checks)
+        return VerdictResult(Verdict.CRITICAL_FAIL, cs, wsc, gates, findings, checks, ev)
     if any(f.severity is Severity.MAJOR and f.finding_state is FindingState.ASSERTED
            and f.repair_status is RepairStatus.UNREPAIRED for f in findings):  # V4
-        return VerdictResult(Verdict.NEEDS_ATTENTION, None, wsc, gates, findings, checks)
-    return VerdictResult(Verdict.MEETS_BAR, None, wsc, gates, findings, checks)  # V5 (V6: minors never matter)
+        return VerdictResult(Verdict.NEEDS_ATTENTION, None, wsc, gates, findings, checks, ev)
+    return VerdictResult(Verdict.MEETS_BAR, None, wsc, gates, findings, checks, ev)  # V5 (V6: minors never matter)
 
 
 def positive(outcome: Outcome | None, registry: Registry) -> bool:
+    """AJ-09: PTP_STATED is positive only with firmness=firm (full or partial amount); soft or conditional PTPs
+    are observed but not positive. Other positive-set dispositions need no firmness."""
     if outcome is None:
         return False
-    for d in outcome.dispositions:
-        if d.value not in registry.positive_set:
-            continue
-        if d.value == "PTP_STATED" and registry.positive_ptp_requires_firmness:
-            if outcome.firmness is None or outcome.firmness.value not in registry.positive_ptp_requires_firmness:
-                continue
-        return True
-    return False
+    return registry.outcome_positive([d.value for d in outcome.dispositions],
+                                     outcome.firmness.value if outcome.firmness is not None else None)
 
 
 def tags(*, verdict: Verdict, gates: list[GateResult], findings: list[Finding], outcome: Outcome | None,

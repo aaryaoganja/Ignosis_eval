@@ -38,6 +38,12 @@ def rubric_section(spec: Spec) -> str:
     for gid in reg.gate_ids:
         raw = reg.get(gid).raw
         lines.append(f"- {gid} {raw['name']}: {_clean(raw['description'])}")
+        for name, text in (raw.get("definitions") or {}).items():
+            lines.append(f"  - {name}: {_clean(text)}")
+        for row in raw.get("decision_table") or []:  # ordered; first matching row wins (e.g. G5, AJ-03)
+            extra = ", ".join(f"{k}: {_clean(v)}" for k, v in row.items() if k not in ("row", "condition", "result"))
+            lines.append(f"  - row {row['row']}: if {_clean(row['condition'])} -> {row['result']}"
+                         + (f" ({extra})" if extra else ""))
     lines.append("Codes:")
     for cid in reg.code_ids + reg.platform_ids:
         raw = reg.get(cid).raw

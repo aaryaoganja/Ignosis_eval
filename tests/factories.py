@@ -119,9 +119,10 @@ def record(gates: dict[str, Any] | None = None, findings: list[Finding] | None =
     input_mode = {"TRANSCRIPT": "TRANSCRIPT", "T-gold": "TRANSCRIPT", "T-asr": "TRANSCRIPT", "A": "AUDIO",
                   "A+T": "AUDIO_TRANSCRIPT", "A+T-platform": "AUDIO_TRANSCRIPT"}[unit_mode]
     return EvaluationRecord(
-        record_status=RecordStatus.OK, system=SystemInfo(system=system, version="test"),
-        contract_version="1.0.0-frozen", rubric_version="1.0-mvp", profile_id="collections_default_v1",
-        profile_version="1", input_mode=input_mode, unit_mode=unit_mode, verdict=verdict,
+        record_status=RecordStatus.OK, confidence_source=kw.pop("confidence_source", "COMPUTED"),
+        system=SystemInfo(system=system, version="test"),
+        contract_version="1.1.0-frozen", rubric_version="1.1-mvp", profile_id="collections_default_v1",
+        profile_version="1.1.0", input_mode=input_mode, unit_mode=unit_mode, verdict=verdict,
         critical_status=critical_status, within_scope_complete=kw.pop("within_scope_complete", True),
         evaluability=EvaluabilityResult(status=EvaluabilityStatus.EVALUABLE), gates=gs, findings=findings or [],
         tags=kw.pop("tags", Tags()), **kw)
@@ -130,8 +131,8 @@ def record(gates: dict[str, Any] | None = None, findings: list[Finding] | None =
 def failed(unit_mode: str = "TRANSCRIPT", system: str = "SYS-1") -> EvaluationRecord:
     input_mode = "TRANSCRIPT" if unit_mode in ("TRANSCRIPT", "T-gold", "T-asr") else "AUDIO"
     return EvaluationRecord(record_status=RecordStatus.EVALUATION_FAILED, system=SystemInfo(system=system, version="t"),
-                            contract_version="1.0.0-frozen", rubric_version="1.0-mvp",
-                            profile_id="collections_default_v1", profile_version="1", input_mode=input_mode,
+                            contract_version="1.1.0-frozen", rubric_version="1.1-mvp",
+                            profile_id="collections_default_v1", profile_version="1.1.0", input_mode=input_mode,
                             unit_mode=unit_mode, failure=FailureInfo(reason="schema-invalid (stub)", schema_attempts=2))
 
 
@@ -142,14 +143,15 @@ def make_ni(sp: Spec, turns=STUB_TURNS, *, header: dict[str, Any] | None = None,
     from ignosis_eval.contracts.enums import InputMode
     from ignosis_eval.pipeline.prechecks import run_frontend
 
-    ts = [Turn(turn=i, role=Role(r), text=t, supplied_text=t) for i, (r, t) in enumerate(turns, 1)]
+    ts = [Turn(turn=i, role=Role(r), text=t, supplied_text=t, unreliable=Role(r) is Role.UNKNOWN)
+          for i, (r, t) in enumerate(turns, 1)]
     h = TranscriptHeader(**(header or {}))
     fr = run_frontend(ts, h, InputMode.TRANSCRIPT, sp)
     if evaluability is not None:
         fr = FrontendResult(evaluability_status=EvaluabilityStatus(evaluability), reason_codes=list(reasons),
                             prechecks=fr.prechecks, precheck_findings=fr.precheck_findings, steps=fr.steps)
     return NormalizedInput(input_mode="TRANSCRIPT", unit_mode="TRANSCRIPT", header=h, has_timestamps=False, turns=ts,
-                           frontend=fr)
+                           role_mapping_confidence=1.0, frontend=fr)
 
 
 def body_json(rec: EvaluationRecord) -> str:
@@ -191,7 +193,7 @@ def gold(item_id: str = "ZZ-T01", *, split: str = "dev", gates: dict[str, dict[s
 # ------------------------------------------------------------------------------------------ bench
 def card(item_id: str, *, split: str = "dev", pack: str = "core", unit_modes: list[str] | None = None,
          **kw: Any) -> dict[str, Any]:
-    c = {"case_card_version": "case_card/2.0.0", "item_id": item_id, "status": "approved",
+    c = {"case_card_version": "case_card/2.1.0", "item_id": item_id, "status": "approved",
          "authoring": {"author_id": "auth-1", "created_on": str(date(2026, 1, 1)), "reviewers": ["rev-1"]},
          "split": split, "pack": pack, "language": "en", "unit_modes": unit_modes or ["TRANSCRIPT"],
          "intent": "synthetic stub item for automated tests", "rationale":

@@ -183,6 +183,21 @@ class ReasonCode(StrEnum):
     LANGUAGE_UNSUPPORTED = "LANGUAGE_UNSUPPORTED"
     TRANSCRIPT_TRUNCATED = "TRANSCRIPT_TRUNCATED"
     STAGE_UNKNOWN = "STAGE_UNKNOWN"
+    NO_AGENT_TURN_AFTER_REQUEST = "NO_AGENT_TURN_AFTER_REQUEST"  # AJ-03: G5 decision-table row 4
+
+
+class ConfidenceSource(StrEnum):
+    """AJ-06: A reports the LLM's own labels (SELF_REPORTED); A+, B and K0 compute them."""
+
+    SELF_REPORTED = "SELF_REPORTED"
+    COMPUTED = "COMPUTED"
+
+
+class MeasurementBasis(StrEnum):
+    """AJ-02: TRT-06 measures duration when the turn has timestamps, otherwise words."""
+
+    DURATION = "duration"
+    WORD_COUNT = "word_count"
 
 
 # name in rubric.yaml › enums -> Python enum (used by the drift test)
@@ -211,6 +226,8 @@ RUBRIC_ENUMS: dict[str, type[StrEnum]] = {
     "dangerous_win": DangerousWin,
     "outcome_attribution": OutcomeAttribution,
     "reason_code": ReasonCode,
+    "confidence_source": ConfidenceSource,
+    "measurement_basis": MeasurementBasis,
 }
 
 

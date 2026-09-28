@@ -1,4 +1,4 @@
-# Implementation Blockers — PENDING HUMAN INPUT (contract `1.0.0-frozen`)
+# Implementation Blockers — PENDING HUMAN INPUT (contract `1.1.0-frozen`)
 
 These items are **intentionally unresolved**. The implementing agent must build interfaces and placeholders for them and must **not** choose values, draft content, or substitute defaults.
 
@@ -18,7 +18,7 @@ These items are **intentionally unresolved**. The implementing agent must build 
 | **B-08** | Pricing snapshot | Per-token prices (input, output, cached if applicable), currency, date; ASR price per minute. | Animesh | The cost metric (SD-25) | Token usage capture; cost calculator taking a price table |
 | **B-09** | Audio policy | Consent from role-play participants; voices (2–3 borrower speakers); the TTS voice for agent lines; channel layout (dual-channel default vs mono items to test diarization); file format and sample rate; noise type for the telephony simulation. SNR levels are frozen as 20/10 dB (degraded) and 5 dB (poor) and need confirmation. Also retention and PII handling, and the method for recording the S-02 overlap. | Animesh | Audio recording; modality pack | Telephony simulation script (8 kHz, μ-law, parameterized noise and SNR) |
 | **B-10** | Labeling setup | Who Labeler X and Y are, their availability; the calibration session (CAL-01..03); the adjudicator for contested gate items; fallback to single-labeler gold (which must then be disclosed). | Animesh | B-02 | Templates and tooling |
-| **B-11** | Profile sign-off and pending thresholds | Confirm the `FROZEN_FOR_ASSIGNMENT` defaults. Decide `loop_similarity` (method and threshold), `asr_low_confidence_word`, `asr_unreliable_call_share`, `material_span_min_confidence`, `non_conversation_min_borrower_words`, `overlap_min_seconds`, approved consequence wording (optional), and whether a helpline is part of the vulnerability protocol. ASR-dependent thresholds are tuned on dev audio only. | Animesh | Benchmark freeze; affected checks | All logic, reading thresholds from config |
+| **B-11** | Profile sign-off and pending thresholds | Confirm the `FROZEN_FOR_ASSIGNMENT` defaults. Decide `loop_similarity` (method and threshold), `asr_low_confidence_word`, `asr_unreliable_call_share`, `material_span_min_confidence`, `non_conversation_min_borrower_words`, `overlap_min_seconds`, `diarization_turn_min_confidence` (AJ-05), approved consequence wording (optional), and whether a helpline is part of the vulnerability protocol. ASR-dependent thresholds are tuned on dev audio only. | Animesh | Benchmark freeze; affected checks | All logic, reading thresholds from config |
 | **B-12** | Tuning timebox | Wall-clock timebox per architecture (proposed 4 hours) in addition to the 3 rounds. | Animesh | Dev tuning | — |
 | **B-13** | Primary disposition precedence | Display order when a call has several observable dispositions. Not scored. | Animesh | UI display only | Outcome stored as a set of flags |
 | **B-14** | `HIGH_FRICTION` threshold | Minor-finding count that triggers the tag. Does not affect the verdict. | Animesh | Tag only | Minor counting |
@@ -34,6 +34,9 @@ These items are **intentionally unresolved**. The implementing agent must build 
 6. **A-04 must carry** `truncated_start: true` or an explicit in-text marker.
 7. **G7 items must carry** a `call_start_ts` header. Audio-only renderings of such items expect G7 = `OUT_OF_SCOPE`.
 8. **Case cards, transcripts and audio are frozen and hash-listed before any evaluator prompt exists.**
+9. **G1 scope (AJ-01, FP-14):** K-01, MC-06 and every "no disclosure" item must avoid presupposing a loan relationship before affirmation: no protected item (`loan_existence`, `amount`, `overdue_status`, `loan_details`) before the borrower affirms identity. Naming the organization alone is allowed.
+10. **G5 (AJ-03, FP-14):** items meant to test G5 decision-table row 4 or row 7 must be labeled with the decision table.
+11. **TRT-06 (AJ-02, FP-14):** monologue items should exceed both 30 s and 80 words (`monologue_max_seconds`, `monologue_max_words`), so they hold in every mode.
 
 ## Not blocked — safe to build now
 - The contracts package (JSON Schemas generated from the spec files, and loaders)

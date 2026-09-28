@@ -20,7 +20,7 @@ from typing import Any
 import yaml
 
 from ignosis_eval.canonical import canonical_sha256
-from ignosis_eval.versions import SPEC_CONTRACT_VERSION, SPEC_PROFILE_ID, SPEC_RUBRIC_VERSION
+from ignosis_eval.versions import SPEC_CONTRACT_VERSION, SPEC_PROFILE_ID, SPEC_PROFILE_VERSION, SPEC_RUBRIC_VERSION
 
 PENDING = "PENDING_HUMAN_SIGNOFF"
 SPEC_FILES = ("frozen-contract.md", "rubric.yaml", "profile.yaml", "experiment-protocol.md", "scoring-spec.md",
@@ -155,6 +155,8 @@ def load_spec(spec_dir: str | Path | None = None, *, profile_path: str | Path | 
         problems.append(f"rubric_version {rubric.get('rubric_version')!r} != {SPEC_RUBRIC_VERSION!r}")
     if profile.get("profile_id") != SPEC_PROFILE_ID:
         problems.append(f"profile_id {profile.get('profile_id')!r} != {SPEC_PROFILE_ID!r}")
+    if str(profile.get("profile_version")) != SPEC_PROFILE_VERSION:
+        problems.append(f"profile_version {profile.get('profile_version')!r} != {SPEC_PROFILE_VERSION!r}")
     if str(profile.get("rubric_ref")) != str(rubric.get("rubric_version")):
         problems.append("profile.rubric_ref does not match rubric_version")
     if problems:

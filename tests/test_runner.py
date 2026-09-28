@@ -133,7 +133,7 @@ def test_dev_run_blind_score_reveal(layout, spec, tmp_path):
     out = score_view(view, layout, spec, results.scoring)
     metrics = read_json(out / "metrics.json")
     assert any("DEV SPLIT" in w for w in metrics["warnings"]) and any("MOCK" in w for w in metrics["warnings"])
-    assert "bench-a1-test-stub, synthetic calls, profile collections_default_v1, rubric 1.0-mvp, model" in \
+    assert "bench-a1-test-stub, synthetic calls, profile collections_default_v1, rubric 1.1-mvp, model" in \
         metrics["scope_line"]
     assert set(metrics["systems"]) == {"SYS-1", "SYS-2", "SYS-3"}
     for f in ("item_scores.csv", "metrics.json", "discordance_tables.csv", "human_checks.csv", "scoring_manifest.json"):

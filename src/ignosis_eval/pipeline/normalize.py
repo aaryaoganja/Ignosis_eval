@@ -72,13 +72,14 @@ def build_normalized_input(meta: ItemMeta, item_dir: Path, mode: UnitMode, spec:
     header = parsed.header if parsed else TranscriptHeader()
     turns: list[Turn] = []
     audio_ref = asr_ref = None
+    mapping_confidence = 1.0  # DC-00: supplied transcript labels map roles for the whole call (AJ-05)
 
     if mode in (UnitMode.TRANSCRIPT, UnitMode.T_GOLD, UnitMode.A_T, UnitMode.A_T_PLATFORM):
         assert parsed is not None
         for i, pt in enumerate(parsed.turns, start=1):
-            conf = 0.0 if pt.role is Role.UNKNOWN else 1.0  # transcript labels (DC-00 source priority 1)
+            # DC-01 (AJ-05): an UNKNOWN-labeled turn is span-unreliable; it does not lower call-level role confidence
             turns.append(Turn(turn=i, role=pt.role, text=pt.text, supplied_text=pt.text, start_s=pt.start_s,
-                              end_s=pt.end_s, unreliable=pt.unreliable, role_confidence=conf))
+                              end_s=pt.end_s, unreliable=pt.unreliable or pt.role is Role.UNKNOWN))
         has_ts = parsed.has_timestamps
     else:  # T-asr, A: evaluation text is our ASR
         if asr is None:
@@ -86,9 +87,12 @@ def build_normalized_input(meta: ItemMeta, item_dir: Path, mode: UnitMode, spec:
         audio_ref, audio_path = _audio_ref(meta, item_dir)
         res = asr.transcribe(audio_path, audio_ref.sha256)
         asr_ref = ASRRef(engine=res.engine, model=res.model, version=res.version, params_sha256=res.params_sha256)
+        mapping_confidence = res.mapping_confidence
         for i, at in enumerate(res.turns, start=1):
+            # turn-level diarization threshold is PENDING (B-11): only UNKNOWN turns are marked unreliable here
             turns.append(Turn(turn=i, role=at.role, text=at.text, asr_text=at.text, start_s=at.start_s,
-                              end_s=at.end_s, role_confidence=at.role_confidence))
+                              end_s=at.end_s, diarization_confidence=at.diarization_confidence,
+                              unreliable=at.role is Role.UNKNOWN))
         has_ts = bool(turns)
         if mode is UnitMode.T_ASR:
             # P-5: our ASR supplied *as a transcript* with provenance offline_asr; header facts from the item.
@@ -103,6 +107,8 @@ def build_normalized_input(meta: ItemMeta, item_dir: Path, mode: UnitMode, spec:
         audio_ref, _ = _audio_ref(meta, item_dir)
     if mode is UnitMode.A_T_PLATFORM and header.transcript_provenance is not TranscriptProvenance.PLATFORM_LIVE_ASR:
         raise NormalizationError("A+T-platform transcripts must declare transcript_provenance: platform_live_asr")
-    frontend = run_frontend(turns, header, input_mode, spec)
+    frontend = run_frontend(turns, header, input_mode, spec, role_mapping_confidence=mapping_confidence,
+                            diarized=mode in (UnitMode.T_ASR, UnitMode.A))
     return NormalizedInput(input_mode=input_mode, unit_mode=mode, header=header, has_timestamps=has_ts,
-                           turns=turns, audio=audio_ref, asr=asr_ref, frontend=frontend)
+                           role_mapping_confidence=mapping_confidence, turns=turns, audio=audio_ref, asr=asr_ref,
+                           frontend=frontend)

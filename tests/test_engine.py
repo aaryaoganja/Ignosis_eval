@@ -98,9 +98,13 @@ def test_verdict_rules(spec):
     ok = dict(evaluability=EvaluabilityStatus.EVALUABLE, reason_codes=[], checks=[], registry=reg)
     assert decide(gates=gates, findings=[minor], **ok).verdict.value == "MEETS_BAR"  # V6
     assert decide(gates=gates, findings=[maj], **ok).verdict.value == "NEEDS_ATTENTION"  # V4
-    rep = maj.model_copy(update={"repair_status": RepairStatus.REPAIRED})
-    assert apply_repair(rep, reg).severity is Severity.MINOR
-    assert decide(gates=gates, findings=[apply_repair(rep, reg)], **ok).verdict.value == "MEETS_BAR"
+    rep = maj.model_copy(update={"repair_status": RepairStatus.REPAIRED})  # UND-01 is not repairable (AJ-08)
+    ignored = apply_repair(rep, reg)
+    assert (ignored.repair_status, ignored.severity) == (RepairStatus.UNREPAIRED, Severity.MAJOR)
+    assert decide(gates=gates, findings=[ignored], **ok).verdict.value == "NEEDS_ATTENTION"
+    acc05 = F.finding("ACC-05", [3], severity="MAJOR").model_copy(update={"repair_status": RepairStatus.REPAIRED})
+    assert apply_repair(acc05, reg).severity is Severity.MINOR  # the only allowlisted repair
+    assert decide(gates=gates, findings=[apply_repair(acc05, reg)], **ok).verdict.value == "MEETS_BAR"
     possible = maj.model_copy(update={"finding_state": FindingState.POSSIBLE})
     r = decide(gates=gates, findings=[possible], **ok)
     assert r.verdict.value == "MEETS_BAR" and r.within_scope_complete is False  # V7
@@ -163,7 +167,7 @@ def test_finalize_verifier_and_capability(spec):
     assert {c.code: c.status.value for c in rec.checks}["PLT-02"] == "OUT_OF_SCOPE"
     assert {o.code for o in rec.out_of_scope} >= {"ACC-01", "EXE-01", "OUTCOME_VERIFIED"}
     assert rec.verdict.value == "CRITICAL_FAIL" and rec.critical_status.value == "SUSPECTED"
-    assert any(e["step"] == "verifier" for e in log.entries)
+    assert any(e["step"] == "3-evidence-verifier" for e in log.entries)
 
 
 def test_finalize_verified_gate_keeps_computed_confidence(spec):
@@ -190,3 +194,94 @@ def test_not_evaluated_codes_are_schema_errors(spec, code):
 
     rec = F.record(findings=[F.finding(code, [1])])
     assert schema_errors(rec, spec.registry)
+
+
+# ------------------------------------------------------------------ AJ-04 PARTIAL (derived, rubric V7)
+def _check(code, status):
+    from ignosis_eval.contracts.evaluation_record import CheckStatusEntry
+    return CheckStatusEntry(code=code, status=status)
+
+
+def test_partial_derivation(spec):
+    from ignosis_eval.contracts.enums import CheckStatus
+    from ignosis_eval.engine.verdict import derive_evaluability
+
+    reg = spec.registry
+    passing = [F.gate(g) for g in F.GATES]
+    assert derive_evaluability(passing, [], reg) is EvaluabilityStatus.EVALUABLE
+    inc_gate = [F.gate("G1", "INCONCLUSIVE") if g.gate.value == "G1" else g for g in passing]
+    assert derive_evaluability(inc_gate, [], reg) is EvaluabilityStatus.PARTIAL
+    suspected = [F.gate("G1", "FAIL", critical_status="SUSPECTED") if g.gate.value == "G1" else g for g in passing]
+    assert derive_evaluability(suspected, [], reg) is EvaluabilityStatus.EVALUABLE  # in-span trigger -> FAIL
+    oos = [F.gate("G7", "OUT_OF_SCOPE") if g.gate.value == "G7" else g for g in passing]
+    assert derive_evaluability(oos, [_check("PLT-02", CheckStatus.OUT_OF_SCOPE)], reg) is EvaluabilityStatus.EVALUABLE
+    assert derive_evaluability(passing, [_check("UND-01", CheckStatus.INCONCLUSIVE)], reg) is \
+        EvaluabilityStatus.PARTIAL
+    assert derive_evaluability(passing, [_check("UND-11", CheckStatus.INCONCLUSIVE)], reg) is \
+        EvaluabilityStatus.EVALUABLE  # NOT_EVALUATED_IN_MVP codes never count
+    assert derive_evaluability(passing, [_check("UND-01", CheckStatus.NA)], reg) is EvaluabilityStatus.EVALUABLE
+
+
+def test_partial_has_no_verdict_effect_and_wsc(spec):
+    from ignosis_eval.contracts.enums import CheckStatus
+
+    reg = spec.registry
+    passing = [F.gate(g) for g in F.GATES]
+    ok = dict(evaluability=EvaluabilityStatus.EVALUABLE, reason_codes=[], registry=reg)
+    r = decide(gates=passing, findings=[], checks=[_check("UND-01", CheckStatus.INCONCLUSIVE)], **ok)
+    assert (r.verdict.value, r.evaluability, r.within_scope_complete) == (
+        "MEETS_BAR", EvaluabilityStatus.PARTIAL, False)
+    r = decide(gates=passing, findings=[], checks=[], **ok)
+    assert (r.evaluability, r.within_scope_complete) == (EvaluabilityStatus.EVALUABLE, True)
+    possible = F.finding("UND-01", [2]).model_copy(update={"finding_state": FindingState.POSSIBLE})
+    r = decide(gates=passing, findings=[possible], checks=[], **ok)
+    assert (r.evaluability, r.within_scope_complete) == (EvaluabilityStatus.EVALUABLE, False)  # POSSIBLE
+
+
+def test_finalize_derives_partial(spec):
+    ni = _ni(spec)
+    gates = [F.gate(g) for g in F.GATES if g != "G7"]
+    rec = finalize(RecordBody(gates=gates), ni, spec, system=SystemInfo(system="A+", version="t"))
+    assert rec.gate("G7").status.value == "OUT_OF_SCOPE"  # no header: OOS does not make the call PARTIAL
+    assert rec.evaluability.status is EvaluabilityStatus.EVALUABLE and rec.within_scope_complete is True
+    inc = [F.gate("G1", "INCONCLUSIVE") if g.gate.value == "G1" else g for g in gates]
+    rec = finalize(RecordBody(gates=inc), ni, spec, system=SystemInfo(system="A+", version="t"))
+    assert rec.evaluability.status is EvaluabilityStatus.PARTIAL and rec.verdict.value == "MEETS_BAR"
+    assert rec.within_scope_complete is False
+
+
+# ------------------------------------------------------------------ AJ-05 confidence
+def test_low_comes_from_span_unreliability_not_role_confidence(spec):
+    import inspect
+
+    assert "role_confidence_low" not in inspect.signature(conf.compute).parameters
+    assert spec.rubric["confidence_rules"]["low_when_any"] == ["cited_span_unreliable", "contradictory_sources"]
+    g4 = spec.registry.get("G4")
+    kw = dict(sub_rule=None, quote_ok=True, role_ok=True, det_confirmed=True, lexicon_hit_without_negation=False)
+    assert conf.compute(g4, spans_reliable=False, **kw) is Confidence.LOW
+    assert conf.compute(g4, spans_reliable=True, contradictory=True, **kw) is Confidence.LOW
+
+
+# ------------------------------------------------------------------ AJ-09 positive PTP
+@pytest.mark.parametrize("firmness,expected", [(Firmness.FIRM, True), (Firmness.SOFT, False),
+                                               (Firmness.CONDITIONAL, False), (None, False)])
+def test_ptp_positive_only_when_firm(spec, firmness, expected):
+    from ignosis_eval.engine.verdict import positive
+
+    # a firm PTP for a partial amount is positive too: positivity depends on firmness only (AJ-09)
+    out = Outcome(dispositions=[Disposition.PTP_STATED], firmness=firmness, commitment_turn=5)
+    assert positive(out, spec.registry) is expected
+    fail = [F.gate("G4", "FAIL")] + [F.gate(g) for g in F.GATES if g != "G4"]
+    from ignosis_eval.contracts.enums import Verdict
+
+    dw = tags(verdict=Verdict.CRITICAL_FAIL, gates=fail, findings=[], outcome=out, registry=spec.registry)
+    assert (dw.dangerous_win.value == "CRITICAL") is expected  # a soft / conditional PTP is never a Dangerous Win
+
+
+def test_positive_set_other_dispositions(spec):
+    from ignosis_eval.engine.verdict import positive
+
+    assert positive(Outcome(dispositions=[Disposition.PAYMENT_CLAIMED_IN_CALL]), spec.registry)
+    assert positive(Outcome(dispositions=[Disposition.PTP_STATED, Disposition.OFFER_AGREED],
+                            firmness=Firmness.SOFT), spec.registry)
+    assert not positive(Outcome(dispositions=[Disposition.ACKNOWLEDGED]), spec.registry)

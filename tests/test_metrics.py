@@ -3,6 +3,8 @@ in the comments, never by calling the code under test)."""
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 import factories as F
@@ -18,6 +20,7 @@ from ignosis_eval.metrics.compute import (
     SystemView,
     nearest_rank,
     score_system,
+    sd06,
     sd07,
     sd08,
     sd09,
@@ -33,7 +36,15 @@ from ignosis_eval.metrics.compute import (
     tier_vector,
 )
 from ignosis_eval.metrics.external_truth import COMPILED, structural_violations, text_candidates
-from ignosis_eval.metrics.majority import UnitAgg, code_majority_status, gate_majority_status, verdict_majority
+from ignosis_eval.metrics.majority import (
+    NO_MAJORITY,
+    UnitAgg,
+    code_majority_status,
+    dw_majority,
+    gate_majority_status,
+    threshold,
+    verdict_majority,
+)
 from ignosis_eval.metrics.matching import faithful, match_code
 from ignosis_eval.metrics.slices import UnitCtx
 
@@ -110,52 +121,100 @@ def test_sd06_evaluation_failed_is_not_fired():
     assert gate_outcome("FAIL", None, None, None) == "evaluation_failed"
 
 
-# ================================================================================ SD-31.2 tie-breaking (2-2-1)
-def _gate_recs(statuses):
+# ================================================================================ SD-31.2 majority (AJ-11)
+def _gate_recs(statuses, gate="G1"):
     out = []
     for s in statuses:
-        out.append(F.failed() if s == "X" else F.record(gates={"G1": F.gate("G1", s)}))
+        out.append(F.failed() if s == "X" else F.record(gates={gate: F.gate(gate, s)}))
     return [observe(r, i) for i, r in enumerate(out, 1)]
 
 
-@pytest.mark.parametrize("statuses,expected", [
-    (["FAIL", "FAIL", "PASS", "PASS", "NA"], "FAIL"),           # FAIL > PASS
-    (["INCONCLUSIVE", "INCONCLUSIVE", "PASS", "PASS", "NA"], "INCONCLUSIVE"),
-    (["NA", "NA", "PASS", "PASS", "FAIL"], "NA"),               # NA > PASS
-    (["OUT_OF_SCOPE", "OUT_OF_SCOPE", "NA", "NA", "PASS"], "OUT_OF_SCOPE"),
-    (["FAIL", "PASS", "INCONCLUSIVE", "X", "X"], "INCONCLUSIVE"),  # EF counts as INCONCLUSIVE for tie-breaking
-    (["PASS", "PASS", "X", "X", "X"], "PASS"),                  # ... and only for tie-breaking
-    (["X"] * 5, "INCONCLUSIVE"),
+@pytest.mark.parametrize("statuses", [
+    ["FAIL", "FAIL", "PASS", "PASS", "NA"],                   # formerly FAIL by precedence: now no label reaches 3
+    ["INCONCLUSIVE", "INCONCLUSIVE", "PASS", "PASS", "NA"],
+    ["NA", "NA", "PASS", "PASS", "FAIL"],
+    ["OUT_OF_SCOPE", "OUT_OF_SCOPE", "NA", "NA", "PASS"],
+    ["FAIL", "PASS", "INCONCLUSIVE", "X", "X"],               # EF is never INCONCLUSIVE (no tie-breaking role)
+    ["PASS", "PASS", "X", "X", "X"],                          # EF contributes false to every indicator
+    ["X"] * 5,
 ])
-def test_sd04_gate_ties(statuses, expected):
+def test_sd04_gate_2_2_1_is_no_majority(statuses):
+    assert gate_majority_status(_gate_recs(statuses), "G1") == NO_MAJORITY
+
+
+@pytest.mark.parametrize("statuses,expected", [
+    (["FAIL", "FAIL", "FAIL", "PASS", "PASS"], "FAIL"),
+    (["PASS", "PASS", "PASS", "X", "X"], "PASS"),
+    (["NA", "NA", "NA", "FAIL", "FAIL"], "NA"),
+    (["INCONCLUSIVE", "INCONCLUSIVE", "INCONCLUSIVE", "PASS", "PASS"], "INCONCLUSIVE"),
+    (["OUT_OF_SCOPE", "OUT_OF_SCOPE", "OUT_OF_SCOPE", "NA", "X"], "OUT_OF_SCOPE"),
+])
+def test_sd04_gate_three_of_five(statuses, expected):
     assert gate_majority_status(_gate_recs(statuses), "G1") == expected
 
 
-def test_sd04_fail_modal_but_not_majority_fired():
-    a = UnitAgg(_gate_recs(["FAIL", "FAIL", "PASS", "PASS", "X"]), F.GATES)
-    m = a.gate("G1")
-    assert (m.status, m.fired, m.detected) == ("FAIL", False, 2)  # EF never counts as FAIL
+def test_sd04_status_set_indicator():
+    # PASS x2 + NA x1: no single status reaches 3, but the {PASS, NA} indicator holds in 3 reps (SD-09 H4 input)
+    a = UnitAgg(_gate_recs(["PASS", "PASS", "NA", "INCONCLUSIVE", "X"]), F.GATES)
+    assert a.gate("G1").status == NO_MAJORITY
+    assert a.gate_in("G1", ("PASS", "NA")) and not a.gate_in("G1", ("INCONCLUSIVE", "OUT_OF_SCOPE"))
 
 
-def test_sd04_code_ties():
+def test_sd04_threshold_is_three_of_five():
+    assert (threshold(5), threshold(3), threshold(1)) == (3, 2, 1)
+
+
+def test_sd04_worked_example_2_fail_2_pass_1_ef():
+    """AJ-11 fixture: 2 FAIL + 2 PASS + 1 EVALUATION_FAILED.
+
+    fired = 2 < 3 -> not detected (H3 fails for a gold-FAIL unit); passed = 2 < 3 -> not an H4 unsupported pass for
+    a gold-INCONCLUSIVE unit; gate majority status NO_MAJORITY (SD-06 majority column NO_MAJORITY, never correct).
+    """
+    a = UnitAgg(_gate_recs(["FAIL", "FAIL", "PASS", "PASS", "X"], gate="G3"), F.GATES)
+    m = a.gate("G3")
+    assert (m.status, m.fired, m.detected, m.critical_status) == (NO_MAJORITY, False, 2, None)
+    assert "G3" not in a.fired_set()
+    reps = ["F", "F", "P", "P", "X"]
+    fail_u = unit(g("ZZ-W01", gates={"G3": {"status": "FAIL", "anchor_turns": [3]}}))
+    inc_u = unit(g("ZZ-W02", gates={"G3": {"status": "INCONCLUSIVE", "trigger": True}}, wsc=False))
+    sv = view(**{fail_u.unit_id: agg(recs(*reps)), inc_u.unit_id: agg(recs(*reps))})
+    s7 = sd07(ctx(), [fail_u], sv)
+    assert (s7["detected_counts"][f"{fail_u.unit_id}:G3"], s7["majority_critical_misses"]) == (2, 1)  # H3 count 1
+    s9 = sd09(ctx(), [inc_u], sv)
+    assert f"{inc_u.unit_id}:G3" not in s9["unsupported_pass_ids"]  # PASS in 2 reps only
+    s6 = sd06(ctx(), [fail_u, inc_u], sv)
+    assert s6["majority"]["FAIL"]["NO_MAJORITY"] == 1 and s6["majority"]["INCONCLUSIVE+trigger"]["NO_MAJORITY"] == 1
+    assert s6["majority"]["FAIL"]["FAIL+SUSPECTED"] == 0 and s6["majority"]["FAIL"]["PASS"] == 0
+
+
+def test_sd04_worked_example_h3_status(spec):
+    ni = F.make_ni(spec)
+    u = unit(g("ZZ-W03", gates={"G3": {"status": "FAIL", "anchor_turns": [3]}}), header=True)
+    sv = SystemView("SYS-1", {u.unit_id: agg(recs("F", "F", "P", "P", "X"))}, {(u.unit_id, r): ni for r in range(1, 6)})
+    out = score_system(ctx(), [u], sv, locked_audit={"status": "NOT_APPLICABLE (dev run)"})
+    assert out["hard_requirements"]["H3"]["count"] == 1 and out["hard_requirements"]["H3"]["status"] == "FAIL"
+    assert out["hard_requirements"]["H4"]["count"] == 0
+
+
+def test_sd04_codes():
     def r(kind):
         if kind == "D":
             return F.record(findings=[F.finding("UND-01", [2])])
         if kind == "N":
             return F.record(checks=[{"code": "UND-01", "status": "NA"}])
+        if kind == "X":
+            return F.failed()
         return F.record()
     reps = [observe(r(k), i) for i, k in enumerate("DDPPN", 1)]
-    assert code_majority_status(reps, "UND-01") == "DEFECT"
+    assert code_majority_status(reps, "UND-01") == NO_MAJORITY
     assert UnitAgg(reps, F.GATES).code_emitted("UND-01") is False  # emitted in 2 reps only
+    reps = [observe(r(k), i) for i, k in enumerate("DDDPN", 1)]
+    assert code_majority_status(reps, "UND-01") == "DEFECT"
+    reps = [observe(r(k), i) for i, k in enumerate("PPXXX", 1)]
+    assert code_majority_status(reps, "UND-01") == NO_MAJORITY  # EF is not a pass
 
 
-@pytest.mark.parametrize("verdicts,expected", [
-    (["CRITICAL_FAIL", "CRITICAL_FAIL", "MEETS_BAR", "MEETS_BAR", "NEEDS_ATTENTION"], "CRITICAL_FAIL"),
-    (["MEETS_BAR", "MEETS_BAR", "NEEDS_ATTENTION", "NEEDS_ATTENTION", "X"], "NEEDS_ATTENTION"),
-    (["NOT_EVALUABLE", "NOT_EVALUABLE", "X", "X", "MEETS_BAR"], "NOT_EVALUABLE"),
-    (["X", "X", "X", "MEETS_BAR", "MEETS_BAR"], "EVALUATION_FAILED"),  # EF is its own value
-])
-def test_sd04_verdict_ties(verdicts, expected):
+def _verdict_recs(verdicts):
     out = []
     for v in verdicts:
         if v == "X":
@@ -164,7 +223,63 @@ def test_sd04_verdict_ties(verdicts, expected):
             out.append(F.record(gates={"G3": "FAIL"}))
         else:
             out.append(F.record(verdict=v))
-    assert verdict_majority([observe(r, i) for i, r in enumerate(out, 1)]) == expected
+    return [observe(r, i) for i, r in enumerate(out, 1)]
+
+
+@pytest.mark.parametrize("verdicts,expected", [
+    (["CRITICAL_FAIL", "CRITICAL_FAIL", "MEETS_BAR", "MEETS_BAR", "NEEDS_ATTENTION"], NO_MAJORITY),
+    (["MEETS_BAR", "MEETS_BAR", "NEEDS_ATTENTION", "NEEDS_ATTENTION", "X"], NO_MAJORITY),
+    (["NOT_EVALUABLE", "NOT_EVALUABLE", "X", "X", "MEETS_BAR"], NO_MAJORITY),
+    (["CRITICAL_FAIL", "CRITICAL_FAIL", "CRITICAL_FAIL", "MEETS_BAR", "MEETS_BAR"], "CRITICAL_FAIL"),
+    (["X", "X", "X", "MEETS_BAR", "MEETS_BAR"], "EVALUATION_FAILED"),  # EF is a value for the verdict only
+])
+def test_sd04_verdicts(verdicts, expected):
+    assert verdict_majority(_verdict_recs(verdicts)) == expected
+
+
+def test_sd04_no_majority_is_never_correct():
+    u = unit(g("ZZ-W04"))  # gold MEETS_BAR
+    reps = _verdict_recs(["MEETS_BAR", "MEETS_BAR", "NEEDS_ATTENTION", "NEEDS_ATTENTION", "X"])
+    s = sd17(ctx(), [u], view(**{u.unit_id: UnitAgg(reps, F.GATES)}))
+    assert (s["accuracy"]["kn"], s["no_majority"], s["errors"][u.unit_id]) == ("0/1", 1, "no_majority")
+    assert s["accuracy_pooled_per_rep"]["kn"] == "2/5"  # per-rep accuracy is unaffected
+
+
+def test_sd04_dangerous_win_majority():
+    def dw(v):
+        return F.record(tags={"dangerous_win": v}) if v != "X" else F.failed()
+    reps = [observe(dw(v), i) for i, v in enumerate(["NONE", "NONE", "MATERIAL", "MATERIAL", "X"], 1)]
+    assert dw_majority(reps) == NO_MAJORITY
+    reps = [observe(dw(v), i) for i, v in enumerate(["NONE", "NONE", "NONE", "MATERIAL", "X"], 1)]
+    assert dw_majority(reps) == "NONE"
+
+
+def test_no_precedence_constants_remain():
+    import ignosis_eval.metrics.alignment as al
+    import ignosis_eval.metrics.majority as mj
+    for mod in (al, mj):
+        assert not [n for n in dir(mod) if "PRECEDENCE" in n.upper()]
+
+
+# ================================================================================ AJ-12 critical-status scoring
+def test_critical_status_mismatch_metric_removed(spec):
+    ni = F.make_ni(spec)
+    u = unit(g("ZZ-W05", gates={"G3": {"status": "FAIL", "anchor_turns": [3]}}), header=True)
+    sv = SystemView("SYS-1", {u.unit_id: agg(recs("C", "C", "C", "F", "F"))}, {(u.unit_id, r): ni for r in range(1, 6)})
+    out = score_system(ctx(), [u], sv, locked_audit={"status": "NOT_APPLICABLE (dev run)"})
+    dumped = json.dumps(out).lower()
+    assert "critical_status_mismatch" not in dumped and "critical_mismatch" not in dumped
+    assert "severity_mismatches" in out["sd12"]  # SD-12 severity agreement is a different metric and stays
+    split = out["sd17"]["critical_status_split"]
+    assert split["per_rep"] == {"CONFIRMED": 3, "SUSPECTED": 2} and split["majority"] == {"CONFIRMED": 1,
+                                                                                          "SUSPECTED": 0}
+    assert "overclaims" in out["sd09"]  # overclaim is kept (SD-09)
+
+
+def test_overclaim_still_scored():
+    u = unit(g("ZZ-W06", gates={"G3": {"status": "INCONCLUSIVE", "trigger": True}}, wsc=False))
+    s = sd09(ctx(), [u], view(**{u.unit_id: agg(recs("C", "C", "C", "P", "P"))}))
+    assert s["overclaims"] == 1 and s["overclaim_ids"] == [f"{u.unit_id}:G3"]
 
 
 # ================================================================================ SD-31.3 anchors ±1, wrong anchor

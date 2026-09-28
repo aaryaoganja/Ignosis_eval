@@ -11,6 +11,7 @@ from ignosis_eval.contracts.benchmark import BenchManifest, GoldManifest, ItemMe
 from ignosis_eval.contracts.canonical_input import NormalizedInput
 from ignosis_eval.contracts.case_card import CaseCard
 from ignosis_eval.contracts.evaluation_record import EvaluationRecord
+from ignosis_eval.contracts.extraction import ExtractionOutput
 from ignosis_eval.contracts.gold_label import GoldLabel
 from ignosis_eval.contracts.profile import ProfileSpec
 from ignosis_eval.contracts.registries import Registries
@@ -24,6 +25,7 @@ from ignosis_eval.contracts.run_manifest import (
 CONTRACTS: dict[str, type[BaseModel]] = {
     "normalized_input": NormalizedInput,
     "evaluation_record": EvaluationRecord,
+    "extraction": ExtractionOutput,
     "gold_label": GoldLabel,
     "case_card": CaseCard,
     "item_meta": ItemMeta,

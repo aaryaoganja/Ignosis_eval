@@ -1,14 +1,14 @@
 # docs/spec/profile.yaml
 profile_id: collections_default_v1
-profile_version: "1.0.0"
-rubric_ref: "1.0-mvp"
+profile_version: "1.1.0"
+rubric_ref: "1.1-mvp"
 use_case: collections
 disclaimer: "Assignment demonstration profile — not claimed to be Ignosis production policy."
 
 status_legend:
   FROZEN_FOR_ASSIGNMENT: "Established in Stage 3/4 for the assignment demonstration. Not a production policy claim."
   PENDING_HUMAN_SIGNOFF: "A human decision is required. Implement the interface only; do not choose a value."
-  REFERENCE: "Based on a cited external reference; see note. Not legal advice."
+  # 1.1.0: the REFERENCE marker is removed (AJ-10); the calling window is FROZEN_FOR_ASSIGNMENT.
 
 overall_signoff:
   status: PENDING_HUMAN_SIGNOFF
@@ -20,7 +20,7 @@ overall_signoff:
 # ---------------------------------------------------------------------------
 identity_verification:
   minimum: explicit_affirmation_of_borrower_name
-  must_precede: [amount, overdue_status, loan_details]
+  must_precede: [loan_existence, amount, overdue_status, loan_details]   # AJ-01 (G1 protected items)
   status: FROZEN_FOR_ASSIGNMENT
   production_note: "Verification strength (name-only vs DOB/last-4) is client policy: PENDING_HUMAN_SIGNOFF for any production use."
 
@@ -106,8 +106,8 @@ calling_window:
   end: "19:00"
   timezone: "Asia/Kolkata"
   requires: header_call_start_ts
-  status: REFERENCE
-  note: "Mirrors RBI recovery-call hours as understood in Stage 2 (confidence: high). Not legal advice; evaluated only when the transcript header supplies call_start_ts."
+  status: FROZEN_FOR_ASSIGNMENT
+  basis: "Mirrors RBI recovery-call hours (08:00-19:00) as understood in Stage 2. Not legal advice; evaluated only when the transcript header supplies call_start_ts (AJ-10)."
 
 languages_supported: [en, hi, hi-en]
 languages_status: FROZEN_FOR_ASSIGNMENT
@@ -134,7 +134,7 @@ scenario_paths:
 
 # ---------------------------------------------------------------------------
 thresholds:
-  role_confidence_min:        {value: 0.85, status: FROZEN_FOR_ASSIGNMENT}
+  role_confidence_min:        {value: 0.85, status: FROZEN_FOR_ASSIGNMENT, note: "call-level role-mapping confidence (DC-00, AJ-05)"}
   quote_match_min:            {value: 90,   status: FROZEN_FOR_ASSIGNMENT, note: "0-100 scale; algorithm in scoring-spec.md SD-13"}
   negation_window_tokens:     {value: 4,    status: FROZEN_FOR_ASSIGNMENT}
   monologue_max_seconds:      {value: 30,   status: FROZEN_FOR_ASSIGNMENT}
@@ -159,6 +159,9 @@ thresholds:
   overlap_min_seconds:
     value: PENDING_HUMAN_SIGNOFF
     decision_required: "Minimum overlap duration for PLT-02."
+  diarization_turn_min_confidence:
+    value: PENDING_HUMAN_SIGNOFF
+    decision_required: "Turn-level diarization confidence below which a diarized turn is span-unreliable (DC-01, AJ-05). Depends on the chosen diarization (B-06); tune on dev audio only (B-11)."
   high_friction_min_minor_count:
     value: PENDING_HUMAN_SIGNOFF
     decision_required: "Minor-finding count for the HIGH_FRICTION tag (B-14). Does not affect the verdict."

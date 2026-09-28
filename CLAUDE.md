@@ -1,7 +1,8 @@
 # CLAUDE.md: working rules for this repository
 
 This repository is **reliability-experiment infrastructure** for the Ignosis Voice AI Quality Evaluator
-(collections). The authority is the frozen specification pack in `docs/spec/` (contract `1.0.0-frozen`). Read
+(collections). The authority is the frozen specification pack in `docs/spec/` (contract `1.1.0-frozen`, rubric
+`1.1-mvp`, profile `1.1.0`; final adjudication in `docs/spec/final-adjudication.md`). Read
 `docs/spec-reconciliation.md` first: it maps the code to the spec and lists the conventions, the open questions
 and what is still pending.
 

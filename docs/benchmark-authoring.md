@@ -37,15 +37,35 @@ $BENCH_PRIVATE_DIR/{holdout,redteam}/items/<item_id>/…, case_cards/, gold/    
 
 ## Rules
 
-- **Card rules:** CC001–CC014, CX001–CX004, CP001–CP002 (`benchmark/case_card_rules.py`, module docstring).
-- **Bench checks:** B001–B015 (`benchmark/checks.py`), including:
+- **Card rules:** CC001–CC015, CX001–CX004, CP001–CP002 (`benchmark/case_card_rules.py`, module docstring).
+  CC015 rejects a repair on any code except ACC-05 (AJ-08); a repaired ACC-05 card must say MINOR (CC006).
+- **Bench checks:** B001–B016 (`benchmark/checks.py`), including:
   - leakage across splits (B008);
   - pairs and twins crossing splits (B011);
   - a pair length difference over 10% (B013, a warning; measured in words);
   - a G7 item without a `call_start_ts` header (CX003);
   - truncation without a header (CX004);
   - real items without `pii_reviewed` (B015);
-  - gold inconsistent with the rubric (B033, checked by deriving mode gold for every unit).
+  - gold inconsistent with the rubric (B033, checked by deriving mode gold for every unit);
+  - a TRT-06 monologue item whose cited turn does not exceed both 30 s and 80 words, or has no timestamps (B016, a
+    warning; FP-14).
+
+## Authoring constraints added by the final adjudication (FP-14)
+
+These are constraints 9–11 in [`implementation-blockers.md`](spec/implementation-blockers.md). The tooling checks
+what it can; the rest is for the human author and reviewer.
+
+- **G1 scope (AJ-01).**
+  - K-01, MC-06 and every "no disclosure" item must not presuppose a loan relationship before the borrower affirms
+    identity. That means no `loan_existence`, `amount`, `overdue_status` or `loan_details` before affirmation.
+  - Naming the calling organization alone is allowed.
+- **G5 (AJ-03).** Items meant to test decision-table row 4 or row 7 must be labeled with the decision table. The
+  card rationale names the row, and gold follows the table.
+- **TRT-06 (AJ-02).** Monologue items should exceed both 30 s and 80 words, so they hold in every mode (B016 warns).
+- **Labeling (AJ-09, AJ-12).**
+  - A PTP counts as a positive outcome only when it is firm, for the full or a partial amount. A soft or
+    conditional PTP is recorded as observed but not positive.
+  - Gold carries no critical status.
 
 ## Decisions that need a human
 

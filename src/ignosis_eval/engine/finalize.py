@@ -1,6 +1,6 @@
-"""Shared deterministic finalization: evidence verifier -> capability enforcement -> pre-checks (V1) ->
-computed confidence + routing -> attribution rules -> repair -> always-OOS list -> verdict engine (V2–V7)
--> tags -> routing tier.
+"""Shared deterministic finalization — rubric.yaml › architecture_application.A_PLUS (AJ-06): front-end merge,
+then 1 capability filter, 2 external-truth filter, 3 evidence verifier, 4 confidence cap, 5 status re-map,
+6 attribution, 7 repair allowlist, 8 verdict (V2–V7, PARTIAL) and tags.
 
 Used by A+ (on A's stored raw output, no LLM call), by B (after its rule engine) and by K0. Every
 change relative to the input body is written to the derivation log (P-11 derivation_log.json for A+).
@@ -17,7 +17,11 @@ from ignosis_eval.contracts.enums import (
     ActionType,
     Attribution,
     CheckStatus,
+    Confidence,
+    ConfidenceSource,
     CriticalStatus,
+    EvaluabilityStatus,
+    GateId,
     GateStatus,
     ModeApplicability,
     OosReason,
@@ -38,6 +42,7 @@ from ignosis_eval.contracts.evaluation_record import (
 from ignosis_eval.contracts.evidence import quote_score
 from ignosis_eval.engine import confidence as conf
 from ignosis_eval.engine.attribution import attribute
+from ignosis_eval.engine.measure import trt06_measure
 from ignosis_eval.engine.verdict import apply_repair, decide, routing_tier, tags
 from ignosis_eval.pipeline.lexicon import scan
 from ignosis_eval.spec.loader import Spec
@@ -110,98 +115,177 @@ def _lexicon_hit(check_id: str, sub_rule: str | None, evs: list[Evidence], ni: N
     return False
 
 
+def _template_description(cd_raw: dict, code: str) -> str:
+    """§9.7 / AJ-06 external-truth filter: A+ free text is replaced by rubric templates, which cannot express
+    ledger, payment, record or authority truth."""
+    return f"{code}: {cd_raw.get('name', code)}"
+
+
 def finalize(body: RecordBody, ni: NormalizedInput, spec: Spec, *, system: SystemInfo, facts: Facts | None = None,
-             log: DerivationLog | None = None, rejudge=None) -> EvaluationRecord:
+             log: DerivationLog | None = None, rejudge=None,
+             confidence_source: ConfidenceSource = ConfidenceSource.COMPUTED) -> EvaluationRecord:
+    """Shared deterministic post-processing (rubric.yaml › architecture_application.A_PLUS, AJ-06), in order:
+    (0) front-end merge (V1 pre-checks; missing gates INCONCLUSIVE), then
+    1 capability filter · 2 external-truth filter · 3 evidence verifier · 4 confidence cap · 5 status re-map ·
+    6 attribution · 7 repair allowlist · 8 verdict and tags. Every change is logged under its step name."""
     reg = spec.registry
     facts = facts or Facts()
     log = log or DerivationLog()
     threshold = float(spec.threshold("quote_match_min"))
-    role_min = float(spec.threshold("role_confidence_min"))
     prov = None if ni.unit_mode.value == "A" else ni.header.transcript_provenance
+    pre_ids = {p.gate.value for p in ni.frontend.prechecks}
 
     def mode_oos(cid: str) -> OosReason | None:
         app, reason = reg.mode_status(cid, ni.input_mode, has_call_start_ts=ni.header.call_start_ts is not None,
                                       has_timestamps=ni.has_timestamps, provenance=prov)
         return reason if app is ModeApplicability.OUT_OF_SCOPE else None
 
-    # ---------------------------------------------------------------- gates: verify, capability, pre-checks
+    # ---------------------------------------------------------------- 0 front-end merge
     by_gate: dict[str, GateResult] = {g.gate.value: g for g in body.gates}
     for pre in ni.frontend.prechecks:  # V1: deterministic pre-checks are authoritative
         prev = by_gate.get(pre.gate.value)
         if prev is None or prev.status != pre.status:
-            log.add("precheck", pre.gate.value, "set from front end", before=prev.status.value if prev else None,
+            log.add("0-frontend-merge", pre.gate.value, "pre-check result", before=prev.status.value if prev else None,
                     after=pre.status.value)
         by_gate[pre.gate.value] = pre
-    gates: list[GateResult] = []
     for gid in reg.gate_ids:
-        g = by_gate.get(gid)
-        if g is None:
-            log.add("gates", gid, "missing gate set INCONCLUSIVE (never PASS)")
-            g = GateResult(gate=gid, status=GateStatus.INCONCLUSIVE)
-        is_pre = any(p.gate.value == gid for p in ni.frontend.prechecks)
-        oos = mode_oos(gid)
-        if oos is not None and g.status is not GateStatus.OUT_OF_SCOPE and not is_pre:
-            log.add("capability", gid, "set OUT_OF_SCOPE", before=g.status.value, reason=oos.value)
-            g = GateResult(gate=g.gate, status=GateStatus.OUT_OF_SCOPE, oos_reason=oos)
-        if not is_pre and g.status in (GateStatus.FAIL, GateStatus.INCONCLUSIVE):
-            cd = reg.get(gid)
-            ev_checks = [verify_evidence(e, ni, threshold) for e in g.evidence]
-            quote_ok = bool(ev_checks) and all(ok for ok, _ in ev_checks)
-            unverified = g.evidence_unverified
-            if not quote_ok:
-                if rejudge is not None:  # §9.6: a gate citation that fails verification is re-judged once
-                    g = rejudge(g) or g
-                    quote_ok = bool(g.evidence) and all(verify_evidence(e, ni, threshold)[0] for e in g.evidence)
-                if not quote_ok and g.status is GateStatus.FAIL:
-                    unverified = True
-                    log.add("verifier", gid, "citation unverifiable -> SUSPECTED, evidence_unverified=true")
-            turns = _cited_turns(g.evidence, ni)
-            level = conf.compute(
-                cd, sub_rule=g.sub_rule, quote_ok=quote_ok, role_ok=quote_ok,
-                spans_reliable=not any(t.unreliable for t in turns), det_confirmed=facts.det_confirmed.get(gid, False),
-                lexicon_hit_without_negation=_lexicon_hit(gid, g.sub_rule, g.evidence, ni, spec),
-                role_confidence_low=any(t.role_confidence < role_min for t in turns), llm_label=g.confidence)
-            status, cs = conf.route_gate(g.status, level, g.in_span_trigger)
-            if unverified and status is GateStatus.FAIL:
-                cs = CriticalStatus.SUSPECTED
-            attr = attribute(cd, input_mode=ni.input_mode, provenance=prov, registered=facts.registered.get(gid),
-                             material_difference=facts.material_difference.get(gid),
-                             readback_safeguard=facts.readback_safeguard.get(gid),
-                             own_span_confidence_low=any(t.unreliable for t in turns))
-            if (status, cs, level) != (g.status, g.critical_status, g.confidence):
-                log.add("confidence", gid, "recomputed", before=[g.status.value, g.confidence and g.confidence.value],
-                        after=[status.value, level.value, cs.value if cs else None])
-            g = g.model_copy(update={"status": status, "critical_status": cs, "confidence": level,
-                                     "attribution": attr, "evidence_unverified": unverified})
-        elif not is_pre and g.status is not GateStatus.FAIL and g.critical_status is not None:
-            g = g.model_copy(update={"critical_status": None})
-        gates.append(g)
+        if gid not in by_gate:
+            log.add("0-frontend-merge", gid, "missing gate set INCONCLUSIVE (never PASS)")
+            by_gate[gid] = GateResult(gate=GateId(gid), status=GateStatus.INCONCLUSIVE)
+    raw_findings = list(body.findings) + list(ni.frontend.precheck_findings)
 
-    # ---------------------------------------------------------------- findings
-    findings: list[Finding] = []
-    for f in list(body.findings) + list(ni.frontend.precheck_findings):
+    # ---------------------------------------------------------------- 1 capability filter
+    for gid, g in list(by_gate.items()):
+        oos = mode_oos(gid)
+        if oos is not None and g.status is not GateStatus.OUT_OF_SCOPE and gid not in pre_ids:
+            log.add("1-capability-filter", gid, "set OUT_OF_SCOPE", before=g.status.value, reason=oos.value)
+            by_gate[gid] = GateResult(gate=g.gate, status=GateStatus.OUT_OF_SCOPE, oos_reason=oos)
+    kept: list[Finding] = []
+    for f in raw_findings:
+        if f.code in reg.checks and mode_oos(f.code) is not None:
+            log.add("1-capability-filter", f.code, "dropped finding: OUT_OF_SCOPE in this mode",
+                    reason=mode_oos(f.code).value)  # type: ignore[union-attr]
+            continue
+        kept.append(f)
+    checks: dict[str, CheckStatusEntry] = {}
+    for c in body.checks:
+        checks[c.code] = c
+    for cid in reg.mvp_code_ids:
+        oos = mode_oos(cid)
+        if oos is not None:
+            checks[cid] = CheckStatusEntry(code=cid, status=CheckStatus.OUT_OF_SCOPE, oos_reason=oos)
+
+    # ---------------------------------------------------------------- 2 external-truth filter
+    ext: list[Finding] = []
+    for f in kept:
         if f.code in reg.oos_codes:
-            log.add("oos", f.code, "dropped finding on an always-OUT_OF_SCOPE code")
+            log.add("2-external-truth-filter", f.code, "dropped finding on an always-OUT_OF_SCOPE code")
             continue
         if f.code not in reg.checks:
-            log.add("schema", f.code, "dropped unknown code")
+            log.add("2-external-truth-filter", f.code, "dropped unknown code")
             continue
-        cd = reg.get(f.code)
-        oos = mode_oos(f.code)
-        if oos is not None:
-            log.add("capability", f.code, "dropped finding: OUT_OF_SCOPE in this mode", reason=oos.value)
+        templ = _template_description(reg.get(f.code).raw, f.code)
+        if f.description != templ:
+            f = f.model_copy(update={"description": templ})
+        ext.append(f)
+    for code in [c for c in checks if c in reg.oos_codes or c not in reg.checks]:
+        log.add("2-external-truth-filter", code, "dropped check entry on an always-OUT_OF_SCOPE / unknown code")
+        checks.pop(code)
+    outcome = body.outcome
+    if outcome is not None and outcome.verified is not None:
+        log.add("2-external-truth-filter", "outcome.verified", "set null (verified outcomes are OUT_OF_SCOPE)")
+        outcome = outcome.model_copy(update={"verified": None})
+    for gid, g in list(by_gate.items()):
+        if gid not in pre_ids and g.note:
+            by_gate[gid] = g.model_copy(update={"note": None})
+    out_of_scope = [OutOfScopeEntry(code=c, oos_reason=OosReason.EXTERNAL_DATA_REQUIRED) for c in reg.oos_codes]
+
+    # ---------------------------------------------------------------- 3 evidence verifier
+    quote_ok: dict[str, bool] = {}
+    unverified: dict[str, bool] = {}
+    for gid, g in list(by_gate.items()):
+        if gid in pre_ids or g.status not in (GateStatus.FAIL, GateStatus.INCONCLUSIVE):
             continue
-        verdicts = [verify_evidence(e, ni, threshold) for e in f.evidence]
-        if not all(ok for ok, _ in verdicts):
-            log.add("verifier", f.code, "dropped non-gate finding with unverifiable citation",
-                    reasons=[r for ok, r in verdicts if not ok])
+        ev_checks = [verify_evidence(e, ni, threshold) for e in g.evidence]
+        ok = bool(ev_checks) and all(v for v, _ in ev_checks)
+        if not ok and rejudge is not None:  # §9.6: a gate citation that fails verification is re-judged once
+            g = rejudge(g) or g
+            ok = bool(g.evidence) and all(verify_evidence(e, ni, threshold)[0] for e in g.evidence)
+            by_gate[gid] = g
+        quote_ok[gid] = ok
+        unverified[gid] = g.evidence_unverified or (not ok and g.status is GateStatus.FAIL)
+        if not ok and g.status is GateStatus.FAIL:
+            log.add("3-evidence-verifier", gid, "citation unverifiable -> SUSPECTED, evidence_unverified=true")
+    verified: list[Finding] = []
+    for f in ext:
+        results = [verify_evidence(e, ni, threshold) for e in f.evidence]
+        if not all(v for v, _ in results):
+            log.add("3-evidence-verifier", f.code, "dropped non-gate finding with unverifiable citation",
+                    reasons=[r for v, r in results if not v])
             continue
+        if f.code == "TRT-06":  # DET (AJ-02): basis from timestamps, threshold re-checked on the cited turn
+            turn = ni.turn_by_number(f.evidence[0].turn or 0)
+            basis, exceeds = trt06_measure(turn, ni, spec) if turn is not None else (None, False)
+            if not exceeds:
+                log.add("3-evidence-verifier", f.code, "dropped: cited turn does not exceed the monologue threshold",
+                        basis=basis.value if basis else None)
+                continue
+            f = f.model_copy(update={"measurement_basis": basis})
+            facts.det_confirmed.setdefault("TRT-06", True)
+        verified.append(f)
+
+    # ---------------------------------------------------------------- 4 confidence cap
+    gate_level: dict[str, Confidence] = {}
+    for gid, g in by_gate.items():
+        if gid in pre_ids or gid not in quote_ok:
+            continue
+        cd = reg.get(gid)
+        turns = _cited_turns(g.evidence, ni)
+        gate_level[gid] = conf.compute(
+            cd, sub_rule=g.sub_rule, quote_ok=quote_ok[gid], role_ok=quote_ok[gid],
+            spans_reliable=not any(t.unreliable for t in turns), det_confirmed=facts.det_confirmed.get(gid, False),
+            lexicon_hit_without_negation=_lexicon_hit(gid, g.sub_rule, g.evidence, ni, spec), llm_label=g.confidence)
+        if gate_level[gid] is not g.confidence:
+            log.add("4-confidence-cap", gid, "computed", before=g.confidence and g.confidence.value,
+                    after=gate_level[gid].value)
+    finding_level: list[Confidence] = []
+    for f in verified:
         turns = _cited_turns(f.evidence, ni)
-        level = conf.compute(
-            cd, sub_rule=f.sub_rule, quote_ok=True, role_ok=True, spans_reliable=not any(t.unreliable for t in turns),
-            det_confirmed=facts.det_confirmed.get(f.code, False),
-            lexicon_hit_without_negation=False, role_confidence_low=any(t.role_confidence < role_min for t in turns),
-            llm_label=f.confidence)
+        finding_level.append(conf.compute(
+            reg.get(f.code), sub_rule=f.sub_rule, quote_ok=True, role_ok=True,
+            spans_reliable=not any(t.unreliable for t in turns), det_confirmed=facts.det_confirmed.get(f.code, False),
+            lexicon_hit_without_negation=False, llm_label=f.confidence))
+
+    # ---------------------------------------------------------------- 5 status re-map
+    for gid, level in gate_level.items():
+        g = by_gate[gid]
+        status, cs = conf.route_gate(g.status, level, g.in_span_trigger)
+        if unverified.get(gid) and status is GateStatus.FAIL:
+            cs = CriticalStatus.SUSPECTED
+        if (status, cs, level) != (g.status, g.critical_status, g.confidence):
+            log.add("5-status-remap", gid, "recomputed", before=[g.status.value, g.confidence and g.confidence.value],
+                    after=[status.value, level.value, cs.value if cs else None])
+        by_gate[gid] = g.model_copy(update={"status": status, "critical_status": cs, "confidence": level,
+                                            "evidence_unverified": bool(unverified.get(gid))})
+    for gid, g in list(by_gate.items()):
+        if gid not in pre_ids and g.status is not GateStatus.FAIL and g.critical_status is not None:
+            by_gate[gid] = g.model_copy(update={"critical_status": None})
+    remapped = [f.model_copy(update={"confidence": lv, "finding_state": conf.finding_state(f.severity, lv)})
+                for f, lv in zip(verified, finding_level, strict=True)]
+
+    # ---------------------------------------------------------------- 6 attribution
+    attributed: list[Finding] = []
+    for gid, g in list(by_gate.items()):
+        if gid in pre_ids or g.status not in (GateStatus.FAIL, GateStatus.INCONCLUSIVE):
+            continue
+        turns = _cited_turns(g.evidence, ni)
+        by_gate[gid] = g.model_copy(update={"attribution": attribute(
+            reg.get(gid), input_mode=ni.input_mode, provenance=prov, registered=facts.registered.get(gid),
+            material_difference=facts.material_difference.get(gid), readback_safeguard=facts.readback_safeguard.get(gid),
+            own_span_confidence_low=any(t.unreliable for t in turns))})
+    for f in remapped:
+        cd = reg.get(f.code)
+        turns = _cited_turns(f.evidence, ni)
         attr = attribute(cd, input_mode=ni.input_mode, provenance=prov, registered=facts.registered.get(f.code),
                          material_difference=facts.material_difference.get(f.code),
                          readback_safeguard=facts.readback_safeguard.get(f.code),
@@ -210,48 +294,47 @@ def finalize(body: RecordBody, ni: NormalizedInput, spec: Spec, *, system: Syste
             attr = attr.model_copy(update={"primary": Attribution.INDETERMINATE})
         action = f.action_type if (cd.action_type_rule and f.action_type in (ActionType.REMEDIATE, ActionType.FIX)) \
             else (cd.action_types[0] if cd.action_types else f.action_type)
-        nf = f.model_copy(update={"confidence": level, "attribution": attr, "action_type": action})
-        nf = apply_repair(nf, reg)
-        nf = nf.model_copy(update={"finding_state": conf.finding_state(nf.severity, level)})
-        if (nf.confidence, nf.finding_state, nf.severity, nf.attribution) != (f.confidence, f.finding_state,
-                                                                             f.severity, f.attribution):
-            log.add("finding", f.code, "recomputed", confidence=level.value, state=nf.finding_state.value,
-                    severity=nf.severity.value, attribution=attr.primary.value)
-        findings.append(nf)
+        if attr != f.attribution:
+            log.add("6-attribution", f.code, "recomputed", attribution=attr.primary.value)
+        attributed.append(f.model_copy(update={"attribution": attr, "action_type": action}))
 
-    # ---------------------------------------------------------------- explicit check statuses + always-OOS
-    checks: dict[str, CheckStatusEntry] = {}
-    for c in body.checks:
-        if c.code in reg.oos_codes or c.code not in reg.checks:
-            continue
-        checks[c.code] = c
-    for cid in reg.mvp_code_ids:
-        oos = mode_oos(cid)
-        if oos is not None:
-            checks[cid] = CheckStatusEntry(code=cid, status=CheckStatus.OUT_OF_SCOPE, oos_reason=oos)
+    # ---------------------------------------------------------------- 7 repair allowlist
+    findings: list[Finding] = []
+    for f in attributed:
+        nf = apply_repair(f, reg)
+        if (nf.repair_status, nf.severity) != (f.repair_status, f.severity):
+            log.add("7-repair-allowlist", f.code, "repair flag ignored (not on the allowlist)" if f.code not in
+                    reg.repair_allowlist else "ACC-05 severity from repair status",
+                    before=[f.repair_status.value, f.severity.value], after=[nf.repair_status.value, nf.severity.value])
+        nf = nf.model_copy(update={"finding_state": conf.finding_state(nf.severity, nf.confidence)})
+        findings.append(nf)
     for f in findings:
         checks.pop(f.code, None)
-    out_of_scope = [OutOfScopeEntry(code=c, oos_reason=OosReason.EXTERNAL_DATA_REQUIRED) for c in reg.oos_codes]
 
-    # ---------------------------------------------------------------- verdict, tags, routing
+    # ---------------------------------------------------------------- 8 verdict and tags
+    gates = [by_gate[gid] for gid in reg.gate_ids]
     fe = ni.frontend
-    if body.evaluability and body.evaluability.status.value != fe.evaluability_status.value:
-        log.add("evaluability", "call", "front-end evaluability used", system_claim=body.evaluability.status.value,
-                front_end=fe.evaluability_status.value)
     vr = decide(evaluability=fe.evaluability_status, reason_codes=list(fe.reason_codes), gates=gates,
                 findings=findings, checks=list(checks.values()), registry=reg)
-    tg = tags(verdict=vr.verdict, gates=vr.gates, findings=vr.findings, outcome=body.outcome, registry=reg)
+    tg = tags(verdict=vr.verdict, gates=vr.gates, findings=vr.findings, outcome=outcome, registry=reg)
     tier = routing_tier(verdict=vr.verdict, critical_status=vr.critical_status, tags_=tg, findings=vr.findings)
     if body.verdict is not None and body.verdict is not vr.verdict:
-        log.add("verdict", "call", "recomputed by verdict engine", before=body.verdict.value, after=vr.verdict.value)
+        log.add("8-verdict-and-tags", "call", "recomputed by verdict engine", before=body.verdict.value,
+                after=vr.verdict.value)
+    reasons = list(fe.reason_codes)
+    if vr.evaluability is EvaluabilityStatus.PARTIAL:
+        for rc in [r for g in vr.gates if g.status is GateStatus.INCONCLUSIVE for r in g.reason_codes] + \
+                  [r for c in vr.checks if c.status is CheckStatus.INCONCLUSIVE for r in c.reason_codes]:
+            if rc not in reasons:
+                reasons.append(rc)
     return EvaluationRecord(
-        record_status=RecordStatus.OK, system=system, contract_version=spec.contract_version,
-        rubric_version=spec.rubric_version, profile_id=spec.profile_id, profile_version=spec.profile_version,
-        input_mode=ni.input_mode, unit_mode=ni.unit_mode, verdict=vr.verdict, critical_status=vr.critical_status,
-        within_scope_complete=vr.within_scope_complete,
-        evaluability=EvaluabilityResult(status=fe.evaluability_status, reason_codes=list(fe.reason_codes)),
+        record_status=RecordStatus.OK, confidence_source=confidence_source, system=system,
+        contract_version=spec.contract_version, rubric_version=spec.rubric_version, profile_id=spec.profile_id,
+        profile_version=spec.profile_version, input_mode=ni.input_mode, unit_mode=ni.unit_mode, verdict=vr.verdict,
+        critical_status=vr.critical_status, within_scope_complete=vr.within_scope_complete,
+        evaluability=EvaluabilityResult(status=vr.evaluability, reason_codes=reasons),
         gates=vr.gates, findings=vr.findings, checks=vr.checks, dimensions=dict(body.dimensions),
-        outcome=body.outcome, tags=tg, routing_tier=tier, out_of_scope=out_of_scope,
+        outcome=outcome, tags=tg, routing_tier=tier, out_of_scope=out_of_scope,
         unverified_agent_commitments=list(body.unverified_agent_commitments))
 
 

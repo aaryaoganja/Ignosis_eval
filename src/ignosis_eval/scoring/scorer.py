@@ -136,7 +136,7 @@ def _item_rows(alias: str, units: list[UnitCtx], aggs: dict[str, UnitAgg], gates
             "gold_fail_gates": ";".join(sorted(u.gold.fail_gates())),
             "majority_fired_gates": ";".join(sorted(a.fired_set())),
             "detected_counts": ";".join(f"{g}:{a.gate(g).detected}" for g in gates if a.gate(g).detected),
-            "consistent": a.consistent(), "reps_agree_modal_verdict": a.reps_agreeing_with_modal_verdict(),
+            "consistent": a.consistent(), "reps_holding_most_frequent_verdict": a.reps_holding_most_frequent_verdict(),
             "gold_dangerous_win": u.gold.dangerous_win, "majority_dangerous_win": dw_majority(a.reps),
             "gold_clean_loss": u.gold.clean_loss, "majority_clean_loss": a.clean_loss(),
             "gold_derivation_notes": " | ".join(u.gold.notes),
@@ -197,7 +197,7 @@ HUMAN_COLUMNS = ["check_id", "check_type", "system_alias", "unit_id", "rep", "ch
                  "allowed_values"]
 ITEM_COLUMNS = ["system", "unit_id", "item_id", "unit_mode", "pack", "primary_universe", "gold_verdict",
                 "majority_verdict", "verdict_correct", "reps", "reps_failed", "gold_fail_gates", "majority_fired_gates",
-                "detected_counts", "consistent", "reps_agree_modal_verdict", "gold_dangerous_win",
+                "detected_counts", "consistent", "reps_holding_most_frequent_verdict", "gold_dangerous_win",
                 "majority_dangerous_win", "gold_clean_loss", "majority_clean_loss", "gold_derivation_notes"]
 DISCORDANCE_COLUMNS = ["metric", "definition", "system_1", "system_2", "n", "both_right", "both_wrong",
                        "s1_right_s2_wrong", "s1_wrong_s2_right", "sign_test_p_two_sided", "note"]

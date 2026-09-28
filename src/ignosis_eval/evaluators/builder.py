@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 from ignosis_eval.contracts.canonical_input import NormalizedInput
-from ignosis_eval.contracts.enums import RecordStatus
+from ignosis_eval.contracts.enums import ConfidenceSource, RecordStatus
 from ignosis_eval.contracts.evaluation_record import EvaluationRecord, FailureInfo, RecordBody, SystemInfo
 from ignosis_eval.contracts.record_checks import schema_errors
 from ignosis_eval.evaluators.llm import OutputSchemaError
@@ -19,12 +19,13 @@ def _meta(ni: NormalizedInput, spec: Spec, system: SystemInfo) -> dict:
 
 
 def parse_ok_record(content: str, ni: NormalizedInput, spec: Spec, system: SystemInfo) -> EvaluationRecord:
-    """Parse model output as a complete OK record body (all gates, verdict...). Raises OutputSchemaError."""
+    """Parse Evaluator A's output as a complete OK record body (all gates, verdict...) with the LLM's own
+    (SELF_REPORTED) confidence labels (AJ-06). Raises OutputSchemaError."""
     try:
         data = json.loads(content)
         body = RecordBody.model_validate(data)
-        record = EvaluationRecord(record_status=RecordStatus.OK, **_meta(ni, spec, system),
-                                  **body.model_dump(exclude_unset=False))
+        record = EvaluationRecord(record_status=RecordStatus.OK, confidence_source=ConfidenceSource.SELF_REPORTED,
+                                  **_meta(ni, spec, system), **body.model_dump(exclude_unset=False))
     except (json.JSONDecodeError, ValueError) as exc:
         raise OutputSchemaError(str(exc)) from exc
     errs = schema_errors(record, spec.registry)

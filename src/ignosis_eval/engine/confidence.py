@@ -4,8 +4,9 @@ HIGH requires ALL of: verified quote from the correct speaker, all cited spans r
 deterministic confirmation or a prohibited-lexicon hit without negation (codes whose `high_requires` is
 `lexicon_hit_without_negation` — G2a, G3 — accept only the lexicon path). MEDIUM is the ceiling for
 LLM-judged and absence-based codes (encoded as their rubric `confidence_ceiling`). LOW when any cited
-span is unreliable, sources conflict, or a cited speaker-role confidence is below threshold. The model's
-own label can lower the result, never raise it.
+span is unreliable or sources conflict (AJ-05: role confidence is call-level only; an UNKNOWN or low-diarization
+turn is an unreliable span). The model's own label can lower the result, never raise it. Used by A+, B and K0
+(confidence_source COMPUTED); A reports SELF_REPORTED labels untouched (AJ-06).
 """
 
 from __future__ import annotations
@@ -47,13 +48,13 @@ def ceiling(cd: CheckDef, sub_rule: str | None = None) -> Confidence:
 
 def compute(cd: CheckDef, *, sub_rule: str | None, quote_ok: bool, role_ok: bool, spans_reliable: bool,
             det_confirmed: bool, lexicon_hit_without_negation: bool, contradictory: bool = False,
-            role_confidence_low: bool = False, llm_label: Confidence | None = None) -> Confidence:
+            llm_label: Confidence | None = None) -> Confidence:
     requirement = cd.high_requires.get(sub_rule or "", cd.high_requires.get(""))
     if requirement == "lexicon_hit_without_negation":
         high_basis = lexicon_hit_without_negation
     else:
         high_basis = det_confirmed or lexicon_hit_without_negation
-    if not spans_reliable or contradictory or role_confidence_low:
+    if not spans_reliable or contradictory:
         level = Confidence.LOW
     elif quote_ok and role_ok and high_basis:
         level = Confidence.HIGH

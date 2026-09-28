@@ -9,6 +9,7 @@ silently mis-resolved.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -146,6 +147,15 @@ def _build(raw: dict[str, Any], kind: str, default_modes: dict[str, str]) -> Che
     )
 
 
+def outcome_positive(dispositions: Iterable[str], firmness: str | None, positive_set: Iterable[str],
+                     ptp_firmness: Iterable[str]) -> bool:
+    """rubric.yaml › outcome_model (AJ-09): a disposition in positive_set makes the outcome positive, except that
+    PTP_STATED counts only when the commitment firmness is in positive_ptp_requires_firmness ([firm]), for the full
+    or a partial amount. The single implementation used by the engine (tags), gold derivation and card checks."""
+    pos, firm = set(positive_set), set(ptp_firmness)
+    return any(d in pos and (d != "PTP_STATED" or firmness in firm) for d in dispositions)
+
+
 @dataclass(frozen=True)
 class Registry:
     checks: dict[str, CheckDef]
@@ -159,6 +169,7 @@ class Registry:
     dw_inducement_set: tuple[str, ...]
     positive_set: tuple[str, ...]
     positive_ptp_requires_firmness: tuple[str, ...]
+    repair_allowlist: tuple[str, ...]  # AJ-08: {ACC-05}
 
     @classmethod
     def from_rubric(cls, rubric: dict[str, Any]) -> "Registry":
@@ -179,6 +190,11 @@ class Registry:
                     raise RegistryError(f"unrecognised CONDITIONAL applicability {cid}/{mode} (fail closed)")
         ns = rubric["named_sets"]
         om = rubric["outcome_model"]
+        allowlist = tuple(rubric["repair_rules"]["allowlist"])
+        flagged = {cid for cid, cd in checks.items() if cd.repairable}
+        if set(allowlist) != flagged or any(checks[c].is_gate for c in allowlist):
+            raise RegistryError(f"repair_rules.allowlist {allowlist} disagrees with `repairable: true` codes "
+                                f"{sorted(flagged)} (AJ-08; fail closed)")
         return cls(
             checks=checks,
             gate_ids=tuple(g["id"] for g in rubric["gates"]),
@@ -190,8 +206,12 @@ class Registry:
             borrower_impact_majors=tuple(ns["borrower_impact_majors"]),
             dw_inducement_set=tuple(ns["dw_inducement_set"]),
             positive_set=tuple(om["positive_set"]),
-            positive_ptp_requires_firmness=tuple(om.get("positive_ptp_requires_firmness", [])),
+            positive_ptp_requires_firmness=tuple(om["positive_ptp_requires_firmness"]),
+            repair_allowlist=allowlist,
         )
+
+    def outcome_positive(self, dispositions: Iterable[str], firmness: str | None) -> bool:
+        return outcome_positive(dispositions, firmness, self.positive_set, self.positive_ptp_requires_firmness)
 
     # ------------------------------------------------------------------ lookups
     def get(self, check_id: str) -> CheckDef:
