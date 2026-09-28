@@ -1,0 +1,716 @@
+{
+  "$defs": {
+    "AudioMetadata": {
+      "additionalProperties": false,
+      "properties": {
+        "channel_map": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/ChannelAssignment"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Channel Map"
+        },
+        "channels": {
+          "minimum": 1,
+          "title": "Channels",
+          "type": "integer"
+        },
+        "codec": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Codec"
+        },
+        "contains_real_pii": {
+          "description": "True if the audio is a real recording that may contain personal data. Such audio must never be committed to the repository.",
+          "title": "Contains Real Pii",
+          "type": "boolean"
+        },
+        "duration_ms": {
+          "minimum": 0,
+          "title": "Duration Ms",
+          "type": "integer"
+        },
+        "format": {
+          "enum": [
+            "wav",
+            "mp3",
+            "flac",
+            "opus",
+            "ogg",
+            "m4a"
+          ],
+          "title": "Format",
+          "type": "string"
+        },
+        "rendering": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AudioRendering"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "sample_rate_hz": {
+          "exclusiveMinimum": 0,
+          "title": "Sample Rate Hz",
+          "type": "integer"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "uri": {
+          "description": "Path relative to the case directory (never an absolute path).",
+          "minLength": 1,
+          "title": "Uri",
+          "type": "string"
+        }
+      },
+      "required": [
+        "uri",
+        "sha256",
+        "format",
+        "sample_rate_hz",
+        "channels",
+        "duration_ms",
+        "contains_real_pii"
+      ],
+      "title": "AudioMetadata",
+      "type": "object"
+    },
+    "AudioRendering": {
+      "additionalProperties": false,
+      "description": "How the audio was produced. Required for synthetic audio; 'real_call' for recordings.",
+      "properties": {
+        "codec_simulation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Codec Simulation"
+        },
+        "method": {
+          "enum": [
+            "tts",
+            "recorded_actor",
+            "real_call",
+            "unknown"
+          ],
+          "title": "Method",
+          "type": "string"
+        },
+        "noise_profile": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Noise Profile"
+        },
+        "renderer_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Renderer Version"
+        },
+        "rendering_seed": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rendering Seed"
+        },
+        "snr_db": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Snr Db"
+        },
+        "source_script_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Script Sha256"
+        },
+        "tts_engine": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tts Engine"
+        },
+        "tts_voice_ids": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tts Voice Ids"
+        }
+      },
+      "required": [
+        "method"
+      ],
+      "title": "AudioRendering",
+      "type": "object"
+    },
+    "ChannelAssignment": {
+      "additionalProperties": false,
+      "properties": {
+        "channel": {
+          "minimum": 0,
+          "title": "Channel",
+          "type": "integer"
+        },
+        "speaker": {
+          "$ref": "#/$defs/Speaker"
+        }
+      },
+      "required": [
+        "channel",
+        "speaker"
+      ],
+      "title": "ChannelAssignment",
+      "type": "object"
+    },
+    "EvaluabilityIssue": {
+      "description": "Upstream-observable signals about input quality. These are NOT gold evaluability labels.",
+      "enum": [
+        "truncated_start",
+        "truncated_end",
+        "low_audio_quality",
+        "unintelligible_audio",
+        "diarization_unreliable",
+        "low_asr_confidence",
+        "non_target_language",
+        "empty_transcript",
+        "missing_timestamps",
+        "crosstalk",
+        "asr_failed"
+      ],
+      "title": "EvaluabilityIssue",
+      "type": "string"
+    },
+    "EvaluabilityMetadata": {
+      "additionalProperties": false,
+      "description": "Upstream-observable quality signals. Not a gold label and not an evaluator judgement.",
+      "properties": {
+        "asr_mean_confidence": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Asr Mean Confidence"
+        },
+        "audio_snr_db": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Audio Snr Db"
+        },
+        "known_issues": {
+          "items": {
+            "$ref": "#/$defs/EvaluabilityIssue"
+          },
+          "title": "Known Issues",
+          "type": "array"
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Notes"
+        }
+      },
+      "title": "EvaluabilityMetadata",
+      "type": "object"
+    },
+    "EvidenceAvailability": {
+      "additionalProperties": false,
+      "description": "What evidence the input actually contains. Checked for consistency with the payload.",
+      "properties": {
+        "audio": {
+          "title": "Audio",
+          "type": "boolean"
+        },
+        "call_end_captured": {
+          "title": "Call End Captured",
+          "type": "boolean"
+        },
+        "call_start_captured": {
+          "title": "Call Start Captured",
+          "type": "boolean"
+        },
+        "call_start_ts": {
+          "title": "Call Start Ts",
+          "type": "boolean"
+        },
+        "speaker_labels": {
+          "title": "Speaker Labels",
+          "type": "boolean"
+        },
+        "transcript": {
+          "title": "Transcript",
+          "type": "boolean"
+        },
+        "turn_timestamps": {
+          "title": "Turn Timestamps",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "transcript",
+        "audio",
+        "turn_timestamps",
+        "speaker_labels",
+        "call_start_ts",
+        "call_start_captured",
+        "call_end_captured"
+      ],
+      "title": "EvidenceAvailability",
+      "type": "object"
+    },
+    "InputMode": {
+      "enum": [
+        "audio_only",
+        "transcript_only",
+        "audio_transcript"
+      ],
+      "title": "InputMode",
+      "type": "string"
+    },
+    "LanguageInfo": {
+      "additionalProperties": false,
+      "properties": {
+        "code_mixed": {
+          "default": false,
+          "title": "Code Mixed",
+          "type": "boolean"
+        },
+        "others": {
+          "items": {
+            "pattern": "^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$",
+            "type": "string"
+          },
+          "title": "Others",
+          "type": "array"
+        },
+        "primary": {
+          "pattern": "^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$",
+          "title": "Primary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "primary"
+      ],
+      "title": "LanguageInfo",
+      "type": "object"
+    },
+    "Speaker": {
+      "enum": [
+        "agent",
+        "customer",
+        "third_party",
+        "system",
+        "unknown"
+      ],
+      "title": "Speaker",
+      "type": "string"
+    },
+    "TimestampSource": {
+      "enum": [
+        "asr_aligned",
+        "human_annotated",
+        "script_planned",
+        "estimated",
+        "none"
+      ],
+      "title": "TimestampSource",
+      "type": "string"
+    },
+    "Transcript": {
+      "additionalProperties": false,
+      "properties": {
+        "provenance": {
+          "$ref": "#/$defs/TranscriptProvenance"
+        },
+        "turns": {
+          "items": {
+            "$ref": "#/$defs/Turn"
+          },
+          "title": "Turns",
+          "type": "array"
+        }
+      },
+      "required": [
+        "provenance",
+        "turns"
+      ],
+      "title": "Transcript",
+      "type": "object"
+    },
+    "TranscriptProvenance": {
+      "additionalProperties": false,
+      "properties": {
+        "asr_engine": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Asr Engine"
+        },
+        "asr_model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Asr Model"
+        },
+        "asr_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Asr Version"
+        },
+        "derived_from_audio_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Derived From Audio Sha256"
+        },
+        "diarization": {
+          "default": "none",
+          "enum": [
+            "channel_separated",
+            "model_diarized",
+            "human",
+            "scripted",
+            "none"
+          ],
+          "title": "Diarization",
+          "type": "string"
+        },
+        "language_detected": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Language Detected"
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Notes"
+        },
+        "produced_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Produced At"
+        },
+        "source": {
+          "$ref": "#/$defs/TranscriptSource"
+        },
+        "timestamp_source": {
+          "$ref": "#/$defs/TimestampSource",
+          "default": "none"
+        }
+      },
+      "required": [
+        "source"
+      ],
+      "title": "TranscriptProvenance",
+      "type": "object"
+    },
+    "TranscriptSource": {
+      "enum": [
+        "human_verbatim",
+        "human_corrected_asr",
+        "vendor_asr",
+        "pipeline_asr",
+        "synthetic_script"
+      ],
+      "title": "TranscriptSource",
+      "type": "string"
+    },
+    "Turn": {
+      "additionalProperties": false,
+      "properties": {
+        "asr_confidence": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Asr Confidence"
+        },
+        "end_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End Ms"
+        },
+        "index": {
+          "minimum": 0,
+          "title": "Index",
+          "type": "integer"
+        },
+        "language": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Language"
+        },
+        "speaker": {
+          "$ref": "#/$defs/Speaker"
+        },
+        "start_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start Ms"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "turn_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$",
+          "title": "Turn Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "turn_id",
+        "index",
+        "speaker",
+        "text"
+      ],
+      "title": "Turn",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "audio": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AudioMetadata"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "call_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$",
+      "title": "Call Id",
+      "type": "string"
+    },
+    "call_start_ts": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Call Start Ts"
+    },
+    "evaluability": {
+      "$ref": "#/$defs/EvaluabilityMetadata"
+    },
+    "evidence_availability": {
+      "$ref": "#/$defs/EvidenceAvailability"
+    },
+    "input_mode": {
+      "$ref": "#/$defs/InputMode"
+    },
+    "language": {
+      "$ref": "#/$defs/LanguageInfo"
+    },
+    "schema_version": {
+      "const": "canonical_input/1.0.0",
+      "default": "canonical_input/1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "transcript": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Transcript"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    }
+  },
+  "required": [
+    "call_id",
+    "input_mode",
+    "language",
+    "evidence_availability"
+  ],
+  "title": "CanonicalInput",
+  "type": "object"
+}

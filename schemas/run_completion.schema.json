@@ -1,0 +1,77 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "benchmark_verified_after_run": {
+      "title": "Benchmark Verified After Run",
+      "type": "boolean"
+    },
+    "failure_reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Failure Reason"
+    },
+    "finished_at": {
+      "format": "date-time",
+      "title": "Finished At",
+      "type": "string"
+    },
+    "gold_verified_after_run": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Gold Verified After Run"
+    },
+    "n_item_reps_expected": {
+      "minimum": 0,
+      "title": "N Item Reps Expected",
+      "type": "integer"
+    },
+    "n_item_reps_with_errors": {
+      "minimum": 0,
+      "title": "N Item Reps With Errors",
+      "type": "integer"
+    },
+    "n_records_written": {
+      "minimum": 0,
+      "title": "N Records Written",
+      "type": "integer"
+    },
+    "run_id": {
+      "minLength": 1,
+      "title": "Run Id",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "completed",
+        "failed"
+      ],
+      "title": "Status",
+      "type": "string"
+    }
+  },
+  "required": [
+    "run_id",
+    "status",
+    "finished_at",
+    "n_item_reps_expected",
+    "n_records_written",
+    "n_item_reps_with_errors",
+    "benchmark_verified_after_run",
+    "gold_verified_after_run"
+  ],
+  "title": "RunCompletion",
+  "type": "object"
+}

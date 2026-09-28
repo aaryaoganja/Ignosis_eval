@@ -1,0 +1,672 @@
+{
+  "$defs": {
+    "AttributionPair": {
+      "additionalProperties": false,
+      "properties": {
+        "attribution_pair_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$",
+          "title": "Attribution Pair Id",
+          "type": "string"
+        },
+        "counterpart_case_ids": {
+          "items": {
+            "pattern": "^[a-z0-9][a-z0-9-]{2,63}$",
+            "type": "string"
+          },
+          "title": "Counterpart Case Ids",
+          "type": "array"
+        },
+        "manipulated_cause": {
+          "minLength": 1,
+          "title": "Manipulated Cause",
+          "type": "string"
+        }
+      },
+      "required": [
+        "attribution_pair_id",
+        "counterpart_case_ids",
+        "manipulated_cause"
+      ],
+      "title": "AttributionPair",
+      "type": "object"
+    },
+    "AttributionTarget": {
+      "description": "Which component a defect is attributed to. UNDETERMINED = evidence does not support attribution.",
+      "enum": [
+        "agent_logic",
+        "asr",
+        "tts",
+        "telephony_audio",
+        "customer",
+        "upstream_data",
+        "undetermined"
+      ],
+      "title": "AttributionTarget",
+      "type": "string"
+    },
+    "Authoring": {
+      "additionalProperties": false,
+      "properties": {
+        "author_id": {
+          "minLength": 1,
+          "title": "Author Id",
+          "type": "string"
+        },
+        "created_on": {
+          "format": "date",
+          "title": "Created On",
+          "type": "string"
+        },
+        "reviewers": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Reviewers",
+          "type": "array"
+        }
+      },
+      "required": [
+        "author_id",
+        "created_on"
+      ],
+      "title": "Authoring",
+      "type": "object"
+    },
+    "Capability": {
+      "description": "What an input makes observable. Used for modality conformance (see contracts/capabilities.py).",
+      "enum": [
+        "content",
+        "audio",
+        "turn_timestamps",
+        "speaker_labels",
+        "call_start_ts",
+        "call_start_captured"
+      ],
+      "title": "Capability",
+      "type": "string"
+    },
+    "CapabilityBoundaries": {
+      "additionalProperties": false,
+      "description": "What the case needs to be fully evaluable, and which single modality would suffice.",
+      "properties": {
+        "audio_sufficient": {
+          "title": "Audio Sufficient",
+          "type": "boolean"
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Notes"
+        },
+        "required_capabilities": {
+          "items": {
+            "$ref": "#/$defs/Capability"
+          },
+          "title": "Required Capabilities",
+          "type": "array"
+        },
+        "transcript_sufficient": {
+          "title": "Transcript Sufficient",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "transcript_sufficient",
+        "audio_sufficient"
+      ],
+      "title": "CapabilityBoundaries",
+      "type": "object"
+    },
+    "CardAttribution": {
+      "additionalProperties": false,
+      "properties": {
+        "determinable": {
+          "title": "Determinable",
+          "type": "boolean"
+        },
+        "rationale": {
+          "minLength": 1,
+          "title": "Rationale",
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/$defs/AttributionTarget"
+        }
+      },
+      "required": [
+        "target",
+        "determinable",
+        "rationale"
+      ],
+      "title": "CardAttribution",
+      "type": "object"
+    },
+    "CardModality": {
+      "additionalProperties": false,
+      "properties": {
+        "capability_boundaries": {
+          "$ref": "#/$defs/CapabilityBoundaries"
+        },
+        "constraints": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Constraints",
+          "type": "array"
+        },
+        "intended_modality": {
+          "$ref": "#/$defs/InputMode"
+        }
+      },
+      "required": [
+        "intended_modality",
+        "capability_boundaries"
+      ],
+      "title": "CardModality",
+      "type": "object"
+    },
+    "CardOutcome": {
+      "additionalProperties": false,
+      "properties": {
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Notes"
+        },
+        "outcome_class": {
+          "$ref": "#/$defs/OutcomeClass"
+        },
+        "outcomes": {
+          "items": {
+            "$ref": "#/$defs/OutcomeCode"
+          },
+          "title": "Outcomes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "outcome_class"
+      ],
+      "title": "CardOutcome",
+      "type": "object"
+    },
+    "CardSeverity": {
+      "enum": [
+        "critical",
+        "major",
+        "minor",
+        "none"
+      ],
+      "title": "CardSeverity",
+      "type": "string"
+    },
+    "CardStatus": {
+      "enum": [
+        "draft",
+        "in_review",
+        "approved"
+      ],
+      "title": "CardStatus",
+      "type": "string"
+    },
+    "CustomerContext": {
+      "additionalProperties": false,
+      "properties": {
+        "account_context": {
+          "minLength": 1,
+          "title": "Account Context",
+          "type": "string"
+        },
+        "persona": {
+          "minLength": 1,
+          "title": "Persona",
+          "type": "string"
+        },
+        "situation": {
+          "minLength": 1,
+          "title": "Situation",
+          "type": "string"
+        },
+        "vulnerability_flags": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Vulnerability Flags",
+          "type": "array"
+        }
+      },
+      "required": [
+        "persona",
+        "account_context",
+        "situation"
+      ],
+      "title": "CustomerContext",
+      "type": "object"
+    },
+    "EvaluabilityStatus": {
+      "enum": [
+        "evaluable",
+        "out_of_scope",
+        "inconclusive"
+      ],
+      "title": "EvaluabilityStatus",
+      "type": "string"
+    },
+    "IncidentalDefect": {
+      "additionalProperties": false,
+      "properties": {
+        "defect_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$",
+          "title": "Defect Id",
+          "type": "string"
+        },
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "severity": {
+          "$ref": "#/$defs/CardSeverity"
+        }
+      },
+      "required": [
+        "defect_id",
+        "severity",
+        "description"
+      ],
+      "title": "IncidentalDefect",
+      "type": "object"
+    },
+    "InputMode": {
+      "enum": [
+        "audio_only",
+        "transcript_only",
+        "audio_transcript"
+      ],
+      "title": "InputMode",
+      "type": "string"
+    },
+    "JudgeBait": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "kind": {
+          "minLength": 1,
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "description"
+      ],
+      "title": "JudgeBait",
+      "type": "object"
+    },
+    "MinimalPair": {
+      "additionalProperties": false,
+      "properties": {
+        "counterpart_case_id": {
+          "pattern": "^[a-z0-9][a-z0-9-]{2,63}$",
+          "title": "Counterpart Case Id",
+          "type": "string"
+        },
+        "held_constant": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Held Constant",
+          "type": "array"
+        },
+        "manipulated_factor": {
+          "minLength": 1,
+          "title": "Manipulated Factor",
+          "type": "string"
+        },
+        "pair_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$",
+          "title": "Pair Id",
+          "type": "string"
+        },
+        "role": {
+          "minLength": 1,
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "pair_id",
+        "role",
+        "counterpart_case_id",
+        "manipulated_factor",
+        "held_constant"
+      ],
+      "title": "MinimalPair",
+      "type": "object"
+    },
+    "OutcomeClass": {
+      "enum": [
+        "win",
+        "loss",
+        "neutral",
+        "unknown"
+      ],
+      "title": "OutcomeClass",
+      "type": "string"
+    },
+    "OutcomeCode": {
+      "enum": [
+        "promise_to_pay",
+        "payment_committed_on_call",
+        "payment_plan_agreed",
+        "dispute_raised",
+        "callback_scheduled",
+        "refusal_to_pay",
+        "wrong_party",
+        "hardship_disclosed",
+        "no_resolution",
+        "call_dropped"
+      ],
+      "title": "OutcomeCode",
+      "type": "string"
+    },
+    "RepairStatus": {
+      "enum": [
+        "not_repaired",
+        "partially_repaired",
+        "repaired",
+        "not_applicable"
+      ],
+      "title": "RepairStatus",
+      "type": "string"
+    },
+    "SourceKind": {
+      "enum": [
+        "synthetic_scripted",
+        "synthetic_tts",
+        "synthetic_acted",
+        "real_redacted",
+        "real_consented"
+      ],
+      "title": "SourceKind",
+      "type": "string"
+    },
+    "Split": {
+      "enum": [
+        "dev",
+        "holdout",
+        "redteam",
+        "calibration"
+      ],
+      "title": "Split",
+      "type": "string"
+    },
+    "TargetDefect": {
+      "additionalProperties": false,
+      "properties": {
+        "defect_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$",
+          "title": "Defect Id",
+          "type": "string"
+        },
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "required": [
+        "defect_id",
+        "description"
+      ],
+      "title": "TargetDefect",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "agent_behavior": {
+      "minLength": 1,
+      "title": "Agent Behavior",
+      "type": "string"
+    },
+    "ambiguity_notes": {
+      "minLength": 1,
+      "title": "Ambiguity Notes",
+      "type": "string"
+    },
+    "attribution": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CardAttribution"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "attribution_pair": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AttributionPair"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "authoring": {
+      "$ref": "#/$defs/Authoring"
+    },
+    "case_card_version": {
+      "const": "case_card/1.0.0",
+      "default": "case_card/1.0.0",
+      "title": "Case Card Version",
+      "type": "string"
+    },
+    "case_id": {
+      "pattern": "^[a-z0-9][a-z0-9-]{2,63}$",
+      "title": "Case Id",
+      "type": "string"
+    },
+    "category": {
+      "minLength": 1,
+      "title": "Category",
+      "type": "string"
+    },
+    "clean_loss": {
+      "title": "Clean Loss",
+      "type": "boolean"
+    },
+    "customer_context": {
+      "$ref": "#/$defs/CustomerContext"
+    },
+    "dangerous_win": {
+      "title": "Dangerous Win",
+      "type": "boolean"
+    },
+    "evidence_audio_spans_ms": {
+      "items": {
+        "maxItems": 2,
+        "minItems": 2,
+        "prefixItems": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "integer"
+          }
+        ],
+        "type": "array"
+      },
+      "title": "Evidence Audio Spans Ms",
+      "type": "array"
+    },
+    "evidence_metadata_fields": {
+      "items": {
+        "const": "call_start_ts",
+        "type": "string"
+      },
+      "title": "Evidence Metadata Fields",
+      "type": "array"
+    },
+    "evidence_turns": {
+      "items": {
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$",
+        "type": "string"
+      },
+      "title": "Evidence Turns",
+      "type": "array"
+    },
+    "expected_evaluability": {
+      "$ref": "#/$defs/EvaluabilityStatus"
+    },
+    "gate": {
+      "anyOf": [
+        {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Gate"
+    },
+    "incidental_defects": {
+      "items": {
+        "$ref": "#/$defs/IncidentalDefect"
+      },
+      "title": "Incidental Defects",
+      "type": "array"
+    },
+    "intended_behavior": {
+      "minLength": 1,
+      "title": "Intended Behavior",
+      "type": "string"
+    },
+    "judge_bait": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/JudgeBait"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "language": {
+      "pattern": "^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$",
+      "title": "Language",
+      "type": "string"
+    },
+    "minimal_pair": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/MinimalPair"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "modality": {
+      "$ref": "#/$defs/CardModality"
+    },
+    "outcome": {
+      "$ref": "#/$defs/CardOutcome"
+    },
+    "rationale": {
+      "minLength": 1,
+      "title": "Rationale",
+      "type": "string"
+    },
+    "repair_status": {
+      "$ref": "#/$defs/RepairStatus"
+    },
+    "scenario": {
+      "minLength": 1,
+      "title": "Scenario",
+      "type": "string"
+    },
+    "severity": {
+      "$ref": "#/$defs/CardSeverity"
+    },
+    "source_kind": {
+      "$ref": "#/$defs/SourceKind"
+    },
+    "split": {
+      "$ref": "#/$defs/Split"
+    },
+    "status": {
+      "$ref": "#/$defs/CardStatus"
+    },
+    "tags": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Tags",
+      "type": "array"
+    },
+    "target_defect": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/TargetDefect"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "case_id",
+    "status",
+    "authoring",
+    "split",
+    "scenario",
+    "category",
+    "language",
+    "source_kind",
+    "rationale",
+    "customer_context",
+    "intended_behavior",
+    "agent_behavior",
+    "target_defect",
+    "gate",
+    "severity",
+    "repair_status",
+    "evidence_turns",
+    "attribution",
+    "outcome",
+    "dangerous_win",
+    "clean_loss",
+    "modality",
+    "expected_evaluability",
+    "ambiguity_notes",
+    "minimal_pair",
+    "attribution_pair",
+    "judge_bait"
+  ],
+  "title": "CaseCard",
+  "type": "object"
+}

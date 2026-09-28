@@ -1,0 +1,50 @@
+{
+  "$defs": {
+    "HoldoutRegistryEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "case_id": {
+          "pattern": "^[a-z0-9][a-z0-9-]{2,63}$",
+          "title": "Case Id",
+          "type": "string"
+        },
+        "content_fingerprint": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Content Fingerprint",
+          "type": "string"
+        },
+        "registered_at": {
+          "format": "date-time",
+          "title": "Registered At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "case_id",
+        "content_fingerprint",
+        "registered_at"
+      ],
+      "title": "HoldoutRegistryEntry",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Append-only record of every case ever placed in the holdout split.\n\nOnce registered, a case id (or its content) may never appear in another split, and a registered\ncase may never disappear. Guards against holdout cases leaking into dev/tuning.",
+  "properties": {
+    "entries": {
+      "items": {
+        "$ref": "#/$defs/HoldoutRegistryEntry"
+      },
+      "title": "Entries",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "holdout_registry/1.0.0",
+      "default": "holdout_registry/1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "title": "HoldoutRegistry",
+  "type": "object"
+}

@@ -1,0 +1,906 @@
+{
+  "$defs": {
+    "AttributionClaim": {
+      "additionalProperties": false,
+      "properties": {
+        "confidence": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confidence"
+        },
+        "evidence_ids": {
+          "items": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$",
+            "type": "string"
+          },
+          "title": "Evidence Ids",
+          "type": "array"
+        },
+        "rationale": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rationale"
+        },
+        "target": {
+          "$ref": "#/$defs/AttributionTarget"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "title": "AttributionClaim",
+      "type": "object"
+    },
+    "AttributionTarget": {
+      "description": "Which component a defect is attributed to. UNDETERMINED = evidence does not support attribution.",
+      "enum": [
+        "agent_logic",
+        "asr",
+        "tts",
+        "telephony_audio",
+        "customer",
+        "upstream_data",
+        "undetermined"
+      ],
+      "title": "AttributionTarget",
+      "type": "string"
+    },
+    "ConfidenceSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "calibrated": {
+          "default": false,
+          "title": "Calibrated",
+          "type": "boolean"
+        },
+        "method": {
+          "default": "none",
+          "enum": [
+            "self_reported",
+            "heuristic",
+            "calibrated",
+            "none"
+          ],
+          "title": "Method",
+          "type": "string"
+        },
+        "overall": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Overall"
+        }
+      },
+      "title": "ConfidenceSummary",
+      "type": "object"
+    },
+    "DimensionResult": {
+      "additionalProperties": false,
+      "properties": {
+        "confidence": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confidence"
+        },
+        "dimension_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$",
+          "title": "Dimension Id",
+          "type": "string"
+        },
+        "evaluable": {
+          "title": "Evaluable",
+          "type": "boolean"
+        },
+        "evidence_ids": {
+          "items": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$",
+            "type": "string"
+          },
+          "title": "Evidence Ids",
+          "type": "array"
+        },
+        "rationale": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rationale"
+        },
+        "scale_max": {
+          "default": 5.0,
+          "title": "Scale Max",
+          "type": "number"
+        },
+        "scale_min": {
+          "default": 1.0,
+          "title": "Scale Min",
+          "type": "number"
+        },
+        "score": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Score"
+        }
+      },
+      "required": [
+        "dimension_id",
+        "evaluable"
+      ],
+      "title": "DimensionResult",
+      "type": "object"
+    },
+    "EvaluabilityAssessment": {
+      "additionalProperties": false,
+      "properties": {
+        "rationale": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rationale"
+        },
+        "reasons": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Reasons",
+          "type": "array"
+        },
+        "status": {
+          "$ref": "#/$defs/EvaluabilityStatus"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "title": "EvaluabilityAssessment",
+      "type": "object"
+    },
+    "EvaluabilityStatus": {
+      "enum": [
+        "evaluable",
+        "out_of_scope",
+        "inconclusive"
+      ],
+      "title": "EvaluabilityStatus",
+      "type": "string"
+    },
+    "EvaluatorArchitecture": {
+      "enum": [
+        "A",
+        "A+",
+        "B",
+        "K0",
+        "MOCK"
+      ],
+      "title": "EvaluatorArchitecture",
+      "type": "string"
+    },
+    "EvaluatorInfo": {
+      "additionalProperties": false,
+      "properties": {
+        "architecture": {
+          "$ref": "#/$defs/EvaluatorArchitecture"
+        },
+        "config_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Config Hash"
+        },
+        "model_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Id"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "prompt_hashes": {
+          "additionalProperties": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "title": "Prompt Hashes",
+          "type": "object"
+        },
+        "version": {
+          "minLength": 1,
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "architecture"
+      ],
+      "title": "EvaluatorInfo",
+      "type": "object"
+    },
+    "EvidenceItem": {
+      "additionalProperties": false,
+      "properties": {
+        "end_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End Ms"
+        },
+        "evidence_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$",
+          "title": "Evidence Id",
+          "type": "string"
+        },
+        "metadata_field": {
+          "anyOf": [
+            {
+              "const": "call_start_ts",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Metadata Field"
+        },
+        "modality": {
+          "$ref": "#/$defs/EvidenceModality"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note"
+        },
+        "quote": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Quote"
+        },
+        "speaker": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Speaker"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "start_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start Ms"
+        },
+        "turn_ids": {
+          "items": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$",
+            "type": "string"
+          },
+          "title": "Turn Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "evidence_id",
+        "modality"
+      ],
+      "title": "EvidenceItem",
+      "type": "object"
+    },
+    "EvidenceModality": {
+      "enum": [
+        "transcript",
+        "audio",
+        "metadata"
+      ],
+      "title": "EvidenceModality",
+      "type": "string"
+    },
+    "ExperimentMetadata": {
+      "additionalProperties": false,
+      "description": "Attached by the experiment runner after evaluation; evaluators leave this null.",
+      "properties": {
+        "finished_at": {
+          "format": "date-time",
+          "title": "Finished At",
+          "type": "string"
+        },
+        "item_id": {
+          "minLength": 1,
+          "title": "Item Id",
+          "type": "string"
+        },
+        "rep_seed": {
+          "title": "Rep Seed",
+          "type": "integer"
+        },
+        "repetition": {
+          "minimum": 1,
+          "title": "Repetition",
+          "type": "integer"
+        },
+        "run_id": {
+          "minLength": 1,
+          "title": "Run Id",
+          "type": "string"
+        },
+        "seed": {
+          "title": "Seed",
+          "type": "integer"
+        },
+        "started_at": {
+          "format": "date-time",
+          "title": "Started At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id",
+        "item_id",
+        "repetition",
+        "seed",
+        "rep_seed",
+        "started_at",
+        "finished_at"
+      ],
+      "title": "ExperimentMetadata",
+      "type": "object"
+    },
+    "Finding": {
+      "additionalProperties": false,
+      "properties": {
+        "attribution": {
+          "$ref": "#/$defs/AttributionClaim"
+        },
+        "confidence": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confidence"
+        },
+        "defect_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$",
+          "title": "Defect Id",
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "dimension_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dimension Id"
+        },
+        "evidence_ids": {
+          "items": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$",
+            "type": "string"
+          },
+          "title": "Evidence Ids",
+          "type": "array"
+        },
+        "finding_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$",
+          "title": "Finding Id",
+          "type": "string"
+        },
+        "gate_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gate Id"
+        },
+        "repair_status": {
+          "$ref": "#/$defs/RepairStatus",
+          "default": "not_repaired"
+        },
+        "severity": {
+          "$ref": "#/$defs/Severity"
+        }
+      },
+      "required": [
+        "finding_id",
+        "defect_id",
+        "severity",
+        "attribution"
+      ],
+      "title": "Finding",
+      "type": "object"
+    },
+    "GateResult": {
+      "additionalProperties": false,
+      "properties": {
+        "confidence": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confidence"
+        },
+        "evidence_ids": {
+          "items": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$",
+            "type": "string"
+          },
+          "title": "Evidence Ids",
+          "type": "array"
+        },
+        "gate_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$",
+          "title": "Gate Id",
+          "type": "string"
+        },
+        "rationale": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rationale"
+        },
+        "status": {
+          "$ref": "#/$defs/GateStatus"
+        }
+      },
+      "required": [
+        "gate_id",
+        "status"
+      ],
+      "title": "GateResult",
+      "type": "object"
+    },
+    "GateStatus": {
+      "enum": [
+        "pass",
+        "fail",
+        "inconclusive",
+        "not_applicable"
+      ],
+      "title": "GateStatus",
+      "type": "string"
+    },
+    "InputMode": {
+      "enum": [
+        "audio_only",
+        "transcript_only",
+        "audio_transcript"
+      ],
+      "title": "InputMode",
+      "type": "string"
+    },
+    "ObservableOutcomes": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence_ids": {
+          "items": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$",
+            "type": "string"
+          },
+          "title": "Evidence Ids",
+          "type": "array"
+        },
+        "outcome_class": {
+          "$ref": "#/$defs/OutcomeClass",
+          "default": "unknown"
+        },
+        "outcomes": {
+          "items": {
+            "$ref": "#/$defs/OutcomeCode"
+          },
+          "title": "Outcomes",
+          "type": "array"
+        }
+      },
+      "title": "ObservableOutcomes",
+      "type": "object"
+    },
+    "OutcomeClass": {
+      "enum": [
+        "win",
+        "loss",
+        "neutral",
+        "unknown"
+      ],
+      "title": "OutcomeClass",
+      "type": "string"
+    },
+    "OutcomeCode": {
+      "enum": [
+        "promise_to_pay",
+        "payment_committed_on_call",
+        "payment_plan_agreed",
+        "dispute_raised",
+        "callback_scheduled",
+        "refusal_to_pay",
+        "wrong_party",
+        "hardship_disclosed",
+        "no_resolution",
+        "call_dropped"
+      ],
+      "title": "OutcomeCode",
+      "type": "string"
+    },
+    "RepairStatus": {
+      "enum": [
+        "not_repaired",
+        "partially_repaired",
+        "repaired",
+        "not_applicable"
+      ],
+      "title": "RepairStatus",
+      "type": "string"
+    },
+    "Routing": {
+      "additionalProperties": false,
+      "properties": {
+        "decision": {
+          "$ref": "#/$defs/RoutingDecision"
+        },
+        "reasons": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Reasons",
+          "type": "array"
+        }
+      },
+      "required": [
+        "decision"
+      ],
+      "title": "Routing",
+      "type": "object"
+    },
+    "RoutingDecision": {
+      "enum": [
+        "auto_accept",
+        "human_review",
+        "compliance_escalation",
+        "no_action"
+      ],
+      "title": "RoutingDecision",
+      "type": "string"
+    },
+    "Severity": {
+      "enum": [
+        "critical",
+        "major",
+        "minor"
+      ],
+      "title": "Severity",
+      "type": "string"
+    },
+    "Speaker": {
+      "enum": [
+        "agent",
+        "customer",
+        "third_party",
+        "system",
+        "unknown"
+      ],
+      "title": "Speaker",
+      "type": "string"
+    },
+    "Verdict": {
+      "enum": [
+        "pass",
+        "fail",
+        "inconclusive",
+        "out_of_scope"
+      ],
+      "title": "Verdict",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "call_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$",
+      "title": "Call Id",
+      "type": "string"
+    },
+    "clean_loss": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Clean Loss"
+    },
+    "confidence": {
+      "$ref": "#/$defs/ConfidenceSummary"
+    },
+    "dangerous_win": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Dangerous Win"
+    },
+    "dimensions": {
+      "items": {
+        "$ref": "#/$defs/DimensionResult"
+      },
+      "title": "Dimensions",
+      "type": "array"
+    },
+    "evaluability": {
+      "$ref": "#/$defs/EvaluabilityAssessment"
+    },
+    "evaluator": {
+      "$ref": "#/$defs/EvaluatorInfo"
+    },
+    "evidence": {
+      "items": {
+        "$ref": "#/$defs/EvidenceItem"
+      },
+      "title": "Evidence",
+      "type": "array"
+    },
+    "experiment": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ExperimentMetadata"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "findings": {
+      "items": {
+        "$ref": "#/$defs/Finding"
+      },
+      "title": "Findings",
+      "type": "array"
+    },
+    "gates": {
+      "items": {
+        "$ref": "#/$defs/GateResult"
+      },
+      "title": "Gates",
+      "type": "array"
+    },
+    "input_mode": {
+      "$ref": "#/$defs/InputMode"
+    },
+    "observable_outcomes": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ObservableOutcomes"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "primary_attribution": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AttributionClaim"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "profile_id": {
+      "minLength": 1,
+      "title": "Profile Id",
+      "type": "string"
+    },
+    "profile_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Profile Sha256"
+    },
+    "profile_version": {
+      "minLength": 1,
+      "title": "Profile Version",
+      "type": "string"
+    },
+    "record_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$",
+      "title": "Record Id",
+      "type": "string"
+    },
+    "routing": {
+      "$ref": "#/$defs/Routing"
+    },
+    "rubric_version": {
+      "minLength": 1,
+      "title": "Rubric Version",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "evaluation_record/1.0.0",
+      "default": "evaluation_record/1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "verdict": {
+      "$ref": "#/$defs/Verdict"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "record_id",
+    "call_id",
+    "evaluator",
+    "rubric_version",
+    "profile_id",
+    "profile_version",
+    "input_mode",
+    "evaluability",
+    "verdict",
+    "routing"
+  ],
+  "title": "EvaluationRecord",
+  "type": "object"
+}

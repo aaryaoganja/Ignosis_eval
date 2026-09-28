@@ -1,0 +1,285 @@
+{
+  "$defs": {
+    "Capability": {
+      "description": "What an input makes observable. Used for modality conformance (see contracts/capabilities.py).",
+      "enum": [
+        "content",
+        "audio",
+        "turn_timestamps",
+        "speaker_labels",
+        "call_start_ts",
+        "call_start_captured"
+      ],
+      "title": "Capability",
+      "type": "string"
+    },
+    "DefectDef": {
+      "additionalProperties": false,
+      "properties": {
+        "defect_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$",
+          "title": "Defect Id",
+          "type": "string"
+        },
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "dimension_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dimension Id"
+        },
+        "gate_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gate Id"
+        },
+        "requires": {
+          "items": {
+            "$ref": "#/$defs/Capability"
+          },
+          "title": "Requires",
+          "type": "array"
+        },
+        "severity": {
+          "$ref": "#/$defs/Severity"
+        },
+        "title": {
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "defect_id",
+        "title",
+        "description",
+        "severity"
+      ],
+      "title": "DefectDef",
+      "type": "object"
+    },
+    "DimensionDef": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "dimension_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$",
+          "title": "Dimension Id",
+          "type": "string"
+        },
+        "requires": {
+          "items": {
+            "$ref": "#/$defs/Capability"
+          },
+          "title": "Requires",
+          "type": "array"
+        },
+        "scale_max": {
+          "default": 5.0,
+          "title": "Scale Max",
+          "type": "number"
+        },
+        "scale_min": {
+          "default": 1.0,
+          "title": "Scale Min",
+          "type": "number"
+        },
+        "title": {
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "dimension_id",
+        "title",
+        "description"
+      ],
+      "title": "DimensionDef",
+      "type": "object"
+    },
+    "GateDef": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "gate_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$",
+          "title": "Gate Id",
+          "type": "string"
+        },
+        "requires": {
+          "items": {
+            "$ref": "#/$defs/Capability"
+          },
+          "title": "Requires",
+          "type": "array"
+        },
+        "severity": {
+          "$ref": "#/$defs/Severity",
+          "default": "critical"
+        },
+        "title": {
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "gate_id",
+        "title",
+        "description"
+      ],
+      "title": "GateDef",
+      "type": "object"
+    },
+    "OutcomeClass": {
+      "enum": [
+        "win",
+        "loss",
+        "neutral",
+        "unknown"
+      ],
+      "title": "OutcomeClass",
+      "type": "string"
+    },
+    "OutcomeCode": {
+      "enum": [
+        "promise_to_pay",
+        "payment_committed_on_call",
+        "payment_plan_agreed",
+        "dispute_raised",
+        "callback_scheduled",
+        "refusal_to_pay",
+        "wrong_party",
+        "hardship_disclosed",
+        "no_resolution",
+        "call_dropped"
+      ],
+      "title": "OutcomeCode",
+      "type": "string"
+    },
+    "Severity": {
+      "enum": [
+        "critical",
+        "major",
+        "minor"
+      ],
+      "title": "Severity",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "defects": {
+      "items": {
+        "$ref": "#/$defs/DefectDef"
+      },
+      "title": "Defects",
+      "type": "array"
+    },
+    "description": {
+      "minLength": 1,
+      "title": "Description",
+      "type": "string"
+    },
+    "dimensions": {
+      "items": {
+        "$ref": "#/$defs/DimensionDef"
+      },
+      "title": "Dimensions",
+      "type": "array"
+    },
+    "gates": {
+      "items": {
+        "$ref": "#/$defs/GateDef"
+      },
+      "title": "Gates",
+      "type": "array"
+    },
+    "outcome_classes": {
+      "additionalProperties": {
+        "$ref": "#/$defs/OutcomeClass"
+      },
+      "propertyNames": {
+        "$ref": "#/$defs/OutcomeCode"
+      },
+      "title": "Outcome Classes",
+      "type": "object"
+    },
+    "profile_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$",
+      "title": "Profile Id",
+      "type": "string"
+    },
+    "profile_version": {
+      "minLength": 1,
+      "title": "Profile Version",
+      "type": "string"
+    },
+    "rubric_version": {
+      "minLength": 1,
+      "title": "Rubric Version",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "profile/1.0.0",
+      "default": "profile/1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "placeholder",
+        "draft",
+        "frozen"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "use_case": {
+      "const": "collections",
+      "default": "collections",
+      "title": "Use Case",
+      "type": "string"
+    }
+  },
+  "required": [
+    "profile_id",
+    "profile_version",
+    "rubric_version",
+    "status",
+    "description",
+    "gates",
+    "defects",
+    "outcome_classes"
+  ],
+  "title": "Profile",
+  "type": "object"
+}

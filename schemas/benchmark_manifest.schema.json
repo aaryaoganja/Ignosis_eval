@@ -1,0 +1,346 @@
+{
+  "$defs": {
+    "Capability": {
+      "description": "What an input makes observable. Used for modality conformance (see contracts/capabilities.py).",
+      "enum": [
+        "content",
+        "audio",
+        "turn_timestamps",
+        "speaker_labels",
+        "call_start_ts",
+        "call_start_captured"
+      ],
+      "title": "Capability",
+      "type": "string"
+    },
+    "CapabilityBoundaries": {
+      "additionalProperties": false,
+      "description": "What the case needs to be fully evaluable, and which single modality would suffice.",
+      "properties": {
+        "audio_sufficient": {
+          "title": "Audio Sufficient",
+          "type": "boolean"
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Notes"
+        },
+        "required_capabilities": {
+          "items": {
+            "$ref": "#/$defs/Capability"
+          },
+          "title": "Required Capabilities",
+          "type": "array"
+        },
+        "transcript_sufficient": {
+          "title": "Transcript Sufficient",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "transcript_sufficient",
+        "audio_sufficient"
+      ],
+      "title": "CapabilityBoundaries",
+      "type": "object"
+    },
+    "CaseEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "case_card_path": {
+          "minLength": 1,
+          "title": "Case Card Path",
+          "type": "string"
+        },
+        "content_fingerprint": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Content Fingerprint",
+          "type": "string"
+        },
+        "files": {
+          "items": {
+            "$ref": "#/$defs/FileHash"
+          },
+          "title": "Files",
+          "type": "array"
+        },
+        "input_path": {
+          "minLength": 1,
+          "title": "Input Path",
+          "type": "string"
+        },
+        "metadata": {
+          "$ref": "#/$defs/CaseMetadata"
+        }
+      },
+      "required": [
+        "metadata",
+        "input_path",
+        "case_card_path",
+        "files",
+        "content_fingerprint"
+      ],
+      "title": "CaseEntry",
+      "type": "object"
+    },
+    "CaseMetadata": {
+      "additionalProperties": false,
+      "properties": {
+        "attribution_pair_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Attribution Pair Id"
+        },
+        "capability_boundaries": {
+          "$ref": "#/$defs/CapabilityBoundaries"
+        },
+        "case_id": {
+          "pattern": "^[a-z0-9][a-z0-9-]{2,63}$",
+          "title": "Case Id",
+          "type": "string"
+        },
+        "category": {
+          "minLength": 1,
+          "title": "Category",
+          "type": "string"
+        },
+        "intended_modality": {
+          "$ref": "#/$defs/InputMode"
+        },
+        "judge_bait": {
+          "default": false,
+          "title": "Judge Bait",
+          "type": "boolean"
+        },
+        "judge_bait_kind": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Judge Bait Kind"
+        },
+        "language": {
+          "pattern": "^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$",
+          "title": "Language",
+          "type": "string"
+        },
+        "pair_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pair Id"
+        },
+        "pair_role": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pair Role"
+        },
+        "scenario": {
+          "minLength": 1,
+          "title": "Scenario",
+          "type": "string"
+        },
+        "source_kind": {
+          "$ref": "#/$defs/SourceKind"
+        },
+        "split": {
+          "$ref": "#/$defs/Split"
+        },
+        "synthetic": {
+          "title": "Synthetic",
+          "type": "boolean"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Tags",
+          "type": "array"
+        }
+      },
+      "required": [
+        "case_id",
+        "split",
+        "scenario",
+        "category",
+        "intended_modality",
+        "language",
+        "synthetic",
+        "source_kind",
+        "capability_boundaries"
+      ],
+      "title": "CaseMetadata",
+      "type": "object"
+    },
+    "FileHash": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "json_canonical",
+            "raw_bytes"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "path": {
+          "minLength": 1,
+          "title": "Path",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "sha256",
+        "kind"
+      ],
+      "title": "FileHash",
+      "type": "object"
+    },
+    "InputMode": {
+      "enum": [
+        "audio_only",
+        "transcript_only",
+        "audio_transcript"
+      ],
+      "title": "InputMode",
+      "type": "string"
+    },
+    "SourceKind": {
+      "enum": [
+        "synthetic_scripted",
+        "synthetic_tts",
+        "synthetic_acted",
+        "real_redacted",
+        "real_consented"
+      ],
+      "title": "SourceKind",
+      "type": "string"
+    },
+    "Split": {
+      "enum": [
+        "dev",
+        "holdout",
+        "redteam",
+        "calibration"
+      ],
+      "title": "Split",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "cases": {
+      "items": {
+        "$ref": "#/$defs/CaseEntry"
+      },
+      "title": "Cases",
+      "type": "array"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "created_by": {
+      "minLength": 1,
+      "title": "Created By",
+      "type": "string"
+    },
+    "dataset_hash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Dataset Hash",
+      "type": "string"
+    },
+    "dataset_name": {
+      "minLength": 1,
+      "title": "Dataset Name",
+      "type": "string"
+    },
+    "dataset_version": {
+      "minLength": 1,
+      "title": "Dataset Version",
+      "type": "string"
+    },
+    "notes": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Notes"
+    },
+    "schema_version": {
+      "const": "benchmark_manifest/1.0.0",
+      "default": "benchmark_manifest/1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "split_hashes": {
+      "additionalProperties": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "propertyNames": {
+        "$ref": "#/$defs/Split"
+      },
+      "title": "Split Hashes",
+      "type": "object"
+    }
+  },
+  "required": [
+    "dataset_name",
+    "dataset_version",
+    "created_at",
+    "created_by",
+    "cases",
+    "split_hashes",
+    "dataset_hash"
+  ],
+  "title": "BenchmarkManifest",
+  "type": "object"
+}

@@ -104,6 +104,92 @@ def cmd_gold_verify(args) -> int:
     return 0
 
 
+# ------------------------------------------------------------------------------------------ run / score
+def _kv(pairs: list[str]) -> dict:
+    out = {}
+    for p in pairs or []:
+        k, _, v = p.partition("=")
+        if not k or not _:
+            raise SystemExit(f"--evaluator-option expects key=value, got {p!r}")
+        try:
+            out[k] = float(v) if v.replace(".", "", 1).isdigit() else v
+        except ValueError:
+            out[k] = v
+    return out
+
+
+def _policy(args):
+    from ignosis_eval.stats.proportion import IntervalPolicy
+
+    return IntervalPolicy(confidence=args.confidence, min_n=args.min_n)
+
+
+def _print_summary(metrics: dict, out_dir) -> None:
+    print(f"scoring written to {out_dir}")
+    for w in metrics.get("warnings", []):
+        print(f"WARNING: {w}")
+    for name in ("critical_misses", "unsupported_pass_verdict", "integrity_failures", "critical_false_positive_gate",
+                 "major_recall", "verdict_accuracy", "abstention_recall", "modality_conformance",
+                 "verdict_consistency"):
+        m = metrics["metrics"][name]
+        if m.get("n") is None:
+            print(f"  {name:32s} not measurable ({m.get('note')})")
+        else:
+            iv = m.get("interval")
+            ivs = f" [{iv['low_pct']:.1f}%, {iv['high_pct']:.1f}%] {iv['method']}" if iv else " (no interval)"
+            pct = "n/a" if m["pct"] is None else f"{m['pct']:.1f}%"
+            print(f"  {name:32s} {m['k']}/{m['n']} = {pct}{ivs}")
+
+
+def cmd_run(args) -> int:
+    from ignosis_eval.contracts.enums import Split
+    from ignosis_eval.runner.experiment import RunConfig, run_experiment
+
+    cfg = RunConfig(
+        benchmark_root=Path(args.benchmark_root), split=Split(args.split), evaluator=args.evaluator,
+        repetitions=args.reps, seed=args.seed, runs_root=Path(args.runs_root), scoring_root=Path(args.scoring_root),
+        profile_path=Path(args.profile), llm_backend=args.llm_backend, model_id=args.model_id,
+        temperature=args.temperature, evaluator_options=_kv(args.evaluator_option), shuffle=args.shuffle,
+        official=args.official, confirm_holdout=args.confirm_holdout, purpose=args.purpose,
+        item_ids=args.items.split(",") if args.items else None, score=not args.no_score,
+        interval_policy=_policy(args), reference_language=args.reference_language,
+        invocation=["ignosis-eval", *sys.argv[1:]])
+    res = run_experiment(cfg)
+    c = res.completion
+    print(f"run {res.run_id}: {c.status}; {c.n_records_written}/{c.n_item_reps_expected} records, "
+          f"{c.n_item_reps_with_errors} item-reps with errors -> {res.run_dir}")
+    if res.metrics is not None:
+        _print_summary(res.metrics, res.scoring_dir)
+    return 0
+
+
+def cmd_score(args) -> int:
+    from ignosis_eval.scoring.scorer import ScoringConfig, score_run
+
+    out_dir, _ = score_run(args.run_dir, args.benchmark_root, scoring_root=args.scoring_root,
+                           config=ScoringConfig(_policy(args), args.reference_language),
+                           profile_path=args.profile, allow_incomplete=args.allow_incomplete,
+                           out_suffix=args.suffix)
+    from ignosis_eval.contracts.io import read_json
+
+    _print_summary(read_json(out_dir / "metrics.json"), out_dir)
+    return 0
+
+
+def _add_stats_args(p) -> None:
+    p.add_argument("--confidence", type=float, default=0.95)
+    p.add_argument("--min-n", type=int, default=10, help="minimum n before any interval is reported")
+    p.add_argument("--reference-language", default=None)
+
+
+def cmd_schemas_export(args) -> int:
+    from ignosis_eval.schemas import export_schemas
+
+    paths = export_schemas(Path(args.out))
+    print(f"wrote {len(paths)} schemas to {args.out}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="ignosis-eval", description=__doc__)
     sub = p.add_subparsers(dest="group", required=True)
@@ -150,17 +236,59 @@ def build_parser() -> argparse.ArgumentParser:
     gv = gd.add_parser("verify", help="verify gold hashes against the gold manifest")
     gv.add_argument("--benchmark-root", default="benchmark")
     gv.set_defaults(func=cmd_gold_verify)
+
+    from ignosis_eval.evaluators.registry import EVALUATOR_NAMES
+
+    rn = sub.add_parser("run", help="run an experiment (evaluate a split, store raw outputs, score)")
+    rn.add_argument("--benchmark-root", default="benchmark")
+    rn.add_argument("--split", required=True, choices=["dev", "holdout", "redteam", "calibration"])
+    rn.add_argument("--evaluator", required=True, choices=list(EVALUATOR_NAMES))
+    rn.add_argument("--reps", type=int, default=1, help="repetitions per item")
+    rn.add_argument("--seed", type=int, required=True, help="randomization seed (recorded)")
+    rn.add_argument("--llm-backend", default="mock", choices=["mock", "anthropic"])
+    rn.add_argument("--model-id", default=None)
+    rn.add_argument("--temperature", type=float, default=0.0)
+    rn.add_argument("--evaluator-option", action="append", default=[], metavar="KEY=VALUE")
+    rn.add_argument("--profile", default=DEFAULT_PROFILE)
+    rn.add_argument("--runs-root", default="runs")
+    rn.add_argument("--scoring-root", default="scoring")
+    rn.add_argument("--shuffle", action="store_true", help="shuffle item order with the seed")
+    rn.add_argument("--items", default=None, help="comma-separated subset of item ids (debug only)")
+    rn.add_argument("--official", action="store_true", help="official run: clean git, frozen gold, full split")
+    rn.add_argument("--confirm-holdout", action="store_true", help="required to run on the holdout split")
+    rn.add_argument("--purpose", default=None)
+    rn.add_argument("--no-score", action="store_true")
+    _add_stats_args(rn)
+    rn.set_defaults(func=cmd_run)
+
+    sc = sub.add_parser("score", help="(re)score an existing run; outputs are write-once")
+    sc.add_argument("--run-dir", required=True)
+    sc.add_argument("--benchmark-root", default="benchmark")
+    sc.add_argument("--scoring-root", default="scoring")
+    sc.add_argument("--profile", default=None, help="defaults to the path recorded in the run manifest")
+    sc.add_argument("--suffix", default=None, help="write to scoring/<run_id>--<suffix> (re-scoring)")
+    sc.add_argument("--allow-incomplete", action="store_true")
+    _add_stats_args(sc)
+    sc.set_defaults(func=cmd_score)
+
+    sx = sub.add_parser("schemas", help="export JSON Schemas of all contracts").add_subparsers(dest="cmd",
+                                                                                               required=True)
+    ex = sx.add_parser("export")
+    ex.add_argument("--out", default="schemas")
+    ex.set_defaults(func=cmd_schemas_export)
     return p
 
 
 def main(argv: list[str] | None = None) -> int:
     from ignosis_eval.benchmark.checks import BenchmarkIntegrityError
     from ignosis_eval.integrity.freeze import IntegrityError
+    from ignosis_eval.runner.experiment import RunConfigError
+    from ignosis_eval.scoring.loader import ScoringError
 
     args = build_parser().parse_args(argv)
     try:
         return args.func(args)
-    except (IntegrityError, BenchmarkIntegrityError) as exc:
+    except (IntegrityError, BenchmarkIntegrityError, ScoringError, RunConfigError) as exc:
         print(f"FAIL CLOSED: {exc}", file=sys.stderr)
         return 3
 
