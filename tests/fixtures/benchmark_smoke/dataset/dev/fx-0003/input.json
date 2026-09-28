@@ -1,0 +1,136 @@
+{
+  "audio": {
+    "channel_map": null,
+    "channels": 1,
+    "codec": "pcm_u8",
+    "contains_real_pii": false,
+    "duration_ms": 21000,
+    "format": "wav",
+    "rendering": {
+      "codec_simulation": null,
+      "method": "tts",
+      "noise_profile": null,
+      "renderer_version": "0",
+      "rendering_seed": 0,
+      "snr_db": null,
+      "source_script_sha256": null,
+      "tts_engine": "fixture-silence-generator/0",
+      "tts_voice_ids": null
+    },
+    "sample_rate_hz": 1000,
+    "sha256": "c8e8c1f7132b016301fb7f082464bf10327caadba6e5602e6ec9be6818f101f1",
+    "uri": "audio.wav"
+  },
+  "call_id": "call-7f3a03",
+  "call_start_ts": "2026-09-01T10:30:00+05:30",
+  "evaluability": {
+    "asr_mean_confidence": null,
+    "audio_snr_db": null,
+    "known_issues": [],
+    "notes": null
+  },
+  "evidence_availability": {
+    "audio": true,
+    "call_end_captured": true,
+    "call_start_captured": true,
+    "call_start_ts": true,
+    "speaker_labels": true,
+    "transcript": true,
+    "turn_timestamps": true
+  },
+  "input_mode": "audio_transcript",
+  "language": {
+    "code_mixed": true,
+    "others": [
+      "en-IN"
+    ],
+    "primary": "hi-Latn-IN"
+  },
+  "schema_version": "canonical_input/1.0.0",
+  "transcript": {
+    "provenance": {
+      "asr_engine": null,
+      "asr_model": null,
+      "asr_version": null,
+      "derived_from_audio_sha256": null,
+      "diarization": "scripted",
+      "language_detected": null,
+      "notes": "TEST FIXTURE",
+      "produced_at": null,
+      "source": "human_verbatim",
+      "timestamp_source": "script_planned"
+    },
+    "turns": [
+      {
+        "asr_confidence": null,
+        "end_ms": 2500,
+        "index": 0,
+        "language": null,
+        "speaker": "agent",
+        "start_ms": 0,
+        "text": "Namaste, main Acme Finance ki taraf se Neha bol rahi hoon. Yeh call record ho rahi hai. Kya meri baat Sunil Kumar ji se ho rahi hai?",
+        "turn_id": "t01"
+      },
+      {
+        "asr_confidence": null,
+        "end_ms": 5500,
+        "index": 1,
+        "language": null,
+        "speaker": "customer",
+        "start_ms": 3000,
+        "text": "Haan, main Sunil bol raha hoon.",
+        "turn_id": "t02"
+      },
+      {
+        "asr_confidence": null,
+        "end_ms": 8500,
+        "index": 2,
+        "language": null,
+        "speaker": "agent",
+        "start_ms": 6000,
+        "text": "Sunil ji, aapke personal loan ki EMI 4,500 rupaye overdue hai.",
+        "turn_id": "t03"
+      },
+      {
+        "asr_confidence": null,
+        "end_ms": 11500,
+        "index": 3,
+        "language": null,
+        "speaker": "customer",
+        "start_ms": 9000,
+        "text": "Haan, main is hafte de dunga.",
+        "turn_id": "t04"
+      },
+      {
+        "asr_confidence": null,
+        "end_ms": 14500,
+        "index": 4,
+        "language": null,
+        "speaker": "agent",
+        "start_ms": 12000,
+        "text": "Theek hai, toh aap 5,400 rupaye Friday tak jama kar dijiye.",
+        "turn_id": "t05"
+      },
+      {
+        "asr_confidence": null,
+        "end_ms": 17500,
+        "index": 5,
+        "language": null,
+        "speaker": "customer",
+        "start_ms": 15000,
+        "text": "Theek hai, Friday tak kar dunga.",
+        "turn_id": "t06"
+      },
+      {
+        "asr_confidence": null,
+        "end_ms": 20500,
+        "index": 6,
+        "language": null,
+        "speaker": "agent",
+        "start_ms": 18000,
+        "text": "Dhanyavaad, Sunil ji.",
+        "turn_id": "t07"
+      }
+    ]
+  }
+}

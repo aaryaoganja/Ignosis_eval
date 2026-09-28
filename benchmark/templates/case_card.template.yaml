@@ -1,0 +1,104 @@
+# =====================================================================================================
+# CASE CARD TEMPLATE  (schema: case_card/1.0.0)
+#
+# A case card records AUTHOR INTENT for one benchmark case. It is not the gold label; gold is written
+# separately (benchmark/gold/<split>/<case_id>.gold.json) and frozen with a hash.
+#
+# How to use:
+#   1. Copy to benchmark/case_cards/<split>/<case_id>.card.yaml
+#   2. Replace EVERY <...> placeholder (the validator rejects any remaining placeholder, TODO or TBD).
+#   3. Validate:  python scripts/validate_case_cards.py benchmark/case_cards/<split>/<case_id>.card.yaml
+#   4. Validate the whole benchmark (cross-card pairs, split integrity, card vs input):
+#                 ignosis-eval benchmark check --benchmark-root benchmark
+#
+# Case ids: lowercase, digits and '-', 3-64 chars, OPAQUE (must not reveal the scenario — call_ids are
+# evaluator-visible, and case ids leak into logs).
+# Rules are documented in docs/benchmark-authoring.md (CC0xx / CX0x / CP0x / CS0x).
+# =====================================================================================================
+case_card_version: case_card/1.0.0
+case_id: <opaque-case-id e.g. c-0001>
+status: draft                        # draft | in_review | approved (approved needs a reviewer != author)
+authoring:
+  author_id: <pseudonymous author id>
+  created_on: 2026-01-01             # YYYY-MM-DD
+  reviewers: []                      # pseudonymous ids
+
+split: dev                           # dev | holdout | redteam | calibration  (must match the directory)
+scenario: <snake_case scenario name, e.g. threat_of_arrest_after_ptp>
+category: <e.g. compliance_gate | negotiation_quality | evaluability | attribution | out_of_scope>
+language: en-IN                      # BCP-47 of the call's primary language (e.g. en-IN, hi-IN, hi-Latn-IN)
+source_kind: synthetic_scripted      # synthetic_scripted | synthetic_tts | synthetic_acted | real_redacted | real_consented
+                                     # real_* cases must carry the tag 'pii_reviewed'
+
+rationale: >-
+  <Why this case exists: which failure mode or capability it isolates, and why the benchmark needs it.>
+
+customer_context:
+  persona: <who the customer is (fictional)>
+  account_context: <narrative account context — never real account data>
+  situation: <what is going on for the customer on this call>
+  vulnerability_flags: []            # e.g. [bereavement, medical_hardship]
+
+intended_behavior: >-
+  <What a compliant, competent agent should do in this situation.>
+agent_behavior: >-
+  <What the agent actually does in this case.>
+
+# --- target defect -----------------------------------------------------------------------------------
+# For a CLEAN case: target_defect: null, gate: null, severity: none, repair_status: not_applicable,
+#                   evidence_* fields empty, attribution: null
+target_defect:
+  defect_id: <defect id from the evaluation profile, e.g. DEF_THREAT_OR_INTIMIDATION>
+  description: <how the defect manifests in this call>
+gate: <gate id from the profile, or null if the defect is not gate-level>
+severity: critical                   # critical | major | minor | none
+repair_status: not_repaired          # not_repaired | partially_repaired | repaired | not_applicable
+evidence_turns: [<turn id>]          # turn ids in input.json that carry the defect
+evidence_metadata_fields: []         # e.g. [call_start_ts] for contact-hours defects
+evidence_audio_spans_ms: []          # e.g. [[12000, 15500]] for audio-only evidence
+attribution:
+  target: agent_logic                # agent_logic | asr | tts | telephony_audio | customer | upstream_data | undetermined
+  determinable: true                 # false iff target is 'undetermined'
+  rationale: <why the defect is attributable to this component>
+incidental_defects: []               # other defects deliberately or unavoidably present: [{defect_id, severity, description}]
+
+# --- outcome ---------------------------------------------------------------------------------------
+outcome:
+  outcome_class: win                 # win | loss | neutral | unknown
+  outcomes: [promise_to_pay]         # outcome codes (see contracts/enums.py OutcomeCode)
+  notes: null
+dangerous_win: false                 # good outcome achieved through a critical/major unrepaired defect
+clean_loss: false                    # bad outcome with compliant conduct (no critical/major defect)
+
+# --- modality --------------------------------------------------------------------------------------
+modality:
+  intended_modality: transcript_only # audio_only | transcript_only | audio_transcript
+  constraints: []                    # e.g. ["defect only audible in prosody", "call opening truncated"]
+  capability_boundaries:
+    required_capabilities: [content] # content | audio | turn_timestamps | speaker_labels | call_start_ts | call_start_captured
+    transcript_sufficient: true
+    audio_sufficient: true
+    notes: null
+expected_evaluability: evaluable     # evaluable | inconclusive | out_of_scope
+
+ambiguity_notes: >-
+  <Where reasonable labelers could disagree, or "none identified" (explicitly).>
+
+# --- pairs -----------------------------------------------------------------------------------------
+minimal_pair: null
+# minimal_pair:
+#   pair_id: <pair id shared by exactly two cases in the SAME split>
+#   role: <e.g. control | treatment>
+#   counterpart_case_id: <the other case id>
+#   manipulated_factor: <the single factor that differs>
+#   held_constant: [<everything else that is held constant>]
+attribution_pair: null
+# attribution_pair:
+#   attribution_pair_id: <id shared by cases with the same surface symptom but different causes>
+#   counterpart_case_ids: [<other case ids>]
+#   manipulated_cause: <what cause differs between members>
+judge_bait: null
+# judge_bait:
+#   kind: <e.g. polite_violation | rude_but_compliant | keyword_trap | prompt_injection>
+#   description: <how the case tries to mislead an LLM judge>
+tags: []

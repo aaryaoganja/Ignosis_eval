@@ -1,0 +1,113 @@
+{
+  "audio": null,
+  "call_id": "call-7f3a02",
+  "call_start_ts": "2026-09-01T10:30:00+05:30",
+  "evaluability": {
+    "asr_mean_confidence": null,
+    "audio_snr_db": null,
+    "known_issues": [],
+    "notes": null
+  },
+  "evidence_availability": {
+    "audio": false,
+    "call_end_captured": true,
+    "call_start_captured": true,
+    "call_start_ts": true,
+    "speaker_labels": true,
+    "transcript": true,
+    "turn_timestamps": true
+  },
+  "input_mode": "transcript_only",
+  "language": {
+    "code_mixed": false,
+    "others": [],
+    "primary": "en-IN"
+  },
+  "schema_version": "canonical_input/1.0.0",
+  "transcript": {
+    "provenance": {
+      "asr_engine": null,
+      "asr_model": null,
+      "asr_version": null,
+      "derived_from_audio_sha256": null,
+      "diarization": "scripted",
+      "language_detected": null,
+      "notes": "TEST FIXTURE",
+      "produced_at": null,
+      "source": "synthetic_script",
+      "timestamp_source": "script_planned"
+    },
+    "turns": [
+      {
+        "asr_confidence": null,
+        "end_ms": 2500,
+        "index": 0,
+        "language": null,
+        "speaker": "agent",
+        "start_ms": 0,
+        "text": "Good morning, this is Priya calling on behalf of Acme Finance. This call is recorded. Am I speaking with Mr. Rahul Verma?",
+        "turn_id": "t01"
+      },
+      {
+        "asr_confidence": null,
+        "end_ms": 5500,
+        "index": 1,
+        "language": null,
+        "speaker": "customer",
+        "start_ms": 3000,
+        "text": "Yes, speaking.",
+        "turn_id": "t02"
+      },
+      {
+        "asr_confidence": null,
+        "end_ms": 8500,
+        "index": 2,
+        "language": null,
+        "speaker": "agent",
+        "start_ms": 6000,
+        "text": "Thank you. I am calling about your personal loan. The EMI of 4,500 rupees due on the 5th is overdue.",
+        "turn_id": "t03"
+      },
+      {
+        "asr_confidence": null,
+        "end_ms": 11500,
+        "index": 3,
+        "language": null,
+        "speaker": "customer",
+        "start_ms": 9000,
+        "text": "I know, my salary was delayed this month.",
+        "turn_id": "t04"
+      },
+      {
+        "asr_confidence": null,
+        "end_ms": 14500,
+        "index": 4,
+        "language": null,
+        "speaker": "agent",
+        "start_ms": 12000,
+        "text": "If you don't pay by Friday, the police will come to your house and arrest you.",
+        "turn_id": "t05"
+      },
+      {
+        "asr_confidence": null,
+        "end_ms": 17500,
+        "index": 5,
+        "language": null,
+        "speaker": "customer",
+        "start_ms": 15000,
+        "text": "I can pay the full amount on Friday.",
+        "turn_id": "t06"
+      },
+      {
+        "asr_confidence": null,
+        "end_ms": 20500,
+        "index": 6,
+        "language": null,
+        "speaker": "agent",
+        "start_ms": 18000,
+        "text": "Thank you, I have noted your promise to pay 4,500 rupees on Friday. Have a good day.",
+        "turn_id": "t07"
+      }
+    ]
+  }
+}

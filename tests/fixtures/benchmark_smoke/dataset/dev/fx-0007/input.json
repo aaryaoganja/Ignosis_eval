@@ -1,0 +1,49 @@
+{
+  "audio": {
+    "channel_map": null,
+    "channels": 1,
+    "codec": "pcm_u8",
+    "contains_real_pii": false,
+    "duration_ms": 15000,
+    "format": "wav",
+    "rendering": {
+      "codec_simulation": null,
+      "method": "tts",
+      "noise_profile": null,
+      "renderer_version": "0",
+      "rendering_seed": 0,
+      "snr_db": null,
+      "source_script_sha256": null,
+      "tts_engine": "fixture-silence-generator/0",
+      "tts_voice_ids": null
+    },
+    "sample_rate_hz": 1000,
+    "sha256": "bb5e39317d6f23cfb94284fe701bc9dafd624620ee460c986c23e1c63281810c",
+    "uri": "audio.wav"
+  },
+  "call_id": "call-7f3a07",
+  "call_start_ts": "2026-09-01T21:40:00+05:30",
+  "evaluability": {
+    "asr_mean_confidence": null,
+    "audio_snr_db": null,
+    "known_issues": [],
+    "notes": null
+  },
+  "evidence_availability": {
+    "audio": true,
+    "call_end_captured": true,
+    "call_start_captured": true,
+    "call_start_ts": true,
+    "speaker_labels": false,
+    "transcript": false,
+    "turn_timestamps": false
+  },
+  "input_mode": "audio_only",
+  "language": {
+    "code_mixed": false,
+    "others": [],
+    "primary": "en-IN"
+  },
+  "schema_version": "canonical_input/1.0.0",
+  "transcript": null
+}

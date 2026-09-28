@@ -1,0 +1,55 @@
+{
+  "note": "TEST FIXTURE: mock ASR output standing in for a real ASR system",
+  "turns": [
+    {
+      "asr_confidence": null,
+      "end_ms": 2500,
+      "index": 0,
+      "language": null,
+      "speaker": "agent",
+      "start_ms": 0,
+      "text": "Good evening, this is Arjun calling on behalf of Acme Finance. This call is recorded. Am I speaking with Ms. Meera Iyer?",
+      "turn_id": "t01"
+    },
+    {
+      "asr_confidence": null,
+      "end_ms": 5500,
+      "index": 1,
+      "language": null,
+      "speaker": "customer",
+      "start_ms": 3000,
+      "text": "Yes, but it is very late.",
+      "turn_id": "t02"
+    },
+    {
+      "asr_confidence": null,
+      "end_ms": 8500,
+      "index": 2,
+      "language": null,
+      "speaker": "agent",
+      "start_ms": 6000,
+      "text": "Apologies. I am calling about your credit card dues of 12,000 rupees which are overdue.",
+      "turn_id": "t03"
+    },
+    {
+      "asr_confidence": null,
+      "end_ms": 11500,
+      "index": 3,
+      "language": null,
+      "speaker": "customer",
+      "start_ms": 9000,
+      "text": "Please call me tomorrow.",
+      "turn_id": "t04"
+    },
+    {
+      "asr_confidence": null,
+      "end_ms": 14500,
+      "index": 4,
+      "language": null,
+      "speaker": "agent",
+      "start_ms": 12000,
+      "text": "Sure, I will call you tomorrow at 11 am. Thank you.",
+      "turn_id": "t05"
+    }
+  ]
+}

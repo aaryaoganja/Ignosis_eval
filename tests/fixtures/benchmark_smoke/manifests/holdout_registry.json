@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "case_id": "fx-0008",
+      "content_fingerprint": "a0930510c9377eeca99b8b710b986576caca9ba082caa9959d4b2a455dd1cb1e",
+      "registered_at": "2026-09-28T15:44:33.608080Z"
+    }
+  ],
+  "schema_version": "holdout_registry/1.0.0"
+}

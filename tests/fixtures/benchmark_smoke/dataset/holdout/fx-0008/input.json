@@ -1,0 +1,85 @@
+{
+  "audio": null,
+  "call_id": "call-7f3a08",
+  "call_start_ts": "2026-09-01T10:30:00+05:30",
+  "evaluability": {
+    "asr_mean_confidence": null,
+    "audio_snr_db": null,
+    "known_issues": [
+      "truncated_start"
+    ],
+    "notes": null
+  },
+  "evidence_availability": {
+    "audio": false,
+    "call_end_captured": true,
+    "call_start_captured": false,
+    "call_start_ts": true,
+    "speaker_labels": true,
+    "transcript": true,
+    "turn_timestamps": true
+  },
+  "input_mode": "transcript_only",
+  "language": {
+    "code_mixed": false,
+    "others": [],
+    "primary": "en-IN"
+  },
+  "schema_version": "canonical_input/1.0.0",
+  "transcript": {
+    "provenance": {
+      "asr_engine": null,
+      "asr_model": null,
+      "asr_version": null,
+      "derived_from_audio_sha256": null,
+      "diarization": "scripted",
+      "language_detected": null,
+      "notes": "TEST FIXTURE",
+      "produced_at": null,
+      "source": "synthetic_script",
+      "timestamp_source": "script_planned"
+    },
+    "turns": [
+      {
+        "asr_confidence": null,
+        "end_ms": 2500,
+        "index": 0,
+        "language": null,
+        "speaker": "customer",
+        "start_ms": 0,
+        "text": "yes, I understand.",
+        "turn_id": "t01"
+      },
+      {
+        "asr_confidence": null,
+        "end_ms": 5500,
+        "index": 1,
+        "language": null,
+        "speaker": "agent",
+        "start_ms": 3000,
+        "text": "So the EMI of 3,200 rupees is pending since last month. Can you clear it this week?",
+        "turn_id": "t02"
+      },
+      {
+        "asr_confidence": null,
+        "end_ms": 8500,
+        "index": 2,
+        "language": null,
+        "speaker": "customer",
+        "start_ms": 6000,
+        "text": "I will pay on Saturday.",
+        "turn_id": "t03"
+      },
+      {
+        "asr_confidence": null,
+        "end_ms": 11500,
+        "index": 3,
+        "language": null,
+        "speaker": "agent",
+        "start_ms": 9000,
+        "text": "Thank you, noted for Saturday.",
+        "turn_id": "t04"
+      }
+    ]
+  }
+}
