@@ -1,0 +1,53 @@
+# =====================================================================================================
+# CASE CARD TEMPLATE  (schema: case_card/2.0.0 — contracts/case_card.py, schemas/case_card.schema.json)
+#
+# A case card records AUTHOR INTENT for one bench-a1 item (B-01). It is not gold: gold is labeled blind and
+# separately (B-02). Written by the human case author only; see the B-01 authoring constraints in
+# docs/spec/implementation-blockers.md (no rubric vocabulary in borrower speech, pairs edit 1–3 agent turns
+# with length within ±10%, G7 items carry a call_start_ts header, A-04 carries truncated_start or a marker).
+#
+#   dev:              bench/dev/case_cards/<item_id>.card.yaml
+#   holdout/red team: $BENCH_PRIVATE_DIR/case_cards/<item_id>.card.yaml
+#   validate:         ignosis-eval casecard validate <card>   and   ignosis-eval bench check
+# Every <...> placeholder must be replaced (rule CC002).
+# =====================================================================================================
+case_card_version: case_card/2.0.0
+item_id: <canonical bench-a1 id, e.g. from frozen-contract §12>
+status: draft                     # draft | in_review | approved (approved needs a reviewer other than the author)
+authoring:
+  author_id: <pseudonymous author id>
+  created_on: <YYYY-MM-DD>
+  reviewers: []
+  llm_assisted: false             # if true, llm_family must differ from the evaluator's model family (B-01 rule 1)
+  llm_family: null
+split: <dev | holdout | redteam>
+pack: <core | micro | abstention | modality | language_twin | snippet | redteam | calibration>
+language: <en | hi | hi-en | other>
+unit_modes: [<TRANSCRIPT | T-gold | T-asr | A | A+T | A+T-platform>]
+intent: <one-line intent from frozen-contract §12>
+rationale: <why the item exists and what it isolates (at least 40 characters)>
+scenario: <scenario description>
+target_behavior: <what the agent does in this item>
+target_check: <gate id, MVP code, always-OUT_OF_SCOPE code, or null for a clean item>
+target_sub_rule: null
+severity: <CRITICAL | MAJOR | MINOR | INFORMATIONAL, post-repair; null for a clean item>
+repair_status: <UNREPAIRED | REPAIRED; null for a clean item>
+evidence_turns: []                # 1-based turn numbers
+evidence_header: false            # true when the evidence is the header call_start_ts (G7)
+attribution_facts:
+  registered: null
+  said_heard_material_difference: null
+  readback_safeguard_present: null
+  notes: null
+outcome:
+  dispositions: []
+  positive: false
+dangerous_win: NONE               # NONE | CRITICAL | MATERIAL
+clean_loss: false
+expected_evaluability: EVALUABLE  # EVALUABLE | PARTIAL | NOT_EVALUABLE
+expected_reason_codes: []
+pair: null                        # {pair_id, role: clean | violating, counterpart_item_id}
+control_target_gates: []
+twin_of: null
+ambiguity_notes: <known ambiguities for labelers>
+tags: []                          # real (non-synthetic) items need pii_reviewed

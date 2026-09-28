@@ -1,4 +1,4 @@
-"""Git provenance of the evaluation code (recorded in every run manifest)."""
+"""Git provenance of the evaluation code (recorded in every run manifest; P-8 step 1 needs the tag)."""
 
 from __future__ import annotations
 
@@ -23,8 +23,9 @@ def _git(*args: str) -> str:
 
 
 def git_info() -> GitInfo:
-    """Commit, branch and dirty flag of the repository containing this package. Fails closed."""
+    """Commit, branch, dirty flag and a tag pointing at HEAD (if any). Fails closed if git is unavailable."""
     commit = _git("rev-parse", "HEAD")
     branch = _git("rev-parse", "--abbrev-ref", "HEAD")
     dirty = bool(_git("status", "--porcelain"))  # untracked (non-ignored) files also count as dirty
-    return GitInfo(commit=commit, branch=branch, dirty=dirty)
+    tags = sorted(t for t in _git("tag", "--points-at", "HEAD").splitlines() if t.strip())
+    return GitInfo(commit=commit, branch=branch, dirty=dirty, tag=tags[0] if tags else None)

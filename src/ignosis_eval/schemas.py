@@ -5,25 +5,36 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ignosis_eval.contracts.benchmark import BenchmarkManifest, GoldManifest, HoldoutRegistry
-from ignosis_eval.contracts.canonical_input import CanonicalInput
+from pydantic import BaseModel
+
+from ignosis_eval.contracts.benchmark import BenchManifest, GoldManifest, ItemMeta
+from ignosis_eval.contracts.canonical_input import NormalizedInput
 from ignosis_eval.contracts.case_card import CaseCard
 from ignosis_eval.contracts.evaluation_record import EvaluationRecord
 from ignosis_eval.contracts.gold_label import GoldLabel
-from ignosis_eval.contracts.profile import Profile
-from ignosis_eval.contracts.run_manifest import RunCompletion, RunManifest
+from ignosis_eval.contracts.profile import ProfileSpec
+from ignosis_eval.contracts.registries import Registries
+from ignosis_eval.contracts.run_manifest import (
+    BlindViewManifest,
+    RunCompletion,
+    RunManifest,
+    ScoringManifest,
+)
 
-CONTRACTS = {
-    "canonical_input": CanonicalInput,
+CONTRACTS: dict[str, type[BaseModel]] = {
+    "normalized_input": NormalizedInput,
     "evaluation_record": EvaluationRecord,
     "gold_label": GoldLabel,
     "case_card": CaseCard,
-    "profile": Profile,
-    "benchmark_manifest": BenchmarkManifest,
+    "item_meta": ItemMeta,
+    "registries": Registries,
+    "profile": ProfileSpec,
+    "bench_manifest": BenchManifest,
     "gold_manifest": GoldManifest,
-    "holdout_registry": HoldoutRegistry,
     "run_manifest": RunManifest,
     "run_completion": RunCompletion,
+    "blind_view_manifest": BlindViewManifest,
+    "scoring_manifest": ScoringManifest,
 }
 
 

@@ -1,0 +1,350 @@
+{
+  "$defs": {
+    "FileHash": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "json_canonical",
+            "raw_bytes"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "path": {
+          "minLength": 1,
+          "title": "Path",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "sha256",
+        "kind"
+      ],
+      "title": "FileHash",
+      "type": "object"
+    },
+    "InputMode": {
+      "enum": [
+        "AUDIO",
+        "TRANSCRIPT",
+        "AUDIO_TRANSCRIPT"
+      ],
+      "title": "InputMode",
+      "type": "string"
+    },
+    "ItemArtifacts": {
+      "additionalProperties": false,
+      "properties": {
+        "audio": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Audio"
+        },
+        "platform_transcript": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Platform Transcript"
+        },
+        "transcript": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Transcript"
+        }
+      },
+      "title": "ItemArtifacts",
+      "type": "object"
+    },
+    "ItemEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "content_fingerprint": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Content Fingerprint",
+          "type": "string"
+        },
+        "files": {
+          "items": {
+            "$ref": "#/$defs/FileHash"
+          },
+          "title": "Files",
+          "type": "array"
+        },
+        "meta": {
+          "$ref": "#/$defs/ItemMeta"
+        },
+        "units": {
+          "items": {
+            "$ref": "#/$defs/UnitFacts"
+          },
+          "title": "Units",
+          "type": "array"
+        }
+      },
+      "required": [
+        "meta",
+        "files",
+        "units",
+        "content_fingerprint"
+      ],
+      "title": "ItemEntry",
+      "type": "object"
+    },
+    "ItemMeta": {
+      "additionalProperties": false,
+      "description": "One benchmark item. Audio renderings of a textual item (e.g. P-01@audio) are units of the same item\n(T-gold, T-asr, A, A+T[, A+T-platform]) so that they share its content gold and can never cross splits;\naudio-native items (S-01..S-04) have audio units only.",
+      "properties": {
+        "artifacts": {
+          "$ref": "#/$defs/ItemArtifacts"
+        },
+        "item_id": {
+          "pattern": "^[A-Z][A-Z0-9]*(-[A-Z0-9]+)+$",
+          "title": "Item Id",
+          "type": "string"
+        },
+        "language": {
+          "enum": [
+            "en",
+            "hi",
+            "hi-en",
+            "other"
+          ],
+          "title": "Language",
+          "type": "string"
+        },
+        "pack": {
+          "$ref": "#/$defs/Pack"
+        },
+        "schema_version": {
+          "const": "item_meta/1.0.0",
+          "default": "item_meta/1.0.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "split": {
+          "$ref": "#/$defs/Split"
+        },
+        "synthetic": {
+          "default": true,
+          "title": "Synthetic",
+          "type": "boolean"
+        },
+        "unit_modes": {
+          "items": {
+            "$ref": "#/$defs/UnitMode"
+          },
+          "minItems": 1,
+          "title": "Unit Modes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "item_id",
+        "split",
+        "pack",
+        "language",
+        "unit_modes",
+        "artifacts"
+      ],
+      "title": "ItemMeta",
+      "type": "object"
+    },
+    "Pack": {
+      "description": "frozen-contract.md \u00a712 packs.",
+      "enum": [
+        "core",
+        "micro",
+        "abstention",
+        "modality",
+        "language_twin",
+        "snippet",
+        "redteam",
+        "calibration"
+      ],
+      "title": "Pack",
+      "type": "string"
+    },
+    "Split": {
+      "description": "experiment-protocol.md P-1 (dev in-repo; holdout and red team under $BENCH_PRIVATE_DIR).",
+      "enum": [
+        "dev",
+        "holdout",
+        "redteam"
+      ],
+      "title": "Split",
+      "type": "string"
+    },
+    "TranscriptProvenance": {
+      "enum": [
+        "platform_live_asr",
+        "human",
+        "offline_asr",
+        "unknown"
+      ],
+      "title": "TranscriptProvenance",
+      "type": "string"
+    },
+    "UnitFacts": {
+      "additionalProperties": false,
+      "description": "Facts about one unit that the capability table conditions on (derived at manifest build).",
+      "properties": {
+        "has_call_start_ts": {
+          "title": "Has Call Start Ts",
+          "type": "boolean"
+        },
+        "has_timestamps": {
+          "title": "Has Timestamps",
+          "type": "boolean"
+        },
+        "input_mode": {
+          "$ref": "#/$defs/InputMode"
+        },
+        "item_id": {
+          "pattern": "^[A-Z][A-Z0-9]*(-[A-Z0-9]+)+$",
+          "title": "Item Id",
+          "type": "string"
+        },
+        "provenance": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TranscriptProvenance"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "truncated_start": {
+          "title": "Truncated Start",
+          "type": "boolean"
+        },
+        "unit_mode": {
+          "$ref": "#/$defs/UnitMode"
+        }
+      },
+      "required": [
+        "item_id",
+        "unit_mode",
+        "input_mode",
+        "has_call_start_ts",
+        "has_timestamps",
+        "provenance",
+        "truncated_start"
+      ],
+      "title": "UnitFacts",
+      "type": "object"
+    },
+    "UnitMode": {
+      "description": "Unit modes (experiment-protocol P-5). Directory-safe spelling of `A+T(platform)` is `A+T-platform`.",
+      "enum": [
+        "TRANSCRIPT",
+        "T-gold",
+        "T-asr",
+        "A",
+        "A+T",
+        "A+T-platform"
+      ],
+      "title": "UnitMode",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "created_by": {
+      "minLength": 1,
+      "title": "Created By",
+      "type": "string"
+    },
+    "dataset_hash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Dataset Hash",
+      "type": "string"
+    },
+    "dataset_name": {
+      "minLength": 1,
+      "title": "Dataset Name",
+      "type": "string"
+    },
+    "dataset_version": {
+      "minLength": 1,
+      "title": "Dataset Version",
+      "type": "string"
+    },
+    "items": {
+      "items": {
+        "$ref": "#/$defs/ItemEntry"
+      },
+      "title": "Items",
+      "type": "array"
+    },
+    "notes": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Notes"
+    },
+    "schema_version": {
+      "const": "bench_manifest/2.0.0",
+      "default": "bench_manifest/2.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "scope": {
+      "enum": [
+        "dev",
+        "private"
+      ],
+      "title": "Scope",
+      "type": "string"
+    }
+  },
+  "required": [
+    "dataset_name",
+    "dataset_version",
+    "scope",
+    "created_at",
+    "created_by",
+    "items",
+    "dataset_hash"
+  ],
+  "title": "BenchManifest",
+  "type": "object"
+}

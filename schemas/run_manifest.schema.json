@@ -1,19 +1,10 @@
 {
   "$defs": {
-    "ASRInfo": {
+    "ComponentRef": {
       "additionalProperties": false,
+      "description": "An external component whose identity may still be pending sign-off (B-05..B-09).",
       "properties": {
-        "config": {
-          "additionalProperties": true,
-          "title": "Config",
-          "type": "object"
-        },
-        "engine": {
-          "minLength": 1,
-          "title": "Engine",
-          "type": "string"
-        },
-        "model": {
+        "blocker": {
           "anyOf": [
             {
               "type": "string"
@@ -23,50 +14,60 @@
             }
           ],
           "default": null,
-          "title": "Model"
+          "title": "Blocker"
+        },
+        "engine": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Engine"
+        },
+        "params": {
+          "additionalProperties": true,
+          "title": "Params",
+          "type": "object"
+        },
+        "status": {
+          "enum": [
+            "configured",
+            "mock",
+            "pending_signoff",
+            "not_used"
+          ],
+          "title": "Status",
+          "type": "string"
         },
         "version": {
-          "minLength": 1,
-          "title": "Version",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version"
         }
       },
       "required": [
-        "engine",
-        "version"
+        "status"
       ],
-      "title": "ASRInfo",
-      "type": "object"
-    },
-    "AudioRenderingSummary": {
-      "additionalProperties": false,
-      "properties": {
-        "n_items_with_audio": {
-          "minimum": 0,
-          "title": "N Items With Audio",
-          "type": "integer"
-        },
-        "renderings": {
-          "items": {
-            "additionalProperties": true,
-            "type": "object"
-          },
-          "title": "Renderings",
-          "type": "array"
-        }
-      },
-      "required": [
-        "n_items_with_audio"
-      ],
-      "title": "AudioRenderingSummary",
+      "title": "ComponentRef",
       "type": "object"
     },
     "DatasetRef": {
       "additionalProperties": false,
       "properties": {
-        "benchmark_manifest_sha256": {
+        "bench_manifest_sha256": {
           "pattern": "^[0-9a-f]{64}$",
-          "title": "Benchmark Manifest Sha256",
+          "title": "Bench Manifest Sha256",
           "type": "string"
         },
         "dataset_hash": {
@@ -74,27 +75,35 @@
           "title": "Dataset Hash",
           "type": "string"
         },
-        "item_ids": {
-          "items": {
-            "minLength": 1,
-            "type": "string"
-          },
-          "minItems": 1,
-          "title": "Item Ids",
-          "type": "array"
-        },
         "name": {
           "minLength": 1,
           "title": "Name",
           "type": "string"
         },
+        "registries_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Registries Sha256",
+          "type": "string"
+        },
+        "scope": {
+          "enum": [
+            "dev",
+            "private"
+          ],
+          "title": "Scope",
+          "type": "string"
+        },
         "split": {
           "$ref": "#/$defs/Split"
         },
-        "split_hash": {
-          "pattern": "^[0-9a-f]{64}$",
-          "title": "Split Hash",
-          "type": "string"
+        "units": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Units",
+          "type": "array"
         },
         "version": {
           "minLength": 1,
@@ -106,129 +115,13 @@
         "name",
         "version",
         "split",
-        "benchmark_manifest_sha256",
+        "scope",
+        "bench_manifest_sha256",
         "dataset_hash",
-        "split_hash",
-        "item_ids"
+        "registries_sha256",
+        "units"
       ],
       "title": "DatasetRef",
-      "type": "object"
-    },
-    "EvaluatorArchitecture": {
-      "enum": [
-        "A",
-        "A+",
-        "B",
-        "K0",
-        "MOCK"
-      ],
-      "title": "EvaluatorArchitecture",
-      "type": "string"
-    },
-    "EvaluatorRunConfig": {
-      "additionalProperties": false,
-      "properties": {
-        "architecture": {
-          "$ref": "#/$defs/EvaluatorArchitecture"
-        },
-        "config_hash": {
-          "pattern": "^[0-9a-f]{64}$",
-          "title": "Config Hash",
-          "type": "string"
-        },
-        "llm_backend": {
-          "enum": [
-            "none",
-            "mock",
-            "anthropic"
-          ],
-          "title": "Llm Backend",
-          "type": "string"
-        },
-        "max_output_tokens": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Max Output Tokens"
-        },
-        "model_id": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "title": "Model Id"
-        },
-        "name": {
-          "minLength": 1,
-          "title": "Name",
-          "type": "string"
-        },
-        "options": {
-          "additionalProperties": true,
-          "title": "Options",
-          "type": "object"
-        },
-        "prompt_hashes": {
-          "additionalProperties": {
-            "pattern": "^[0-9a-f]{64}$",
-            "type": "string"
-          },
-          "title": "Prompt Hashes",
-          "type": "object"
-        },
-        "retry_policy": {
-          "$ref": "#/$defs/RetryPolicy"
-        },
-        "temperature": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "title": "Temperature"
-        },
-        "top_p": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Top P"
-        },
-        "version": {
-          "minLength": 1,
-          "title": "Version",
-          "type": "string"
-        }
-      },
-      "required": [
-        "name",
-        "version",
-        "architecture",
-        "llm_backend",
-        "model_id",
-        "temperature",
-        "retry_policy",
-        "config_hash"
-      ],
-      "title": "EvaluatorRunConfig",
       "type": "object"
     },
     "GitInfo": {
@@ -254,6 +147,18 @@
         "dirty": {
           "title": "Dirty",
           "type": "boolean"
+        },
+        "tag": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tag"
         }
       },
       "required": [
@@ -280,28 +185,117 @@
           "minLength": 1,
           "title": "Gold Version",
           "type": "string"
-        },
-        "split_hash": {
-          "pattern": "^[0-9a-f]{64}$",
-          "title": "Split Hash",
-          "type": "string"
         }
       },
       "required": [
         "gold_version",
         "gold_manifest_sha256",
-        "gold_hash",
-        "split_hash"
+        "gold_hash"
       ],
       "title": "GoldRef",
       "type": "object"
     },
-    "ProfileRef": {
+    "HashVerification": {
+      "additionalProperties": false,
+      "description": "P-8 step 3: hashes verified before the run (recorded; H7).",
+      "properties": {
+        "bench_manifest": {
+          "title": "Bench Manifest",
+          "type": "boolean"
+        },
+        "gold": {
+          "title": "Gold",
+          "type": "boolean"
+        },
+        "item_files": {
+          "title": "Item Files",
+          "type": "boolean"
+        },
+        "lexicons": {
+          "title": "Lexicons",
+          "type": "boolean"
+        },
+        "private_hash_list": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Private Hash List"
+        },
+        "profile": {
+          "title": "Profile",
+          "type": "boolean"
+        },
+        "rubric": {
+          "title": "Rubric",
+          "type": "boolean"
+        },
+        "verified_at": {
+          "format": "date-time",
+          "title": "Verified At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "verified_at",
+        "bench_manifest",
+        "item_files",
+        "private_hash_list",
+        "gold",
+        "rubric",
+        "profile",
+        "lexicons"
+      ],
+      "title": "HashVerification",
+      "type": "object"
+    },
+    "PendingRef": {
       "additionalProperties": false,
       "properties": {
+        "blocker": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Blocker"
+        },
+        "blocks_locked_run": {
+          "title": "Blocks Locked Run",
+          "type": "boolean"
+        },
         "path": {
           "minLength": 1,
           "title": "Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "blocks_locked_run"
+      ],
+      "title": "PendingRef",
+      "type": "object"
+    },
+    "SpecRef": {
+      "additionalProperties": false,
+      "properties": {
+        "contract_version": {
+          "minLength": 1,
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "lexicons_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Lexicons Sha256",
           "type": "string"
         },
         "profile_id": {
@@ -309,9 +303,28 @@
           "title": "Profile Id",
           "type": "string"
         },
+        "profile_is_canonical": {
+          "title": "Profile Is Canonical",
+          "type": "boolean"
+        },
+        "profile_path": {
+          "minLength": 1,
+          "title": "Profile Path",
+          "type": "string"
+        },
+        "profile_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Profile Sha256",
+          "type": "string"
+        },
         "profile_version": {
           "minLength": 1,
           "title": "Profile Version",
+          "type": "string"
+        },
+        "rubric_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Rubric Sha256",
           "type": "string"
         },
         "rubric_version": {
@@ -319,120 +332,241 @@
           "title": "Rubric Version",
           "type": "string"
         },
-        "sha256": {
-          "pattern": "^[0-9a-f]{64}$",
-          "title": "Sha256",
-          "type": "string"
-        },
-        "status": {
-          "enum": [
-            "placeholder",
-            "draft",
-            "frozen"
-          ],
-          "title": "Status",
-          "type": "string"
+        "spec_file_sha256": {
+          "additionalProperties": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "title": "Spec File Sha256",
+          "type": "object"
         }
       },
       "required": [
+        "contract_version",
+        "rubric_version",
+        "rubric_sha256",
         "profile_id",
         "profile_version",
-        "rubric_version",
-        "sha256",
-        "path",
-        "status"
+        "profile_sha256",
+        "profile_path",
+        "profile_is_canonical",
+        "lexicons_sha256",
+        "spec_file_sha256"
       ],
-      "title": "ProfileRef",
+      "title": "SpecRef",
       "type": "object"
     },
-    "Randomization": {
+    "Split": {
+      "description": "experiment-protocol.md P-1 (dev in-repo; holdout and red team under $BENCH_PRIVATE_DIR).",
+      "enum": [
+        "dev",
+        "holdout",
+        "redteam"
+      ],
+      "title": "Split",
+      "type": "string"
+    },
+    "System": {
+      "description": "frozen-contract.md \u00a711.",
+      "enum": [
+        "K0",
+        "A",
+        "A+",
+        "B"
+      ],
+      "title": "System",
+      "type": "string"
+    },
+    "SystemConfig": {
       "additionalProperties": false,
       "properties": {
-        "item_order": {
-          "enum": [
-            "manifest",
-            "shuffled"
+        "consistency_rerun": {
+          "const": false,
+          "default": false,
+          "title": "Consistency Rerun",
+          "type": "boolean"
+        },
+        "derived_from": {
+          "anyOf": [
+            {
+              "const": "A",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
           ],
-          "title": "Item Order",
+          "default": null,
+          "title": "Derived From"
+        },
+        "llm_backend": {
+          "enum": [
+            "none",
+            "mock_replay",
+            "anthropic"
+          ],
+          "title": "Llm Backend",
           "type": "string"
         },
-        "rep_seed_derivation": {
-          "minLength": 1,
-          "title": "Rep Seed Derivation",
-          "type": "string"
+        "max_tokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Tokens"
+        },
+        "model_snapshot_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Snapshot Id"
+        },
+        "prompt_hashes": {
+          "additionalProperties": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "title": "Prompt Hashes",
+          "type": "object"
+        },
+        "rubric_prompt_template_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rubric Prompt Template Version"
+        },
+        "schema_retries": {
+          "default": 0,
+          "title": "Schema Retries",
+          "type": "integer"
         },
         "seed": {
-          "title": "Seed",
-          "type": "integer"
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seed"
+        },
+        "seed_supported": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seed Supported"
+        },
+        "structured_output": {
+          "default": false,
+          "title": "Structured Output",
+          "type": "boolean"
+        },
+        "system": {
+          "$ref": "#/$defs/System"
+        },
+        "temperature": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Temperature"
+        },
+        "transport_retry": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TransportRetryPolicy"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "version": {
+          "minLength": 1,
+          "title": "Version",
+          "type": "string"
         }
       },
       "required": [
-        "seed",
-        "item_order",
-        "rep_seed_derivation"
+        "system",
+        "version",
+        "llm_backend"
       ],
-      "title": "Randomization",
+      "title": "SystemConfig",
       "type": "object"
     },
-    "RetryPolicy": {
+    "TransportRetryPolicy": {
       "additionalProperties": false,
+      "description": "P-3: transport errors get up to 3 retries with backoff; logged; not counted as retries.",
       "properties": {
         "backoff_initial_s": {
+          "default": 1.0,
           "minimum": 0,
           "title": "Backoff Initial S",
           "type": "number"
         },
         "backoff_multiplier": {
+          "default": 2.0,
           "minimum": 1,
           "title": "Backoff Multiplier",
           "type": "number"
         },
-        "max_attempts": {
-          "minimum": 1,
-          "title": "Max Attempts",
+        "max_retries": {
+          "default": 3,
+          "maximum": 3,
+          "minimum": 0,
+          "title": "Max Retries",
           "type": "integer"
-        },
-        "retry_on": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Retry On",
-          "type": "array"
         }
       },
-      "required": [
-        "max_attempts",
-        "backoff_initial_s",
-        "backoff_multiplier"
-      ],
-      "title": "RetryPolicy",
+      "title": "TransportRetryPolicy",
       "type": "object"
-    },
-    "Split": {
-      "enum": [
-        "dev",
-        "holdout",
-        "redteam",
-        "calibration"
-      ],
-      "title": "Split",
-      "type": "string"
     }
   },
   "additionalProperties": false,
   "properties": {
-    "asr": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/ASRInfo"
-        },
-        {
-          "type": "null"
-        }
-      ]
+    "alias_mapping_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Alias Mapping Sha256",
+      "type": "string"
     },
-    "audio_rendering": {
-      "$ref": "#/$defs/AudioRenderingSummary"
+    "asr": {
+      "$ref": "#/$defs/ComponentRef"
+    },
+    "base_seed": {
+      "title": "Base Seed",
+      "type": "integer"
     },
     "component_versions": {
       "additionalProperties": {
@@ -449,6 +583,9 @@
     "dataset": {
       "$ref": "#/$defs/DatasetRef"
     },
+    "diarization": {
+      "$ref": "#/$defs/ComponentRef"
+    },
     "environment": {
       "additionalProperties": {
         "type": "string"
@@ -456,21 +593,21 @@
       "title": "Environment",
       "type": "object"
     },
-    "evaluator": {
-      "$ref": "#/$defs/EvaluatorRunConfig"
+    "frontend_steps_not_implemented": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Frontend Steps Not Implemented",
+      "type": "array"
     },
     "git": {
       "$ref": "#/$defs/GitInfo"
     },
     "gold": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/GoldRef"
-        },
-        {
-          "type": "null"
-        }
-      ]
+      "$ref": "#/$defs/GoldRef"
+    },
+    "hash_verification": {
+      "$ref": "#/$defs/HashVerification"
     },
     "invocation": {
       "items": {
@@ -479,12 +616,34 @@
       "title": "Invocation",
       "type": "array"
     },
-    "official": {
-      "title": "Official",
+    "kind": {
+      "enum": [
+        "dev",
+        "dev_tuning",
+        "locked_holdout",
+        "locked_redteam"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "locked": {
+      "title": "Locked",
       "type": "boolean"
     },
-    "profile": {
-      "$ref": "#/$defs/ProfileRef"
+    "ordering": {
+      "minLength": 1,
+      "title": "Ordering",
+      "type": "string"
+    },
+    "pending_signoff": {
+      "items": {
+        "$ref": "#/$defs/PendingRef"
+      },
+      "title": "Pending Signoff",
+      "type": "array"
+    },
+    "price_snapshot": {
+      "$ref": "#/$defs/ComponentRef"
     },
     "purpose": {
       "anyOf": [
@@ -498,18 +657,10 @@
       "default": null,
       "title": "Purpose"
     },
-    "randomization": {
-      "$ref": "#/$defs/Randomization"
-    },
     "repetitions": {
       "minimum": 1,
       "title": "Repetitions",
       "type": "integer"
-    },
-    "rubric_version": {
-      "minLength": 1,
-      "title": "Rubric Version",
-      "type": "string"
     },
     "run_id": {
       "minLength": 1,
@@ -517,29 +668,57 @@
       "type": "string"
     },
     "schema_version": {
-      "const": "run_manifest/1.0.0",
-      "default": "run_manifest/1.0.0",
+      "const": "run_manifest/2.0.0",
+      "default": "run_manifest/2.0.0",
       "title": "Schema Version",
       "type": "string"
+    },
+    "spec": {
+      "$ref": "#/$defs/SpecRef"
+    },
+    "systems": {
+      "items": {
+        "$ref": "#/$defs/SystemConfig"
+      },
+      "minItems": 1,
+      "title": "Systems",
+      "type": "array"
+    },
+    "telephony_simulation": {
+      "$ref": "#/$defs/ComponentRef"
+    },
+    "tuning_round": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Tuning Round"
     }
   },
   "required": [
     "run_id",
+    "kind",
+    "locked",
     "created_at",
-    "official",
     "dataset",
     "gold",
-    "rubric_version",
-    "profile",
-    "evaluator",
-    "component_versions",
-    "git",
+    "spec",
+    "systems",
     "asr",
-    "audio_rendering",
+    "diarization",
+    "telephony_simulation",
+    "price_snapshot",
+    "base_seed",
     "repetitions",
-    "randomization",
-    "environment",
-    "invocation"
+    "ordering",
+    "alias_mapping_sha256",
+    "git",
+    "hash_verification"
   ],
   "title": "RunManifest",
   "type": "object"

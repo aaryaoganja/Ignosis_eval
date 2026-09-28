@@ -1,14 +1,11 @@
-"""Gold Label Record contract — kept completely separate from evaluator output.
+"""Gold Label — content-level gold per item (scoring-spec SD-01). Completely separate from evaluator output.
 
-Rules enforced here:
-  * `provenance.derived_from_evaluator_output` is the literal `false`: a gold label produced from an
-    evaluator output cannot be represented.
-  * Labelers must declare whether they saw evaluator outputs; for the holdout split, nobody may have.
-  * Gold obeys the same verdict/evaluability invariant and gate precedence as evaluator records.
-  * Contested-unresolved labels cannot claim HIGH confidence.
+Mode-level gold is NOT stored: it is derived by code (ignosis_eval/golddrv) from content gold plus the
+capability table (frozen-contract §8), per SD-01 / P-12.
 
-Evaluator code must never import this module (enforced by tests/test_architecture_boundaries.py) and
-the evaluator process is denied filesystem access to the gold directory (integrity/guard.py).
+Isolation rules kept from the infrastructure phase (they do not conflict with the spec and implement
+B-02 "blind labeling"): gold can never declare it was derived from an evaluator output, and holdout /
+red-team labelers must be blind to evaluator outputs.
 """
 
 from __future__ import annotations
@@ -17,19 +14,13 @@ from typing import Literal
 
 from pydantic import AwareDatetime, Field, model_validator
 
-from ignosis_eval.contracts._base import CaseId, Contract, Id, NonEmptyStr, NonNegInt, Sha256Hex
+from ignosis_eval.contracts._base import Contract, ItemId, NonEmptyStr, Sha256Hex
 from ignosis_eval.contracts.enums import (
-    EVALUABILITY_TO_VERDICTS,
-    AdjudicationMethod,
-    AttributionTarget,
-    ContestedStatus,
-    EvaluabilityStatus,
+    GATE_IDS,
+    DangerousWin,
+    Disposition,
+    GateId,
     GateStatus,
-    GoldSource,
-    LabelConfidence,
-    LabelerRole,
-    OutcomeClass,
-    OutcomeCode,
     RepairStatus,
     Severity,
     Split,
@@ -37,121 +28,110 @@ from ignosis_eval.contracts.enums import (
 )
 from ignosis_eval.versions import GOLD_LABEL_SCHEMA
 
-
-class ExpectedEvidence(Contract):
-    required_turn_ids: list[Id] = Field(
-        default_factory=list, description="Turns an evaluator must cite for its evidence to be complete."
-    )
-    acceptable_turn_ids: list[Id] = Field(
-        default_factory=list, description="Additional turns that are on-target if cited."
-    )
-    audio_spans_ms: list[tuple[NonNegInt, NonNegInt]] = Field(default_factory=list)
-    metadata_fields: list[Literal["call_start_ts"]] = Field(default_factory=list)
-    notes: str | None = None
+# SD-01: implicit gold for an MVP code not present anywhere is PASS with label_confidence = "Sure".
+# The full label_confidence vocabulary belongs to the labeling protocol (B-10, pending); only the value
+# the scorer relies on is fixed here.
+LABEL_CONFIDENCE_SURE = "Sure"
 
 
-class ExpectedGate(Contract):
-    gate_id: Id
+class GoldGate(Contract):
     status: GateStatus
-    acceptable_statuses: list[GateStatus] = Field(default_factory=list)
-
-    def accepts(self, status: GateStatus | None) -> bool:
-        return status is not None and (status == self.status or status in self.acceptable_statuses)
-
-
-class ExpectedDefect(Contract):
-    defect_id: Id
-    severity: Severity
-    gate_id: Id | None = None
-    repair_status: RepairStatus = RepairStatus.NOT_REPAIRED
-    required: bool = Field(
-        default=True,
-        description="True: the evaluator must detect it (counts toward recall/misses). "
-        "False: detection is acceptable but not required.",
-    )
-    evidence: ExpectedEvidence = Field(default_factory=ExpectedEvidence)
-    attribution: AttributionTarget
-    attribution_determinable: bool
+    trigger: bool | None = None  # required iff status is INCONCLUSIVE (INCONCLUSIVE(trigger: Y/N))
+    contested: bool = False
+    anchor_turns: list[int] = Field(default_factory=list)  # G7 anchors on the header: leave empty
+    label_confidence: NonEmptyStr = LABEL_CONFIDENCE_SURE
 
     @model_validator(mode="after")
-    def _attr(self) -> "ExpectedDefect":
-        if self.attribution_determinable == (self.attribution is AttributionTarget.UNDETERMINED):
-            raise ValueError(
-                f"defect {self.defect_id}: attribution_determinable must be false iff attribution is 'undetermined'"
-            )
+    def _trigger(self) -> "GoldGate":
+        if (self.status is GateStatus.INCONCLUSIVE) != (self.trigger is not None):
+            raise ValueError("trigger must be set iff the gold gate status is INCONCLUSIVE")
+        if any(t < 1 for t in self.anchor_turns):
+            raise ValueError("anchor turns are 1-based")
         return self
 
 
-class ExpectedEvaluability(Contract):
-    status: EvaluabilityStatus
-    reasons: list[str] = Field(default_factory=list)
+class AttributionFacts(Contract):
+    """Content facts from which the gold-derivation module derives the expected attribution per mode.
 
+    The spec names `attribution_facts` (SD-01) without enumerating fields; these are exactly the inputs
+    the rubric's attribution rules need (registration override, perception test, read-back safeguard).
+    """
 
-class ExpectedOutcome(Contract):
-    outcome_class: OutcomeClass
-    outcomes: list[OutcomeCode] = Field(default_factory=list)
-
-
-class Contested(Contract):
-    status: ContestedStatus = ContestedStatus.UNCONTESTED
+    registered: bool | None = None  # an agent event responds_to the trigger (non_response override)
+    said_heard_material_difference: bool | None = None  # SAID != HEARD on the trigger span (audio items)
+    readback_safeguard_present: bool | None = None  # for the secondary AGENT_BEHAVIOR on critical entities
     notes: str | None = None
-    alternative_verdicts: list[Verdict] = Field(default_factory=list)
 
 
-class GoldProvenance(Contract):
-    source: GoldSource
-    case_card_ref: str | None = None
-    case_card_sha256: Sha256Hex | None = None
-    labeling_protocol_version: NonEmptyStr
-    created_at: AwareDatetime
-    derived_from_evaluator_output: Literal[False] = False
-    notes: str | None = None
+class GoldFinding(Contract):
+    """A gold defect. `code` may be a non-gate MVP code, a PLT code, or a gate id (to carry the gate's
+    evidence elements and attribution facts for SD-14 / SD-16; the gate status itself lives in `gates`)."""
+
+    code: NonEmptyStr
+    anchor_turns: list[int] = Field(min_length=1)
+    severity: Severity  # post-repair
+    repair_status: RepairStatus = RepairStatus.UNREPAIRED
+    evidence_elements: dict[str, int] = Field(default_factory=dict)
+    attribution_facts: AttributionFacts = Field(default_factory=AttributionFacts)
+    label_confidence: NonEmptyStr = LABEL_CONFIDENCE_SURE
+
+
+class GoldVerdict(Contract):
+    value: Verdict
+    within_scope_complete: bool
+
+
+class GoldOutcome(Contract):
+    dispositions: list[Disposition] = Field(default_factory=list)
+    positive: bool = False
+
+
+class GoldTags(Contract):
+    dangerous_win: DangerousWin = DangerousWin.NONE
+    clean_loss: bool = False
+
+
+class AbstentionTarget(Contract):
+    check: NonEmptyStr  # a gate id, an MVP code, or "VERDICT" for NOT_EVALUABLE targets
+    expected: Literal["INCONCLUSIVE", "OUT_OF_SCOPE", "SUSPECTED", "NOT_EVALUABLE"]
 
 
 class LabelerRecord(Contract):
-    labeler_id: NonEmptyStr = Field(description="Pseudonymous labeler identifier (no personal data).")
-    role: LabelerRole
+    labeler_id: NonEmptyStr  # pseudonymous
+    role: Literal["labeler_x", "labeler_y", "adjudicator", "author"]
     labeled_at: AwareDatetime
-    blind_to_case_card: bool
     saw_evaluator_outputs: bool
-    expertise: str | None = None
+
+
+class GoldProvenance(Contract):
+    labeling_protocol_version: NonEmptyStr
+    case_card_sha256: Sha256Hex | None = None
+    created_at: AwareDatetime
+    derived_from_evaluator_output: Literal[False] = False
+    single_labeler: bool = False  # B-10 fallback must be disclosed
+    notes: str | None = None
 
 
 class Adjudication(Contract):
-    required: bool
-    adjudicator_id: str | None = None
-    adjudicated_at: AwareDatetime | None = None
-    method: AdjudicationMethod | None = None
-    disagreements: list[str] = Field(default_factory=list)
-    resolution_notes: str | None = None
-
-    @model_validator(mode="after")
-    def _complete(self) -> "Adjudication":
-        if self.required and not (self.adjudicator_id and self.adjudicated_at and self.method):
-            raise ValueError("adjudication.required=true needs adjudicator_id, adjudicated_at and method")
-        return self
+    adjudicator_id: NonEmptyStr
+    adjudicated_at: AwareDatetime
+    contested_items: list[str] = Field(default_factory=list)
+    notes: str | None = None
 
 
 class GoldLabel(Contract):
-    schema_version: Literal["gold_label/1.0.0"] = GOLD_LABEL_SCHEMA
-    item_id: CaseId
+    schema_version: Literal["gold_label/2.0.0"] = GOLD_LABEL_SCHEMA
+    item_id: ItemId
     split: Split
-    scenario: NonEmptyStr
-    expected_evaluability: ExpectedEvaluability
-    expected_verdict: Verdict
-    acceptable_verdicts: list[Verdict] = Field(default_factory=list)
-    expected_gates: list[ExpectedGate] = Field(default_factory=list)
-    expected_defects: list[ExpectedDefect] = Field(default_factory=list)
-    acceptable_extra_defects: list[Id] = Field(
-        default_factory=list,
-        description="Defect ids that are defensible if an evaluator raises them (not counted as unsupported).",
-    )
-    expected_primary_attribution: AttributionTarget | None = None
-    expected_outcome: ExpectedOutcome | None = None
-    expected_dangerous_win: bool | None = None
-    expected_clean_loss: bool | None = None
-    confidence: LabelConfidence
-    contested: Contested = Field(default_factory=Contested)
+    gates: dict[GateId, GoldGate]
+    findings: list[GoldFinding] = Field(default_factory=list)
+    inconclusive_checks: list[str] = Field(default_factory=list)
+    na_checks: list[str] = Field(default_factory=list)
+    oos_checks: list[str] = Field(default_factory=list)
+    verdict: GoldVerdict
+    outcome: GoldOutcome = Field(default_factory=GoldOutcome)
+    tags: GoldTags = Field(default_factory=GoldTags)
+    abstention_targets: list[AbstentionTarget] = Field(default_factory=list)
     provenance: GoldProvenance
     labelers: list[LabelerRecord] = Field(min_length=1)
     adjudication: Adjudication | None = None
@@ -159,44 +139,38 @@ class GoldLabel(Contract):
     @model_validator(mode="after")
     def _invariants(self) -> "GoldLabel":
         errs: list[str] = []
-        allowed = EVALUABILITY_TO_VERDICTS[self.expected_evaluability.status]
-        if self.expected_verdict not in allowed:
-            errs.append(
-                f"expected_verdict={self.expected_verdict} inconsistent with "
-                f"expected_evaluability={self.expected_evaluability.status}"
-            )
-        if any(g.status is GateStatus.FAIL for g in self.expected_gates) and self.expected_verdict is not Verdict.FAIL:
-            errs.append("gate precedence: an expected gate FAIL requires expected_verdict=fail")
-        gate_ids = [g.gate_id for g in self.expected_gates]
-        if len(gate_ids) != len(set(gate_ids)):
-            errs.append("duplicate gate_id in expected_gates")
-        defect_ids = [d.defect_id for d in self.expected_defects]
-        if len(defect_ids) != len(set(defect_ids)):
-            errs.append("duplicate defect_id in expected_defects (fold repeated instances into one defect)")
-        overlap = set(defect_ids) & set(self.acceptable_extra_defects)
-        if overlap:
-            errs.append(f"defects listed both as expected and acceptable_extra: {sorted(overlap)}")
-        if self.expected_dangerous_win and self.expected_clean_loss:
-            errs.append("expected_dangerous_win and expected_clean_loss cannot both be true")
-        if (
-            self.contested.status is ContestedStatus.CONTESTED_UNRESOLVED
-            and self.confidence is LabelConfidence.HIGH
-        ):
-            errs.append("contested_unresolved labels cannot have HIGH confidence")
-        if self.split is Split.HOLDOUT and any(lb.saw_evaluator_outputs for lb in self.labelers):
-            errs.append("holdout gold must be labeled blind to evaluator outputs")
-        if self.provenance.source is GoldSource.ADJUDICATED and not (self.adjudication and self.adjudication.required):
-            errs.append("provenance.source=adjudicated requires a completed adjudication block")
+        missing = [g.value for g in GATE_IDS if g not in self.gates]
+        if missing:
+            errs.append(f"gold must state every gate explicitly (SD-01); missing {missing}")
+        lists = {"inconclusive_checks": self.inconclusive_checks, "na_checks": self.na_checks,
+                 "oos_checks": self.oos_checks}
+        seen: dict[str, str] = {}
+        for name, codes in lists.items():
+            for c in codes:
+                if c in {g.value for g in GATE_IDS}:
+                    errs.append(f"{name} must not contain gates (gates carry explicit status): {c}")
+                if c in seen:
+                    errs.append(f"{c} appears in both {seen[c]} and {name}")
+                seen[c] = name
+        non_gate_findings = [f.code for f in self.findings if f.code not in {g.value for g in GATE_IDS}]
+        for c in non_gate_findings:
+            if c in seen:
+                errs.append(f"{c} is both a finding and in {seen[c]}")
+        if len(non_gate_findings) != len(set(non_gate_findings)):
+            errs.append("duplicate non-gate finding codes (fold repeated instances into one finding)")
+        for f in self.findings:
+            if f.code in {g.value for g in GATE_IDS}:
+                gg = self.gates.get(GateId(f.code))
+                if gg is not None and gg.status not in (GateStatus.FAIL, GateStatus.INCONCLUSIVE):
+                    errs.append(f"gate finding {f.code} requires gold gate status FAIL or INCONCLUSIVE")
+        if any(g.status is GateStatus.FAIL for g in self.gates.values()) and \
+                self.verdict.value is not Verdict.CRITICAL_FAIL:
+            errs.append("a gold gate FAIL requires verdict CRITICAL_FAIL (V3)")
+        if self.split in (Split.HOLDOUT, Split.REDTEAM) and any(lb.saw_evaluator_outputs for lb in self.labelers):
+            errs.append("holdout / red-team gold must be labeled blind to evaluator outputs")
         if errs:
             raise ValueError("; ".join(errs))
         return self
 
-    def accepts_verdict(self, verdict: Verdict | None) -> bool:
-        return verdict is not None and (verdict == self.expected_verdict or verdict in self.acceptable_verdicts)
-
-    def expected_gate(self, gate_id: str) -> ExpectedGate | None:
-        return next((g for g in self.expected_gates if g.gate_id == gate_id), None)
-
-    @property
-    def all_expected_defect_ids(self) -> set[str]:
-        return {d.defect_id for d in self.expected_defects}
+    def gate(self, g: str) -> GoldGate:
+        return self.gates[GateId(g)]

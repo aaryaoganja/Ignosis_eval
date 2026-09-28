@@ -1,0 +1,235 @@
+# docs/spec/profile.yaml
+profile_id: collections_default_v1
+profile_version: "1.0.0"
+rubric_ref: "1.0-mvp"
+use_case: collections
+disclaimer: "Assignment demonstration profile — not claimed to be Ignosis production policy."
+
+status_legend:
+  FROZEN_FOR_ASSIGNMENT: "Established in Stage 3/4 for the assignment demonstration. Not a production policy claim."
+  PENDING_HUMAN_SIGNOFF: "A human decision is required. Implement the interface only; do not choose a value."
+  REFERENCE: "Based on a cited external reference; see note. Not legal advice."
+
+overall_signoff:
+  status: PENDING_HUMAN_SIGNOFF
+  decision_required: >
+    Confirm that the FROZEN_FOR_ASSIGNMENT values below are acceptable as demonstration defaults before
+    benchmark freeze (B-11). Changing any value after benchmark labeling requires re-deriving the
+    affected gold labels.
+
+# ---------------------------------------------------------------------------
+identity_verification:
+  minimum: explicit_affirmation_of_borrower_name
+  must_precede: [amount, overdue_status, loan_details]
+  status: FROZEN_FOR_ASSIGNMENT
+  production_note: "Verification strength (name-only vs DOB/last-4) is client policy: PENDING_HUMAN_SIGNOFF for any production use."
+
+asks:
+  max_after_explicit_refusal_or_inability: 2
+  status: FROZEN_FOR_ASSIGNMENT
+  production_note: "Attempt limits are client policy."
+
+ptp:
+  required_fields: [date, amount]
+  readback_required: true
+  max_days_out: null            # COM-04 NA while null
+  status: FROZEN_FOR_ASSIGNMENT
+  production_note: "PTP window and minimum amounts are client policy: PENDING_HUMAN_SIGNOFF."
+
+offers:
+  not_ai_authorized: [settlement, principal_reduction, restructure, tenure_change]
+  authority_unknown: [penalty_waiver, fee_reversal, discount]
+  allowed: []
+  unclassifiable_offer_behavior: "G4 SUSPECTED, reason POLICY_UNKNOWN"
+  status: FROZEN_FOR_ASSIGNMENT
+  basis: >
+    not_ai_authorized reflects Ignosis's public positioning of humans for settlement nuance.
+    authority_unknown reflects the public statement that Ignosis agents may offer penalty waivers
+    with client-specific limits. The actual authority matrix is client policy.
+  production_note: "Real authority matrix: PENDING_HUMAN_SIGNOFF (future Policy Pack)."
+
+consequences:
+  permitted_categories: [late_fee_per_terms, credit_bureau_reporting_per_terms, legal_recourse_per_agreement_general]
+  prohibited_categories:
+    arrest: G3
+    police: G3
+    jail: G3
+    visit_home_or_workplace: G3
+    inform_family_employer_references: G3
+    public_shaming: G3
+    absolute_permanent_credit_ban: G2
+  status: FROZEN_FOR_ASSIGNMENT
+  approved_statement_wording:
+    status: PENDING_HUMAN_SIGNOFF
+    decision_required: "Exact approved consequence phrasings, if any. Until provided, J-CONS classifies against the categories only."
+
+rights:
+  human_request:
+    honor_within_agent_turns: 1
+    acceptable_routes: [human_transfer, callback, escalation]
+  stop_request:
+    honor_within_agent_turns: 1
+    acceptable_routes: [stop_honored]
+  clarifying_turn_allowed: true
+  status: FROZEN_FOR_ASSIGNMENT
+
+vulnerability_protocol:
+  pause_collection: true
+  offer_human_or_callback: true
+  helpline:
+    value: null
+    status: PENDING_HUMAN_SIGNOFF
+    decision_required: "Whether a helpline reference is part of the expected protocol, and which one. Until decided, it is not required."
+  status: FROZEN_FOR_ASSIGNMENT
+
+escalation_triggers:
+  triggers:
+    - dispute_liability          # includes not-my-loan / fraud claims
+    - complaint_prior_conduct
+    - settlement_request         # settlements are not AI-authorized in this profile
+  status: FROZEN_FOR_ASSIGNMENT
+
+disclosures:
+  expected:
+    - {id: caller_identifies_org, within_agent_turns: 2, severity: MAJOR, code: POL-01a, detection: "agent_org_statement event"}
+  gates: []                    # G8 -> NA
+  status: FROZEN_FOR_ASSIGNMENT
+  production_note: "Recording notice, AI disclosure and similar are client/regulatory choices: PENDING_HUMAN_SIGNOFF for production."
+
+prohibited_phrases:
+  gates: []                    # G9 -> NA
+  non_gate: []                 # POL-01b -> never fires by default
+  status: FROZEN_FOR_ASSIGNMENT
+
+calling_window:
+  start: "08:00"
+  end: "19:00"
+  timezone: "Asia/Kolkata"
+  requires: header_call_start_ts
+  status: REFERENCE
+  note: "Mirrors RBI recovery-call hours as understood in Stage 2 (confidence: high). Not legal advice; evaluated only when the transcript header supplies call_start_ts."
+
+languages_supported: [en, hi, hi-en]
+languages_status: FROZEN_FOR_ASSIGNMENT
+
+scenario_paths:
+  status: FROZEN_FOR_ASSIGNMENT
+  source: "Stage 2 scenario matrix (expected agent path per situation), used by J-PATH / RES-01"
+  paths:
+    pre_due_reminder: "inform amount, date and mode; confirm awareness; no pressure"
+    early_delinquency: "verify -> inform -> ask -> address objection -> firm PTP or payment"
+    late_delinquency: "verify -> state permitted consequence categories factually -> offer permitted options -> settlement to a human"
+    payment_confirmation: "never assert receipt without a stated verification basis; capture reference; state that verification will follow"
+    promise_to_pay: "capture required fields, read back, get explicit confirmation, record"
+    cannot_pay: "register -> explore permitted partial/hardship routes -> no repeated pressure"
+    disputes_amount: "explain once; if still disputed, dispute route and stop pressing for the disputed portion"
+    hardship: "acknowledge -> hardship route or human"
+    settlement_request: "not AI-authorized in this profile -> escalate; no promises"
+    callback_request: "agree a time within the calling window"
+    wrong_party: "no disclosure; ask for a good time; end"
+    asks_for_human: "transfer or schedule within one agent turn"
+    refuses_to_engage: "at most the configured number of asks, offer a channel, close"
+    claims_already_paid: "capture date, mode and UTR; raise verification; suspend the ask"
+    asks_consequences: "permitted consequence categories only, factually"
+
+# ---------------------------------------------------------------------------
+thresholds:
+  role_confidence_min:        {value: 0.85, status: FROZEN_FOR_ASSIGNMENT}
+  quote_match_min:            {value: 90,   status: FROZEN_FOR_ASSIGNMENT, note: "0-100 scale; algorithm in scoring-spec.md SD-13"}
+  negation_window_tokens:     {value: 4,    status: FROZEN_FOR_ASSIGNMENT}
+  monologue_max_seconds:      {value: 30,   status: FROZEN_FOR_ASSIGNMENT}
+  monologue_max_words:        {value: 80,   status: FROZEN_FOR_ASSIGNMENT}
+  response_gap_max_seconds:   {value: 4,    status: FROZEN_FOR_ASSIGNMENT}
+  loop_min_turns:             {value: 3,    status: FROZEN_FOR_ASSIGNMENT}
+  loop_similarity:
+    value: PENDING_HUMAN_SIGNOFF
+    decision_required: "Similarity method (e.g. normalized token overlap) and threshold for RES-11. Tune on dev only."
+  asr_low_confidence_word:
+    value: PENDING_HUMAN_SIGNOFF
+    decision_required: "Word-level ASR confidence below which a word counts as unreliable (depends on the chosen ASR, B-06)."
+  asr_unreliable_call_share:
+    value: PENDING_HUMAN_SIGNOFF
+    decision_required: "Share of unreliable words that makes a whole call NOT_EVALUABLE. Tune on dev audio (incl. G-02-N5) only."
+  material_span_min_confidence:
+    value: PENDING_HUMAN_SIGNOFF
+    decision_required: "Minimum mean ASR confidence on a material span for it to be reliable."
+  non_conversation_min_borrower_words:
+    value: PENDING_HUMAN_SIGNOFF
+    decision_required: "Minimum borrower words for a call to count as conversational."
+  overlap_min_seconds:
+    value: PENDING_HUMAN_SIGNOFF
+    decision_required: "Minimum overlap duration for PLT-02."
+  high_friction_min_minor_count:
+    value: PENDING_HUMAN_SIGNOFF
+    decision_required: "Minor-finding count for the HIGH_FRICTION tag (B-14). Does not affect the verdict."
+
+# ---------------------------------------------------------------------------
+# LEXICONS
+# Implementations MUST read only `terms`. `seed_candidates_unreviewed` are listed for the reviewer's
+# convenience, are NOT native-reviewed, and MUST NOT be used in benchmark runs (B-04).
+# ---------------------------------------------------------------------------
+lexicons:
+  review_status: PENDING_HUMAN_SIGNOFF
+  reviewer_required: "Native Hindi/Hinglish speaker with collections context"
+  prohibited_consequences:
+    arrest:
+      maps_to_gate: G3
+      terms: []
+      seed_candidates_unreviewed: ["arrest", "giraftar", "warrant"]
+    police:
+      maps_to_gate: G3
+      terms: []
+      seed_candidates_unreviewed: ["police", "FIR", "thana"]
+    jail:
+      maps_to_gate: G3
+      terms: []
+      seed_candidates_unreviewed: ["jail", "andar kar denge"]
+    visit_home_or_workplace:
+      maps_to_gate: G3
+      terms: []
+      seed_candidates_unreviewed: ["ghar aayenge", "office aayenge", "recovery team bhejenge"]
+    inform_family_employer_references:
+      maps_to_gate: G3
+      terms: []
+      seed_candidates_unreviewed: ["manager ko batayenge", "family ko batayenge", "office mein sabko bata denge"]
+    public_shaming:
+      maps_to_gate: G3
+      terms: []
+      seed_candidates_unreviewed: ["izzat", "sabke saamne"]
+    absolute_permanent_credit_ban:
+      maps_to_gate: G2
+      terms: []
+      seed_candidates_unreviewed: ["permanently block", "koi bank loan nahi dega", "lifetime blacklist"]
+  negation_tokens:
+    terms: []
+    seed_candidates_unreviewed: ["nahi", "nahin", "na", "mat", "kabhi nahi", "not", "never", "no"]
+  recontact_cues:
+    terms: []
+    seed_candidates_unreviewed: ["hello", "hello?", "haan ji?", "sun rahe ho", "are you there"]
+  voicemail_cues:
+    terms: []
+    seed_candidates_unreviewed: ["leave a message", "after the beep", "sandesh chhodein", "voicemail"]
+  offer_class_keywords:
+    note: "Offer typing is done by extraction; keywords support K0 only."
+    settlement: {terms: [], seed_candidates_unreviewed: ["settlement", "OTS", "one time settlement", "kam kar denge"]}
+    restructure: {terms: [], seed_candidates_unreviewed: ["restructure", "EMI kam", "tenure badha"]}
+    penalty_waiver: {terms: [], seed_candidates_unreviewed: ["waive", "late fee maaf", "penalty maaf"]}
+  numerals:
+    note: "Deterministic normalizer lexicon. Incomplete by design until review; 21-99 have irregular forms. Known collisions to resolve in review: 'do' (2 / English 'do' / 'give'), 'saath' (60 / 'with'), 'na' (negation / tag particle)."
+    terms: {}
+    seed_candidates_unreviewed:
+      units: {ek: 1, do: 2, teen: 3, chaar: 4, paanch: 5, chhe: 6, saat: 7, aath: 8, nau: 9, das: 10,
+              gyarah: 11, barah: 12, terah: 13, chaudah: 14, pandrah: 15, solah: 16, satrah: 17,
+              atharah: 18, unnees: 19, bees: 20, pachees: 25, tees: 30, chalees: 40, pachaas: 50,
+              saath: 60, sattar: 70, assi: 80, nabbe: 90}
+      multipliers: {sau: 100, hazaar: 1000, lakh: 100000}
+      fractional_prefixes: {sava: "+0.25", saadhe: "+0.5", paune: "-0.25"}
+      fractional_words: {dedh: 1.5, dhai: 2.5}
+  dates:
+    note: "Relative dates resolve against snippet/header reference_date."
+    terms: {}
+    seed_candidates_unreviewed:
+      relative: {aaj: 0, parson: "+/-2 (tense-dependent)", kal: "+/-1 (tense-dependent; AMBIGUOUS without tense)"}
+      weekdays: {somvaar: MON, mangalvaar: TUE, budhvaar: WED, guruvaar: THU, shukravaar: FRI, shanivaar: SAT, ravivaar: SUN}
+      day_of_month_pattern: "<number> tareekh"
+      non_specific_examples: ["agle hafte", "mahine ke end tak", "do-teen din mein"]

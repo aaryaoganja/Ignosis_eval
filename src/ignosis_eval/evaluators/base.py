@@ -1,65 +1,59 @@
-"""Evaluator interface shared by A, A+, B, K0 and the mocks.
+"""System interface shared by K0, A, A+ and B (frozen-contract §11).
 
-Contract: `evaluate(normalized_input, ctx) -> EvaluationRecord`. Evaluators receive ONLY the normalized
-Canonical Input and an EvaluationContext (repetition, per-repetition seed, profile, trace sink). They never
-receive item ids, case metadata, case cards, manifests or gold, and they run inside the gold-access guard.
+A system sees only the NormalizedInput and an EvaluationContext. It never receives item ids, case metadata,
+case cards, manifests, registries or gold, and it runs inside the gold-access guard.
 """
 
 from __future__ import annotations
 
 import hashlib
-import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any
 
-from ignosis_eval.contracts.canonical_input import CanonicalInput
-from ignosis_eval.contracts.enums import EvaluatorArchitecture
-from ignosis_eval.contracts.evaluation_record import EvaluationRecord, EvaluatorInfo
-from ignosis_eval.contracts.profile import Profile
-from ignosis_eval.contracts.run_manifest import EvaluatorRunConfig, RetryPolicy
+from ignosis_eval.canonical import canonical_json_bytes
+from ignosis_eval.contracts.canonical_input import NormalizedInput
+from ignosis_eval.contracts.enums import System
+from ignosis_eval.contracts.evaluation_record import EvaluationRecord, SystemInfo
+from ignosis_eval.contracts.run_manifest import SystemConfig
+from ignosis_eval.spec.loader import Spec
+
+
+def _usage() -> dict[str, int]:
+    return {"llm_calls": 0, "transport_retries": 0, "schema_retries": 0, "input_tokens": 0, "output_tokens": 0,
+            "cached_tokens": 0}
 
 
 @dataclass
 class TraceSink:
-    """Collects raw LLM traffic and usage for one item x repetition (persisted by the runner)."""
+    """Raw LLM traffic and usage for one (system, unit, rep); persisted by the runner (P-11)."""
 
-    requests: list[dict[str, Any]] = field(default_factory=list)
-    responses: list[dict[str, Any]] = field(default_factory=list)
-    usage: dict[str, int] = field(default_factory=lambda: {"llm_calls": 0, "llm_attempts": 0, "input_tokens": 0,
-                                                            "output_tokens": 0, "retries": 0})
+    requests: list[dict] = field(default_factory=list)
+    responses: list[dict] = field(default_factory=list)
+    usage: dict[str, int] = field(default_factory=_usage)
 
 
 @dataclass
 class EvaluationContext:
     repetition: int
-    rep_seed: int
-    profile: Profile
-    profile_sha256: str
+    spec: Spec
     trace: TraceSink = field(default_factory=TraceSink)
 
 
-def config_hash(payload: dict[str, Any]) -> str:
-    return hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode("utf-8")).hexdigest()
+def input_sha256(ni: NormalizedInput) -> str:
+    return hashlib.sha256(canonical_json_bytes(ni.to_json_dict())).hexdigest()
 
 
 class Evaluator(ABC):
-    name: str
+    system: System
     version: str
-    architecture: EvaluatorArchitecture
 
     @abstractmethod
-    def run_config(self) -> EvaluatorRunConfig:
-        """Everything the run manifest must record about this evaluator (model, prompts, retry policy, ...)."""
+    def config(self) -> SystemConfig: ...
 
     @abstractmethod
-    def evaluate(self, inp: CanonicalInput, ctx: EvaluationContext) -> EvaluationRecord:
-        """Evaluate one normalized input. Must return a record conforming to the Evaluation Record contract."""
+    def evaluate(self, ni: NormalizedInput, ctx: EvaluationContext) -> EvaluationRecord: ...
 
-    def info(self) -> EvaluatorInfo:
-        rc = self.run_config()
-        return EvaluatorInfo(name=rc.name, version=rc.version, architecture=rc.architecture, model_id=rc.model_id,
-                             prompt_hashes=rc.prompt_hashes, config_hash=rc.config_hash)
-
-
-NO_RETRY = RetryPolicy(max_attempts=1, backoff_initial_s=0.0, backoff_multiplier=1.0, retry_on=[])
+    def system_info(self) -> SystemInfo:
+        c = self.config()
+        return SystemInfo(system=c.system.value, version=c.version, model_snapshot_id=c.model_snapshot_id,
+                          prompt_hashes=dict(c.prompt_hashes))

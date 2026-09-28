@@ -1,1 +1,1 @@
-"""Binomial interval helpers and proportion results."""
+"""SD-26 intervals and bounds, rate reporting and the exact sign test."""

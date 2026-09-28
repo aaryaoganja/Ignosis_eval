@@ -1,9 +1,17 @@
-"""Append-only run storage.
+"""Append-only results storage (experiment-protocol P-11).
+
+    <results>/runs/<run_id>/manifest.json, completion.json
+    <results>/runs/<run_id>/<system>/<item_id>__<mode>/rep_<k>/{normalized_input.json, llm_requests.jsonl,
+        llm_responses.jsonl, evaluation_record.json, timing.json, usage.json, errors.json}
+    <results>/runs/<run_id>/A+/<item_id>__<mode>/rep_<k>/derivation_log.json
+    <results>/runs/LEDGER.jsonl, locked_runs.jsonl        append-only journals
+    <results>/blinding/<run_id>/alias_mapping.json         P-10 (outside the scorer's input path)
+    <results>/blinded/<run_id>/...                         P-10 aliased scoring view
+    <results>/scoring/<run_id>[__<suffix>]/...             scorer outputs
 
 * A run directory is created with exist_ok=False: an existing run can never be reopened or overwritten.
 * Every file is written with O_EXCL ('x' mode) and then made read-only; a second write raises.
-* runs/LEDGER.jsonl is an append-only journal of every run start/finish.
-Layout: see ignosis_eval/contracts/run_manifest.py.
+* Tuning runs use run ids `dev-<round>-<timestamp>` (P-11); other runs `<kind>-<timestamp>-<random>`.
 """
 
 from __future__ import annotations
@@ -11,6 +19,7 @@ from __future__ import annotations
 import json
 import secrets
 import stat
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -23,9 +32,14 @@ class AppendOnlyError(RuntimeError):
     """Attempt to overwrite or reopen something that is write-once."""
 
 
-def new_run_id(evaluator: str, split: str, now: datetime | None = None) -> str:
+def new_run_id(kind: str, tuning_round: int | None = None, now: datetime | None = None) -> str:
     now = now or datetime.now(timezone.utc)
-    return f"{now:%Y%m%dT%H%M%SZ}-{evaluator}-{split}-{secrets.token_hex(4)}"
+    stamp = f"{now:%Y%m%dT%H%M%SZ}"
+    if kind == "dev_tuning":
+        if tuning_round is None:
+            raise ValueError("tuning runs need a round number")
+        return f"dev-{tuning_round}-{stamp}"
+    return f"{kind}-{stamp}-{secrets.token_hex(4)}"
 
 
 def _write_once(path: Path, text: str) -> None:
@@ -45,6 +59,34 @@ def write_jsonl_once(path: Path, rows: list[dict[str, Any]]) -> None:
     _write_once(path, "".join(json.dumps(r, sort_keys=True, ensure_ascii=False, default=str) + "\n" for r in rows))
 
 
+@dataclass(frozen=True)
+class ResultsLayout:
+    root: Path
+
+    @property
+    def runs(self) -> Path:
+        return self.root / "runs"
+
+    @property
+    def blinding(self) -> Path:
+        return self.root / "blinding"
+
+    @property
+    def blinded(self) -> Path:
+        return self.root / "blinded"
+
+    @property
+    def scoring(self) -> Path:
+        return self.root / "scoring"
+
+    @property
+    def locked_runs(self) -> Path:
+        return self.runs / "locked_runs.jsonl"
+
+    def run_dir(self, run_id: str) -> Path:
+        return self.runs / run_id
+
+
 class RunStore:
     def __init__(self, runs_root: str | Path):
         self.root = Path(runs_root)
@@ -58,8 +100,8 @@ class RunStore:
             raise AppendOnlyError(f"run directory already exists: {d}") from exc
         return d
 
-    def create_rep_dir(self, run_dir: Path, item_id: str, rep: int) -> Path:
-        d = rep_dir(run_dir, item_id, rep)
+    def create_rep_dir(self, run_dir: Path, system: str, item_id: str, unit_mode: str, rep: int) -> Path:
+        d = rep_dir(run_dir, system, item_id, unit_mode, rep)
         try:
             d.mkdir(parents=True, exist_ok=False)
         except FileExistsError as exc:

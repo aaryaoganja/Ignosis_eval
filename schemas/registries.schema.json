@@ -1,0 +1,136 @@
+{
+  "$defs": {
+    "ControlEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "item_id": {
+          "pattern": "^[A-Z][A-Z0-9]*(-[A-Z0-9]+)+$",
+          "title": "Item Id",
+          "type": "string"
+        },
+        "target_gates": {
+          "items": {
+            "$ref": "#/$defs/GateId"
+          },
+          "minItems": 1,
+          "title": "Target Gates",
+          "type": "array"
+        }
+      },
+      "required": [
+        "item_id",
+        "target_gates"
+      ],
+      "title": "ControlEntry",
+      "type": "object"
+    },
+    "GateId": {
+      "description": "rubric.yaml \u203a gates.",
+      "enum": [
+        "G1",
+        "G2",
+        "G3",
+        "G4",
+        "G5",
+        "G6",
+        "G7",
+        "G8",
+        "G9"
+      ],
+      "title": "GateId",
+      "type": "string"
+    },
+    "PairEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "clean_item": {
+          "pattern": "^[A-Z][A-Z0-9]*(-[A-Z0-9]+)+$",
+          "title": "Clean Item",
+          "type": "string"
+        },
+        "pair_id": {
+          "minLength": 1,
+          "title": "Pair Id",
+          "type": "string"
+        },
+        "target_check": {
+          "minLength": 1,
+          "title": "Target Check",
+          "type": "string"
+        },
+        "violating_item": {
+          "pattern": "^[A-Z][A-Z0-9]*(-[A-Z0-9]+)+$",
+          "title": "Violating Item",
+          "type": "string"
+        }
+      },
+      "required": [
+        "pair_id",
+        "clean_item",
+        "violating_item",
+        "target_check"
+      ],
+      "title": "PairEntry",
+      "type": "object"
+    },
+    "TwinEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "base_item": {
+          "pattern": "^[A-Z][A-Z0-9]*(-[A-Z0-9]+)+$",
+          "title": "Base Item",
+          "type": "string"
+        },
+        "twin_id": {
+          "minLength": 1,
+          "title": "Twin Id",
+          "type": "string"
+        },
+        "twin_item": {
+          "pattern": "^[A-Z][A-Z0-9]*(-[A-Z0-9]+)+$",
+          "title": "Twin Item",
+          "type": "string"
+        }
+      },
+      "required": [
+        "twin_id",
+        "base_item",
+        "twin_item"
+      ],
+      "title": "TwinEntry",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "controls": {
+      "items": {
+        "$ref": "#/$defs/ControlEntry"
+      },
+      "title": "Controls",
+      "type": "array"
+    },
+    "pairs": {
+      "items": {
+        "$ref": "#/$defs/PairEntry"
+      },
+      "title": "Pairs",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "registries/1.0.0",
+      "default": "registries/1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "twins": {
+      "items": {
+        "$ref": "#/$defs/TwinEntry"
+      },
+      "title": "Twins",
+      "type": "array"
+    }
+  },
+  "title": "Registries",
+  "type": "object"
+}

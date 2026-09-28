@@ -1,105 +1,49 @@
 {
   "$defs": {
+    "AbstentionTarget": {
+      "additionalProperties": false,
+      "properties": {
+        "check": {
+          "minLength": 1,
+          "title": "Check",
+          "type": "string"
+        },
+        "expected": {
+          "enum": [
+            "INCONCLUSIVE",
+            "OUT_OF_SCOPE",
+            "SUSPECTED",
+            "NOT_EVALUABLE"
+          ],
+          "title": "Expected",
+          "type": "string"
+        }
+      },
+      "required": [
+        "check",
+        "expected"
+      ],
+      "title": "AbstentionTarget",
+      "type": "object"
+    },
     "Adjudication": {
       "additionalProperties": false,
       "properties": {
         "adjudicated_at": {
-          "anyOf": [
-            {
-              "format": "date-time",
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Adjudicated At"
+          "format": "date-time",
+          "title": "Adjudicated At",
+          "type": "string"
         },
         "adjudicator_id": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Adjudicator Id"
+          "minLength": 1,
+          "title": "Adjudicator Id",
+          "type": "string"
         },
-        "disagreements": {
+        "contested_items": {
           "items": {
             "type": "string"
           },
-          "title": "Disagreements",
-          "type": "array"
-        },
-        "method": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/AdjudicationMethod"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "required": {
-          "title": "Required",
-          "type": "boolean"
-        },
-        "resolution_notes": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Resolution Notes"
-        }
-      },
-      "required": [
-        "required"
-      ],
-      "title": "Adjudication",
-      "type": "object"
-    },
-    "AdjudicationMethod": {
-      "enum": [
-        "consensus",
-        "adjudicator_decision",
-        "majority"
-      ],
-      "title": "AdjudicationMethod",
-      "type": "string"
-    },
-    "AttributionTarget": {
-      "description": "Which component a defect is attributed to. UNDETERMINED = evidence does not support attribution.",
-      "enum": [
-        "agent_logic",
-        "asr",
-        "tts",
-        "telephony_audio",
-        "customer",
-        "upstream_data",
-        "undetermined"
-      ],
-      "title": "AttributionTarget",
-      "type": "string"
-    },
-    "Contested": {
-      "additionalProperties": false,
-      "properties": {
-        "alternative_verdicts": {
-          "items": {
-            "$ref": "#/$defs/Verdict"
-          },
-          "title": "Alternative Verdicts",
+          "title": "Contested Items",
           "type": "array"
         },
         "notes": {
@@ -113,55 +57,22 @@
           ],
           "default": null,
           "title": "Notes"
-        },
-        "status": {
-          "$ref": "#/$defs/ContestedStatus",
-          "default": "uncontested"
         }
       },
-      "title": "Contested",
+      "required": [
+        "adjudicator_id",
+        "adjudicated_at"
+      ],
+      "title": "Adjudication",
       "type": "object"
     },
-    "ContestedStatus": {
-      "enum": [
-        "uncontested",
-        "contested_resolved",
-        "contested_unresolved"
-      ],
-      "title": "ContestedStatus",
-      "type": "string"
-    },
-    "EvaluabilityStatus": {
-      "enum": [
-        "evaluable",
-        "out_of_scope",
-        "inconclusive"
-      ],
-      "title": "EvaluabilityStatus",
-      "type": "string"
-    },
-    "ExpectedDefect": {
+    "AttributionFacts": {
       "additionalProperties": false,
+      "description": "Content facts from which the gold-derivation module derives the expected attribution per mode.\n\nThe spec names `attribution_facts` (SD-01) without enumerating fields; these are exactly the inputs\nthe rubric's attribution rules need (registration override, perception test, read-back safeguard).",
       "properties": {
-        "attribution": {
-          "$ref": "#/$defs/AttributionTarget"
-        },
-        "attribution_determinable": {
-          "title": "Attribution Determinable",
-          "type": "boolean"
-        },
-        "defect_id": {
-          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$",
-          "title": "Defect Id",
-          "type": "string"
-        },
-        "evidence": {
-          "$ref": "#/$defs/ExpectedEvidence"
-        },
-        "gate_id": {
+        "notes": {
           "anyOf": [
             {
-              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$",
               "type": "string"
             },
             {
@@ -169,186 +80,224 @@
             }
           ],
           "default": null,
-          "title": "Gate Id"
+          "title": "Notes"
+        },
+        "readback_safeguard_present": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Readback Safeguard Present"
+        },
+        "registered": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Registered"
+        },
+        "said_heard_material_difference": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Said Heard Material Difference"
+        }
+      },
+      "title": "AttributionFacts",
+      "type": "object"
+    },
+    "DangerousWin": {
+      "enum": [
+        "NONE",
+        "CRITICAL",
+        "MATERIAL"
+      ],
+      "title": "DangerousWin",
+      "type": "string"
+    },
+    "Disposition": {
+      "description": "rubric.yaml \u203a outcome_model.observable_dispositions.",
+      "enum": [
+        "ACKNOWLEDGED",
+        "PTP_STATED",
+        "PAYMENT_CLAIMED_ALREADY_PAID",
+        "PAYMENT_CLAIMED_IN_CALL",
+        "DISPUTE_RAISED",
+        "HARDSHIP_OR_INABILITY_STATED",
+        "SETTLEMENT_REQUESTED",
+        "OFFER_AGREED",
+        "MANDATE_AGREED",
+        "CALLBACK_AGREED",
+        "HUMAN_REQUESTED",
+        "TRANSFER_ANNOUNCED",
+        "REFUSED",
+        "STOP_REQUESTED",
+        "THIRD_PARTY_REACHED",
+        "DEATH_REPORTED",
+        "COMPLAINT_RAISED",
+        "INCOMPLETE",
+        "NON_CONVERSATIONAL"
+      ],
+      "title": "Disposition",
+      "type": "string"
+    },
+    "GateId": {
+      "description": "rubric.yaml \u203a gates.",
+      "enum": [
+        "G1",
+        "G2",
+        "G3",
+        "G4",
+        "G5",
+        "G6",
+        "G7",
+        "G8",
+        "G9"
+      ],
+      "title": "GateId",
+      "type": "string"
+    },
+    "GateStatus": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "NA",
+        "INCONCLUSIVE",
+        "OUT_OF_SCOPE"
+      ],
+      "title": "GateStatus",
+      "type": "string"
+    },
+    "GoldFinding": {
+      "additionalProperties": false,
+      "description": "A gold defect. `code` may be a non-gate MVP code, a PLT code, or a gate id (to carry the gate's\nevidence elements and attribution facts for SD-14 / SD-16; the gate status itself lives in `gates`).",
+      "properties": {
+        "anchor_turns": {
+          "items": {
+            "type": "integer"
+          },
+          "minItems": 1,
+          "title": "Anchor Turns",
+          "type": "array"
+        },
+        "attribution_facts": {
+          "$ref": "#/$defs/AttributionFacts"
+        },
+        "code": {
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "evidence_elements": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Evidence Elements",
+          "type": "object"
+        },
+        "label_confidence": {
+          "default": "Sure",
+          "minLength": 1,
+          "title": "Label Confidence",
+          "type": "string"
         },
         "repair_status": {
           "$ref": "#/$defs/RepairStatus",
-          "default": "not_repaired"
-        },
-        "required": {
-          "default": true,
-          "description": "True: the evaluator must detect it (counts toward recall/misses). False: detection is acceptable but not required.",
-          "title": "Required",
-          "type": "boolean"
+          "default": "UNREPAIRED"
         },
         "severity": {
           "$ref": "#/$defs/Severity"
         }
       },
       "required": [
-        "defect_id",
-        "severity",
-        "attribution",
-        "attribution_determinable"
+        "code",
+        "anchor_turns",
+        "severity"
       ],
-      "title": "ExpectedDefect",
+      "title": "GoldFinding",
       "type": "object"
     },
-    "ExpectedEvaluability": {
+    "GoldGate": {
       "additionalProperties": false,
       "properties": {
-        "reasons": {
+        "anchor_turns": {
           "items": {
-            "type": "string"
+            "type": "integer"
           },
-          "title": "Reasons",
+          "title": "Anchor Turns",
           "type": "array"
         },
-        "status": {
-          "$ref": "#/$defs/EvaluabilityStatus"
-        }
-      },
-      "required": [
-        "status"
-      ],
-      "title": "ExpectedEvaluability",
-      "type": "object"
-    },
-    "ExpectedEvidence": {
-      "additionalProperties": false,
-      "properties": {
-        "acceptable_turn_ids": {
-          "description": "Additional turns that are on-target if cited.",
-          "items": {
-            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$",
-            "type": "string"
-          },
-          "title": "Acceptable Turn Ids",
-          "type": "array"
+        "contested": {
+          "default": false,
+          "title": "Contested",
+          "type": "boolean"
         },
-        "audio_spans_ms": {
-          "items": {
-            "maxItems": 2,
-            "minItems": 2,
-            "prefixItems": [
-              {
-                "minimum": 0,
-                "type": "integer"
-              },
-              {
-                "minimum": 0,
-                "type": "integer"
-              }
-            ],
-            "type": "array"
-          },
-          "title": "Audio Spans Ms",
-          "type": "array"
-        },
-        "metadata_fields": {
-          "items": {
-            "const": "call_start_ts",
-            "type": "string"
-          },
-          "title": "Metadata Fields",
-          "type": "array"
-        },
-        "notes": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Notes"
-        },
-        "required_turn_ids": {
-          "description": "Turns an evaluator must cite for its evidence to be complete.",
-          "items": {
-            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$",
-            "type": "string"
-          },
-          "title": "Required Turn Ids",
-          "type": "array"
-        }
-      },
-      "title": "ExpectedEvidence",
-      "type": "object"
-    },
-    "ExpectedGate": {
-      "additionalProperties": false,
-      "properties": {
-        "acceptable_statuses": {
-          "items": {
-            "$ref": "#/$defs/GateStatus"
-          },
-          "title": "Acceptable Statuses",
-          "type": "array"
-        },
-        "gate_id": {
-          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$",
-          "title": "Gate Id",
+        "label_confidence": {
+          "default": "Sure",
+          "minLength": 1,
+          "title": "Label Confidence",
           "type": "string"
         },
         "status": {
           "$ref": "#/$defs/GateStatus"
-        }
-      },
-      "required": [
-        "gate_id",
-        "status"
-      ],
-      "title": "ExpectedGate",
-      "type": "object"
-    },
-    "ExpectedOutcome": {
-      "additionalProperties": false,
-      "properties": {
-        "outcome_class": {
-          "$ref": "#/$defs/OutcomeClass"
         },
-        "outcomes": {
-          "items": {
-            "$ref": "#/$defs/OutcomeCode"
-          },
-          "title": "Outcomes",
-          "type": "array"
-        }
-      },
-      "required": [
-        "outcome_class"
-      ],
-      "title": "ExpectedOutcome",
-      "type": "object"
-    },
-    "GateStatus": {
-      "enum": [
-        "pass",
-        "fail",
-        "inconclusive",
-        "not_applicable"
-      ],
-      "title": "GateStatus",
-      "type": "string"
-    },
-    "GoldProvenance": {
-      "additionalProperties": false,
-      "properties": {
-        "case_card_ref": {
+        "trigger": {
           "anyOf": [
             {
-              "type": "string"
+              "type": "boolean"
             },
             {
               "type": "null"
             }
           ],
           "default": null,
-          "title": "Case Card Ref"
+          "title": "Trigger"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "title": "GoldGate",
+      "type": "object"
+    },
+    "GoldOutcome": {
+      "additionalProperties": false,
+      "properties": {
+        "dispositions": {
+          "items": {
+            "$ref": "#/$defs/Disposition"
+          },
+          "title": "Dispositions",
+          "type": "array"
         },
+        "positive": {
+          "default": false,
+          "title": "Positive",
+          "type": "boolean"
+        }
+      },
+      "title": "GoldOutcome",
+      "type": "object"
+    },
+    "GoldProvenance": {
+      "additionalProperties": false,
+      "properties": {
         "case_card_sha256": {
           "anyOf": [
             {
@@ -390,68 +339,75 @@
           "default": null,
           "title": "Notes"
         },
-        "source": {
-          "$ref": "#/$defs/GoldSource"
+        "single_labeler": {
+          "default": false,
+          "title": "Single Labeler",
+          "type": "boolean"
         }
       },
       "required": [
-        "source",
         "labeling_protocol_version",
         "created_at"
       ],
       "title": "GoldProvenance",
       "type": "object"
     },
-    "GoldSource": {
-      "enum": [
-        "author_specified",
-        "independent_label",
-        "adjudicated"
-      ],
-      "title": "GoldSource",
-      "type": "string"
+    "GoldTags": {
+      "additionalProperties": false,
+      "properties": {
+        "clean_loss": {
+          "default": false,
+          "title": "Clean Loss",
+          "type": "boolean"
+        },
+        "dangerous_win": {
+          "$ref": "#/$defs/DangerousWin",
+          "default": "NONE"
+        }
+      },
+      "title": "GoldTags",
+      "type": "object"
     },
-    "LabelConfidence": {
-      "enum": [
-        "high",
-        "moderate",
-        "low"
+    "GoldVerdict": {
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "$ref": "#/$defs/Verdict"
+        },
+        "within_scope_complete": {
+          "title": "Within Scope Complete",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "value",
+        "within_scope_complete"
       ],
-      "title": "LabelConfidence",
-      "type": "string"
+      "title": "GoldVerdict",
+      "type": "object"
     },
     "LabelerRecord": {
       "additionalProperties": false,
       "properties": {
-        "blind_to_case_card": {
-          "title": "Blind To Case Card",
-          "type": "boolean"
-        },
-        "expertise": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Expertise"
-        },
         "labeled_at": {
           "format": "date-time",
           "title": "Labeled At",
           "type": "string"
         },
         "labeler_id": {
-          "description": "Pseudonymous labeler identifier (no personal data).",
           "minLength": 1,
           "title": "Labeler Id",
           "type": "string"
         },
         "role": {
-          "$ref": "#/$defs/LabelerRole"
+          "enum": [
+            "labeler_x",
+            "labeler_y",
+            "adjudicator",
+            "author"
+          ],
+          "title": "Role",
+          "type": "string"
         },
         "saw_evaluator_outputs": {
           "title": "Saw Evaluator Outputs",
@@ -462,82 +418,45 @@
         "labeler_id",
         "role",
         "labeled_at",
-        "blind_to_case_card",
         "saw_evaluator_outputs"
       ],
       "title": "LabelerRecord",
       "type": "object"
     },
-    "LabelerRole": {
-      "enum": [
-        "author",
-        "labeler",
-        "adjudicator"
-      ],
-      "title": "LabelerRole",
-      "type": "string"
-    },
-    "OutcomeClass": {
-      "enum": [
-        "win",
-        "loss",
-        "neutral",
-        "unknown"
-      ],
-      "title": "OutcomeClass",
-      "type": "string"
-    },
-    "OutcomeCode": {
-      "enum": [
-        "promise_to_pay",
-        "payment_committed_on_call",
-        "payment_plan_agreed",
-        "dispute_raised",
-        "callback_scheduled",
-        "refusal_to_pay",
-        "wrong_party",
-        "hardship_disclosed",
-        "no_resolution",
-        "call_dropped"
-      ],
-      "title": "OutcomeCode",
-      "type": "string"
-    },
     "RepairStatus": {
       "enum": [
-        "not_repaired",
-        "partially_repaired",
-        "repaired",
-        "not_applicable"
+        "REPAIRED",
+        "UNREPAIRED"
       ],
       "title": "RepairStatus",
       "type": "string"
     },
     "Severity": {
       "enum": [
-        "critical",
-        "major",
-        "minor"
+        "CRITICAL",
+        "MAJOR",
+        "MINOR",
+        "INFORMATIONAL"
       ],
       "title": "Severity",
       "type": "string"
     },
     "Split": {
+      "description": "experiment-protocol.md P-1 (dev in-repo; holdout and red team under $BENCH_PRIVATE_DIR).",
       "enum": [
         "dev",
         "holdout",
-        "redteam",
-        "calibration"
+        "redteam"
       ],
       "title": "Split",
       "type": "string"
     },
     "Verdict": {
       "enum": [
-        "pass",
-        "fail",
-        "inconclusive",
-        "out_of_scope"
+        "CRITICAL_FAIL",
+        "NEEDS_ATTENTION",
+        "MEETS_BAR",
+        "NOT_EVALUABLE"
       ],
       "title": "Verdict",
       "type": "string"
@@ -545,20 +464,11 @@
   },
   "additionalProperties": false,
   "properties": {
-    "acceptable_extra_defects": {
-      "description": "Defect ids that are defensible if an evaluator raises them (not counted as unsupported).",
+    "abstention_targets": {
       "items": {
-        "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$",
-        "type": "string"
+        "$ref": "#/$defs/AbstentionTarget"
       },
-      "title": "Acceptable Extra Defects",
-      "type": "array"
-    },
-    "acceptable_verdicts": {
-      "items": {
-        "$ref": "#/$defs/Verdict"
-      },
-      "title": "Acceptable Verdicts",
+      "title": "Abstention Targets",
       "type": "array"
     },
     "adjudication": {
@@ -572,80 +482,32 @@
       ],
       "default": null
     },
-    "confidence": {
-      "$ref": "#/$defs/LabelConfidence"
-    },
-    "contested": {
-      "$ref": "#/$defs/Contested"
-    },
-    "expected_clean_loss": {
-      "anyOf": [
-        {
-          "type": "boolean"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "title": "Expected Clean Loss"
-    },
-    "expected_dangerous_win": {
-      "anyOf": [
-        {
-          "type": "boolean"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "title": "Expected Dangerous Win"
-    },
-    "expected_defects": {
+    "findings": {
       "items": {
-        "$ref": "#/$defs/ExpectedDefect"
+        "$ref": "#/$defs/GoldFinding"
       },
-      "title": "Expected Defects",
+      "title": "Findings",
       "type": "array"
     },
-    "expected_evaluability": {
-      "$ref": "#/$defs/ExpectedEvaluability"
-    },
-    "expected_gates": {
-      "items": {
-        "$ref": "#/$defs/ExpectedGate"
+    "gates": {
+      "additionalProperties": {
+        "$ref": "#/$defs/GoldGate"
       },
-      "title": "Expected Gates",
+      "propertyNames": {
+        "$ref": "#/$defs/GateId"
+      },
+      "title": "Gates",
+      "type": "object"
+    },
+    "inconclusive_checks": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Inconclusive Checks",
       "type": "array"
-    },
-    "expected_outcome": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/ExpectedOutcome"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null
-    },
-    "expected_primary_attribution": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/AttributionTarget"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null
-    },
-    "expected_verdict": {
-      "$ref": "#/$defs/Verdict"
     },
     "item_id": {
-      "pattern": "^[a-z0-9][a-z0-9-]{2,63}$",
+      "pattern": "^[A-Z][A-Z0-9]*(-[A-Z0-9]+)+$",
       "title": "Item Id",
       "type": "string"
     },
@@ -657,31 +519,47 @@
       "title": "Labelers",
       "type": "array"
     },
+    "na_checks": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Na Checks",
+      "type": "array"
+    },
+    "oos_checks": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Oos Checks",
+      "type": "array"
+    },
+    "outcome": {
+      "$ref": "#/$defs/GoldOutcome"
+    },
     "provenance": {
       "$ref": "#/$defs/GoldProvenance"
     },
-    "scenario": {
-      "minLength": 1,
-      "title": "Scenario",
-      "type": "string"
-    },
     "schema_version": {
-      "const": "gold_label/1.0.0",
-      "default": "gold_label/1.0.0",
+      "const": "gold_label/2.0.0",
+      "default": "gold_label/2.0.0",
       "title": "Schema Version",
       "type": "string"
     },
     "split": {
       "$ref": "#/$defs/Split"
+    },
+    "tags": {
+      "$ref": "#/$defs/GoldTags"
+    },
+    "verdict": {
+      "$ref": "#/$defs/GoldVerdict"
     }
   },
   "required": [
     "item_id",
     "split",
-    "scenario",
-    "expected_evaluability",
-    "expected_verdict",
-    "confidence",
+    "gates",
+    "verdict",
     "provenance",
     "labelers"
   ],

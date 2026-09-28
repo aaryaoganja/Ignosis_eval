@@ -1,85 +1,51 @@
-"""Proportion results (k/n + percentage + honest interval reporting).
+"""Rate reporting — scoring-spec SD-26 / SD-29: counts first (always k/n), whole-percent rounding, a
+Wilson 95% interval only when n >= 10, and the zero-failure upper bound when no event was observed.
 
-An interval is reported only when ALL of these hold; otherwise `interval` is null and
-`interval_note` says why (no interval is ever fabricated):
-  * n > 0
-  * n >= policy.min_n
-  * the units are independent: one unit per item and a single repetition. Item x repetition units are
-    clustered by item, and several defects/evidence items per item are clustered too; binomial
-    intervals would overstate precision. For such metrics the scorer reports per-repetition results
-    (each over independent items) instead.
-
-PROVISIONAL: min_n and the metric->method assignment must be reconciled with the Stage 4 spec.
+Many SD metrics pool units over reps, or several checks per item, so their units are not independent.
+SD-26 does not restrict the interval to independent units; the interval is shown as specified and the
+`clustered` flag carries the caveat.
 """
 
 from __future__ import annotations
 
-from collections import Counter
-from collections.abc import Iterable
-from dataclasses import dataclass, field
-from typing import Any, Literal
+from dataclasses import dataclass
+from typing import Any
 
-from ignosis_eval.stats.intervals import METHODS
+from ignosis_eval.stats.intervals import WILSON_MIN_N, rule_of_three, wilson_interval, zero_failure_upper_bound
 
-Method = Literal["wilson", "clopper_pearson"]
+
+def whole_percent(k: int, n: int) -> int | None:
+    """Round half up to a whole percent (deterministic; avoids banker's rounding)."""
+    if n == 0:
+        return None
+    return int((200 * k + n) // (2 * n))
 
 
 @dataclass(frozen=True)
-class IntervalPolicy:
-    confidence: float = 0.95
-    min_n: int = 10
-    default_method: Method = "wilson"
-    safety_method: Method = "clopper_pearson"
-
-    def to_dict(self) -> dict[str, Any]:
-        return {"confidence": self.confidence, "min_n": self.min_n, "default_method": self.default_method,
-                "safety_method": self.safety_method}
-
-
-def units_independent(unit_items: Iterable[str], reps: Iterable[int]) -> bool:
-    """True iff every unit comes from a distinct item and all units come from a single repetition."""
-    counts = Counter(unit_items)
-    return len(set(reps)) <= 1 and all(c == 1 for c in counts.values())
-
-
-@dataclass
-class Proportion:
+class Rate:
     k: int
     n: int
-    unit: str
-    independent: bool
-    safety: bool = False
-    policy: IntervalPolicy = field(default_factory=IntervalPolicy)
+    clustered: bool = False  # pooled over reps / several checks per item
 
     def __post_init__(self) -> None:
         if self.n < 0 or not 0 <= self.k <= max(self.n, 0):
-            raise ValueError(f"invalid proportion k={self.k} n={self.n}")
-
-    @property
-    def rate(self) -> float | None:
-        return None if self.n == 0 else self.k / self.n
-
-    @property
-    def pct(self) -> float | None:
-        r = self.rate
-        return None if r is None else round(100.0 * r, 4)
-
-    @property
-    def method(self) -> Method:
-        return self.policy.safety_method if self.safety else self.policy.default_method
-
-    def interval(self) -> tuple[dict[str, Any] | None, str | None]:
-        if self.n == 0:
-            return None, "no eligible units (n=0)"
-        if not self.independent:
-            return None, "units are not independent (clustered by item and/or repetition); see per-repetition results"
-        if self.n < self.policy.min_n:
-            return None, f"n={self.n} is below min_n={self.policy.min_n}; interval not reported"
-        lo, hi = METHODS[self.method](self.k, self.n, self.policy.confidence)
-        return {"method": self.method, "confidence": self.policy.confidence, "low": lo, "high": hi,
-                "low_pct": round(100 * lo, 4), "high_pct": round(100 * hi, 4)}, None
+            raise ValueError(f"invalid rate k={self.k} n={self.n}")
 
     def to_dict(self) -> dict[str, Any]:
-        iv, note = self.interval()
-        return {"k": self.k, "n": self.n, "rate": self.rate, "pct": self.pct, "unit": self.unit,
-                "independent_units": self.independent, "interval": iv, "interval_note": note}
+        out: dict[str, Any] = {"k": self.k, "n": self.n, "kn": f"{self.k}/{self.n}",
+                               "pct": whole_percent(self.k, self.n), "clustered": self.clustered,
+                               "wilson95_pct": None, "zero_event_upper95_pct": None,
+                               "zero_nonevent_upper95_pct": None}
+        if self.n >= WILSON_MIN_N:
+            lo, hi = wilson_interval(self.k, self.n)
+            out["wilson95_pct"] = [round(100 * lo), round(100 * hi)]
+        if self.n > 0 and self.k == 0:
+            out["zero_event_upper95_pct"] = round(100 * zero_failure_upper_bound(self.n))
+            out["rule_of_three_approx_pct"] = round(100 * rule_of_three(self.n))
+        if self.n > 0 and self.k == self.n:  # e.g. 0 misses: bound on the complementary (failure) rate
+            out["zero_nonevent_upper95_pct"] = round(100 * zero_failure_upper_bound(self.n))
+        return out
+
+
+def rate(k: int, n: int, *, clustered: bool = False) -> dict[str, Any]:
+    return Rate(k, n, clustered).to_dict()

@@ -1,101 +1,74 @@
 # Ignosis Voice AI Quality Evaluator: reliability-experiment infrastructure
 
-This repository holds the engineering infrastructure for running a rigorous reliability experiment on
-a quality evaluator for collections voice-AI calls. It covers typed data contracts, benchmark and
-case-card tooling, a gold freeze with fail-closed hash verification, an append-only experiment runner,
-and a scorer that is independent of the evaluator and implements executable metric definitions.
+This repository holds the infrastructure for a pre-registered reliability experiment on a quality evaluator for
+collections voice-AI calls. It implements the **frozen specification pack** in [`docs/spec/`](docs/spec/):
 
-> **Nothing in this repository is a measured result.** Evaluators A, A+ and B are interface stubs
-> running on a deterministic mock backend. The evaluation profile is a placeholder, and the only
-> labelled cases are test fixtures. The metric definitions are provisional until they are reconciled
-> with the Stage 4 Reliability Specification, which is not in this repository
-> (see [`docs/gap-analysis.md`](docs/gap-analysis.md)).
+- contract `1.0.0-frozen`;
+- rubric `1.0-mvp`;
+- profile `collections_default_v1`;
+- experiment protocol;
+- scoring specification;
+- implementation blockers.
+
+How the implementation maps to the spec is in [`docs/spec-reconciliation.md`](docs/spec-reconciliation.md).
+
+> **Nothing in this repository is a measured result.** The benchmark is empty (B-01/B-02 pending). The LLM
+> backend is a replay mock (B-05), the ASR is a cache replay (B-06), the lexicon terms are empty (B-04) and 17
+> profile/rubric values are `PENDING_HUMAN_SIGNOFF`. Every locked (holdout / red-team) run is refused until those
+> are resolved. Every `metrics.json` carries the SD-29 scope line and warnings.
 
 ## Status at a glance
 
-| Layer | What exists | Status |
-|---|---|---|
-| **Specification** | The Stage 1–4 documents (rubric, taxonomy, Reliability Specification) | **Not in the repository.** Everything that depends on them is listed as provisional in `docs/gap-analysis.md` (G1–G14). |
-| **Implementation** | Contracts, benchmark tooling, gold freeze, guard, runner, scorer, metric definitions, evaluator interfaces, 183 tests | Implemented and tested. Definitions are marked `provisional`. |
-| **Gold labels** | `benchmark/gold/` | **Empty.** No benchmark gold exists. `tests/fixtures/benchmark_smoke/gold/` holds hand-written *test fixtures*, not benchmark gold. |
-| **Evaluator outputs** | `runs/` (git-ignored) | Only mock-backend outputs produced locally. They measure plumbing, not quality. |
-| **Measured results** | — | **None.** Every `metrics.json` carries warnings when the profile is a placeholder or the backend is a mock. |
-
-## MVP scope
-
-- Inputs: **audio only**, **transcript only**, or **audio + transcript**. Nothing else.
-- Use case: **collections** calls.
-- Out of scope: CRM/LMS/account/payment integrations, policy-pack upload, agent/tool traces,
-  production APIs, real-time intervention, UI.
+| Layer | Status |
+|---|---|
+| Spec pack | `docs/spec/` (6 files, verbatim). `ignosis-eval spec pending` lists the pending items. |
+| Contracts, front end, engine, K0 / A / A+ / B interfaces, gold derivation, scorer, runner, lock, blinding | Implemented and tested (`python -m pytest`). |
+| B rule engine, deterministic normalizer, DC-02 / DC-LANG / DC-01-audio, timing signals | Next phase / pending sign-off (see the reconciliation doc §5). |
+| Benchmark content, gold, registries | **Empty.** Authored by humans (B-01..B-03). |
+| Results | **None.** |
 
 ## Quick start
 
 ```bash
 pip install -e ".[dev]"
-python -m pytest                                  # 183 tests
-
-# benchmark integrity (the real benchmark is still empty; the smoke fixture has 10 cases)
-ignosis-eval benchmark check --benchmark-root benchmark
-ignosis-eval benchmark check --benchmark-root tests/fixtures/benchmark_smoke --require-gold
-ignosis-eval manifest verify --benchmark-root tests/fixtures/benchmark_smoke
-ignosis-eval gold verify     --benchmark-root tests/fixtures/benchmark_smoke
-
-# an end-to-end MOCK experiment on the test fixture (plumbing only, not a result)
-ignosis-eval run --benchmark-root tests/fixtures/benchmark_smoke --split dev --evaluator a \
-    --reps 3 --seed 1234 --evaluator-option noise_rate=0.2
-#   -> runs/<run_id>/...  and  scoring/<run_id>/{item_scores.csv, metrics.json, discordance_tables.csv}
-
-# validate a case card
-python scripts/validate_case_cards.py benchmark/templates/case_card.template.yaml   # fails on purpose (placeholders)
+python -m pytest                         # the whole suite
+ruff check src tests scripts && mypy     # lint + types
+ignosis-eval spec check && ignosis-eval spec pending
+ignosis-eval bench check --scope dev --require-gold
 ```
 
-## How a run works
+A full dev run once items, cards and gold exist (plumbing only while the backend is a mock):
 
-```
-case cards ─┐                         (protected from the evaluator process)
-gold ───────┼─ freeze ─> manifests/{benchmark,gold}_manifest.json  (SHA-256, versioned, immutable)
-dataset ────┘
-               │ verify hashes + benchmark checks (fail closed)
-               ▼
-dataset/<split>/<case>/input.json ─> normalize (pipeline ASR for audio-only) ─> Evaluator (A | A+ | B | K0)
-                                                                                 inside gold-access guard
-               ▼
-runs/<run_id>/manifest.json + <item>/rep_<k>/{normalized_input, llm_requests, llm_responses,
-                                              evaluation_record, timing, usage, errors}   (write-once)
-               │ re-verify hashes ─ completion.json ─ seal
-               ▼
-scorer (gold + Evaluation Records only) ─> scoring/<run_id>/{item_scores.csv, metrics.json,
-                                                             discordance_tables.csv, scoring_manifest.json}
+```bash
+ignosis-eval bench manifest --scope dev --dataset-version v1 --created-by <id>
+ignosis-eval gold freeze    --scope dev --gold-version g1 --frozen-by <id> --labeling-protocol-version <v>
+ignosis-eval run   --split dev --systems K0,A,A+,B --base-seed 1234 --replay-dir <replay fixtures>
+ignosis-eval blind --run-id <run_id>
+ignosis-eval score --run-id <run_id>     # -> scoring/<run_id>/{item_scores.csv, metrics.json, discordance_tables.csv, human_checks.csv}
 ```
 
 ## Repository layout
 
 ```
+docs/spec/          frozen specification pack (authoritative)
+bench/              dev benchmark (empty scaffolding), hash lists, registries, card template
 src/ignosis_eval/
-  contracts/     Canonical Input, Evaluation Record, Gold Label, Case Card, Profile, manifests, record checks
-  benchmark/     layout, case-card rules, benchmark integrity checks, holdout registry
-  integrity/     canonical hashing, manifest build, gold freeze + verification, gold-access guard
-  pipeline/      input normalization + ASR interface (mock ASR)
-  evaluators/    Evaluator interface, A / A+ / B stubs, K0 keyword floor, mock LLM backend, stub prompts
-  stats/         Wilson + Clopper-Pearson intervals, proportion reporting policy
-  metrics/       executable metric definitions, alignment, matching, slices, language delta
-  scoring/       scorer (loader verifies before reading; outputs write-once)
-  runner/        experiment runner, run storage, git provenance
-  cli.py         `ignosis-eval` command
-benchmark/       dataset/ gold/ case_cards/ {dev,holdout,redteam,calibration}, manifests/, templates/
-config/profiles/ placeholder collections profile (NOT the Stage 1-3 rubric)
-schemas/         exported JSON Schemas of all contracts (kept in sync by a test)
-scripts/         validate_case_cards.py
-tests/           183 tests; fixtures/benchmark_smoke = synthetic TEST FIXTURE
-docs/            gap-analysis, data-contracts, benchmark-authoring, reliability, experiment-protocol
+  spec/             spec loader, check registry from rubric.yaml, PENDING inventory
+  contracts/        NormalizedInput, EvaluationRecord, GoldLabel, CaseCard, ItemMeta, Registries, manifests
+  pipeline/         shared front end: transcript intake, ASR cache, normalization, lexicon, pre-checks, evaluability
+  engine/           deterministic verifier, confidence ceiling, attribution, verdict engine, tags, routing
+  evaluators/       K0, A, A+ (derived), B (interfaces), replay mock, prompt stubs + generated rubric section
+  golddrv/          independent mode-level gold derivation (capability table, attribution)
+  metrics/ scoring/ stats/   scoring-spec SD-01..SD-31 on the blinded view
+  benchmark/ integrity/      layout, card rules, bench checks, locked-run registry; hash lists, gold freeze, guard
+  runner/           P-5/P-6 run protocol, lock (P-8), blinding (P-10), append-only storage (P-11)
+tests/              synthetic-stub tests only (P-1 rule 3)
 ```
 
 ## Documentation
 
-- [`docs/gap-analysis.md`](docs/gap-analysis.md): what existed, what is provisional, what needs human input.
-- [`docs/data-contracts.md`](docs/data-contracts.md): every contract, its invariants, and the versioning policy.
-- [`docs/benchmark-authoring.md`](docs/benchmark-authoring.md): the case-card workflow, validation rules, and freezing.
-- [`docs/reliability.md`](docs/reliability.md): metric definitions as implemented and the interval policy.
-- [`docs/experiment-protocol.md`](docs/experiment-protocol.md): the run lifecycle, fail-closed checks, holdout
-  discipline, and what counts as a result.
-- [`CLAUDE.md`](CLAUDE.md): working rules for AI-assisted development in this repository.
+- [`docs/spec-reconciliation.md`](docs/spec-reconciliation.md): what changed and why; conventions; open questions.
+- [`docs/data-contracts.md`](docs/data-contracts.md), [`docs/benchmark-authoring.md`](docs/benchmark-authoring.md),
+  [`docs/experiment-protocol.md`](docs/experiment-protocol.md), [`docs/reliability.md`](docs/reliability.md):
+  implementation maps to the spec.
+- [`docs/gap-analysis.md`](docs/gap-analysis.md): history of the infrastructure phase and its reconciliation.

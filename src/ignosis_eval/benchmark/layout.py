@@ -1,127 +1,146 @@
-"""On-disk benchmark layout.
+"""On-disk benchmark layout — experiment-protocol P-1.
 
-    <root>/
-      dataset/<split>/<case_id>/input.json        Canonical Input (the ONLY evaluator-visible part)
-      dataset/<split>/<case_id>/<audio + sidecars> audio referenced by input.json (optional)
-      case_cards/<split>/<case_id>.card.yaml       author intent (protected from evaluator)
-      gold/<split>/<case_id>.gold.json             gold labels (protected, frozen)
-      manifests/benchmark_manifest.json            dataset manifest + hashes (protected)
-      manifests/gold_manifest.json                 gold manifest + hashes (protected)
-      manifests/holdout_registry.json              append-only list of holdout case ids (protected)
-      templates/case_card.template.yaml            authoring template
+    bench/                                    (in the repository)
+      dev/items/<item_id>/item.json           ItemMeta (split, pack, unit modes, artifact paths)
+      dev/items/<item_id>/<transcript>        .txt or .json (§2.3); audio .wav/.mp3/.m4a (git-ignored)
+      dev/case_cards/<item_id>.card.yaml      author intent (protected from evaluators)
+      dev/gold/<item_id>.gold.json            dev gold (protected)
+      manifests/dev_manifest.json             hash list of dev items          (BenchManifest, scope dev)
+      manifests/dev_gold_manifest.json        hash list of dev gold           (GoldManifest, scope dev)
+      manifests/private_manifest.json         hash list of private items      (P-1 rule 5)
+      manifests/private_gold_manifest.json    hash list of private gold       (P-1 rule 5)
+      manifests/history/                      write-once archive of every manifest version
+      registries.json                         control / pair / twin registries (SD-01)
+      asr_cache/                              cached ASR outputs, keyed by audio hash + engine (P-2)
+      templates/case_card.template.yaml
+    $BENCH_PRIVATE_DIR/                       (outside the repository)
+      holdout/items/<item_id>/...             holdout items
+      redteam/items/<item_id>/...             red-team items
+      case_cards/<item_id>.card.yaml          holdout / red-team intent cards
+      gold/<item_id>.gold.json                holdout and red-team gold
 
-`<split>` is one of dev | holdout | redteam | calibration. The split is encoded twice (directory and
-case card / gold `split` field) so that a case filed or marked in the wrong split is detected.
+The legacy `benchmark/` scaffolding of the infrastructure phase is superseded by this layout.
 """
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from ignosis_eval.canonical import canonical_sha256
-from ignosis_eval.contracts.canonical_input import CanonicalInput
 from ignosis_eval.contracts.enums import Split
-from ignosis_eval.contracts.evidence import normalize_text
 
-INPUT_FILENAME = "input.json"
+ITEM_META_FILE = "item.json"
 CARD_SUFFIX = ".card.yaml"
 GOLD_SUFFIX = ".gold.json"
+PRIVATE_ENV = "BENCH_PRIVATE_DIR"
+SCOPE_SPLITS: dict[str, tuple[Split, ...]] = {"dev": (Split.DEV,), "private": (Split.HOLDOUT, Split.REDTEAM)}
+
+
+class LayoutError(RuntimeError):
+    pass
+
+
+def scope_of(split: Split) -> str:
+    return "dev" if split is Split.DEV else "private"
 
 
 @dataclass(frozen=True)
-class CasePaths:
+class ItemPaths:
     split: Split
-    case_id: str
-    case_dir: Path
-    input_path: Path
+    item_id: str
+    item_dir: Path
+    meta_path: Path
     card_path: Path
     gold_path: Path
 
 
-class BenchmarkLayout:
-    def __init__(self, root: str | Path):
-        self.root = Path(root).resolve()
-        self.dataset_dir = self.root / "dataset"
-        self.gold_dir = self.root / "gold"
-        self.cards_dir = self.root / "case_cards"
+class BenchLayout:
+    def __init__(self, bench_root: str | Path, private_root: str | Path | None = None):
+        self.root = Path(bench_root).resolve()
+        env = os.environ.get(PRIVATE_ENV)
+        pr = private_root if private_root is not None else (env or None)
+        self.private_root = Path(pr).resolve() if pr else None
+        if self.private_root is not None and (self.private_root == self.root or self.root in self.private_root.parents):
+            raise LayoutError("BENCH_PRIVATE_DIR must be outside the repository bench directory (P-1)")
+        self.dev_dir = self.root / "dev"
         self.manifests_dir = self.root / "manifests"
+        self.history_dir = self.manifests_dir / "history"
+        self.registries_path = self.root / "registries.json"
+        self.asr_cache_dir = self.root / "asr_cache"
         self.templates_dir = self.root / "templates"
-        self.benchmark_manifest_path = self.manifests_dir / "benchmark_manifest.json"
-        self.gold_manifest_path = self.manifests_dir / "gold_manifest.json"
-        self.holdout_registry_path = self.manifests_dir / "holdout_registry.json"
 
-    @property
-    def protected_paths(self) -> list[Path]:
-        """Paths the evaluator process must never read or write."""
-        return [self.gold_dir, self.cards_dir, self.manifests_dir]
+    # ------------------------------------------------------------------ scope roots
+    def scope_root(self, scope: str) -> Path:
+        if scope == "dev":
+            return self.dev_dir
+        if scope == "private":
+            if self.private_root is None:
+                raise LayoutError(f"{PRIVATE_ENV} is not set: holdout / red-team data is unavailable (fail closed)")
+            return self.private_root
+        raise LayoutError(f"unknown scope {scope!r}")
 
-    def case_paths(self, split: Split, case_id: str) -> CasePaths:
-        case_dir = self.dataset_dir / split.value / case_id
-        return CasePaths(
-            split=split,
-            case_id=case_id,
-            case_dir=case_dir,
-            input_path=case_dir / INPUT_FILENAME,
-            card_path=self.cards_dir / split.value / f"{case_id}{CARD_SUFFIX}",
-            gold_path=self.gold_dir / split.value / f"{case_id}{GOLD_SUFFIX}",
-        )
+    def items_dir(self, split: Split) -> Path:
+        if split is Split.DEV:
+            return self.dev_dir / "items"
+        return self.scope_root("private") / split.value / "items"
 
-    def rel(self, path: Path) -> str:
-        return Path(path).resolve().relative_to(self.root).as_posix()
+    def gold_dir(self, scope: str) -> Path:
+        return self.scope_root(scope) / "gold"
 
-    def abs(self, rel: str) -> Path:
-        p = (self.root / rel).resolve()
-        if self.root not in p.parents and p != self.root:
-            raise ValueError(f"path escapes benchmark root: {rel}")
+    def cards_dir(self, scope: str) -> Path:
+        return self.scope_root(scope) / "case_cards"
+
+    def manifest_path(self, scope: str) -> Path:
+        return self.manifests_dir / f"{scope}_manifest.json"
+
+    def gold_manifest_path(self, scope: str) -> Path:
+        return self.manifests_dir / f"{scope}_gold_manifest.json"
+
+    def item_paths(self, split: Split, item_id: str) -> ItemPaths:
+        scope = scope_of(split)
+        d = self.items_dir(split) / item_id
+        return ItemPaths(split, item_id, d, d / ITEM_META_FILE, self.cards_dir(scope) / f"{item_id}{CARD_SUFFIX}",
+                         self.gold_dir(scope) / f"{item_id}{GOLD_SUFFIX}")
+
+    def rel(self, scope: str, path: Path) -> str:
+        return Path(path).resolve().relative_to(self.scope_root(scope)).as_posix()
+
+    def abs(self, scope: str, rel: str) -> Path:
+        root = self.scope_root(scope)
+        p = (root / rel).resolve()
+        if root not in p.parents:
+            raise LayoutError(f"path escapes the {scope} root: {rel}")
         return p
 
-    # ---------------------------------------------------------------------------------- discovery
-    def discover_dataset(self) -> tuple[list[CasePaths], list[str]]:
-        """Return case paths found under dataset/ and a list of layout problems."""
-        cases: list[CasePaths] = []
-        problems: list[str] = []
-        if not self.dataset_dir.exists():
-            return cases, [f"missing dataset directory {self.dataset_dir}"]
-        valid = {s.value for s in Split}
-        for split_dir in sorted(p for p in self.dataset_dir.iterdir() if not p.name.startswith(".")):
-            if not split_dir.is_dir() or split_dir.name not in valid:
-                problems.append(f"unexpected entry in dataset/: {split_dir.name}")
-                continue
-            for case_dir in sorted(p for p in split_dir.iterdir() if not p.name.startswith(".")):
-                if not case_dir.is_dir():
-                    problems.append(f"unexpected file in dataset/{split_dir.name}/: {case_dir.name}")
-                    continue
-                cases.append(self.case_paths(Split(split_dir.name), case_dir.name))
-        return cases, problems
+    # ------------------------------------------------------------------ protection
+    def protected_paths(self) -> list[Path]:
+        """Paths no evaluator may read or write (integrity/guard.py): gold, case cards, manifests, registries."""
+        out = [self.dev_dir / "gold", self.dev_dir / "case_cards", self.manifests_dir, self.registries_path]
+        if self.private_root is not None:
+            out += [self.private_root / "gold", self.private_root / "case_cards"]
+        return out
 
-    def _discover_suffixed(self, base: Path, suffix: str) -> tuple[list[tuple[str, str, Path]], list[str]]:
-        found: list[tuple[str, str, Path]] = []
-        problems: list[str] = []
+    # ------------------------------------------------------------------ discovery
+    def discover(self, split: Split) -> tuple[list[ItemPaths], list[str]]:
+        base = self.items_dir(split)
         if not base.exists():
-            return found, problems
-        valid = {s.value for s in Split}
-        for split_dir in sorted(p for p in base.iterdir() if not p.name.startswith(".")):
-            if not split_dir.is_dir() or split_dir.name not in valid:
-                problems.append(f"unexpected entry in {base.name}/: {split_dir.name}")
+            return [], []
+        items, problems = [], []
+        for d in sorted(p for p in base.iterdir() if not p.name.startswith(".")):
+            if not d.is_dir():
+                problems.append(f"unexpected file in {split.value}/items: {d.name}")
                 continue
-            for f in sorted(p for p in split_dir.iterdir() if not p.name.startswith(".")):
-                if not f.name.endswith(suffix):
-                    problems.append(f"unexpected file {base.name}/{split_dir.name}/{f.name}")
-                    continue
-                found.append((split_dir.name, f.name[: -len(suffix)], f))
+            items.append(self.item_paths(split, d.name))
+        return items, problems
+
+    def discover_suffixed(self, base: Path, suffix: str) -> tuple[list[tuple[str, Path]], list[str]]:
+        if not base.exists():
+            return [], []
+        found, problems = [], []
+        for f in sorted(p for p in base.iterdir() if not p.name.startswith(".")):
+            if not f.name.endswith(suffix):
+                problems.append(f"unexpected file {base.name}/{f.name}")
+                continue
+            found.append((f.name[: -len(suffix)], f))
         return found, problems
-
-    def discover_gold(self) -> tuple[list[tuple[str, str, Path]], list[str]]:
-        return self._discover_suffixed(self.gold_dir, GOLD_SUFFIX)
-
-    def discover_cards(self) -> tuple[list[tuple[str, str, Path]], list[str]]:
-        return self._discover_suffixed(self.cards_dir, CARD_SUFFIX)
-
-
-def content_fingerprint(inp: CanonicalInput) -> str:
-    """Hash of the modality content only (ignores call_id and metadata) — detects cross-split leakage."""
-    turns = []
-    if inp.transcript is not None:
-        turns = [[t.speaker.value, normalize_text(t.text)] for t in inp.transcript.turns]
-    return canonical_sha256({"audio_sha256": inp.audio.sha256 if inp.audio else None, "turns": turns})

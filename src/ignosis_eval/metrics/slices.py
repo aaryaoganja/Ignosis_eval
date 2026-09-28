@@ -1,67 +1,69 @@
-"""Sliced metrics: per input modality, per language (+ language delta), per split, per judge-bait flag.
+"""Units and universes — scoring-spec SD-01 / SD-29.
 
-Language delta (PROVISIONAL): for each core metric, delta = rate(language) - rate(reference language).
-The reference is the configured language, else the language with the most item-reps (ties: sorted
-first). Only point deltas are reported; no interval is attached to a difference (item-level pairing
-and clustering make a naive difference interval misleading). Deltas are null when either side is
-undefined, and are flagged when either side has n < policy.min_n.
+  primary (U_P)  TRANSCRIPT units of the core, micro and abstention packs of the run's split (46 units in
+                 bench-a1 holdout). For a red-team run the primary universe is its TRANSCRIPT units (SD-27:
+                 "for the red team, H3 uses red-team gold-FAIL units"). For a dev run the same definition is
+                 applied to dev and every output is labelled dev.
+  all            every scored unit of the run (H1/H2/H4/H6 universes), including audio units and twins.
+  audio/<mode>   audio units per unit mode (T-gold, T-asr, A, A+T, A+T-platform), against mode-derived gold.
+  twins          language-twin units (reported separately; never added to U_P positives).
+Snippet units are component tests (SD-22) and calibration items are never scored.
 """
 
 from __future__ import annotations
 
-from collections import Counter
-from collections.abc import Callable
-from typing import Any
+from dataclasses import dataclass
 
-from ignosis_eval.metrics.alignment import ItemRep
-from ignosis_eval.metrics.definitions import compute
-from ignosis_eval.stats.proportion import IntervalPolicy
+from ignosis_eval.contracts.benchmark import ItemMeta, UnitFacts
+from ignosis_eval.golddrv.derive import ModeGold
 
-CORE_METRICS = (
-    "verdict_accuracy",
-    "critical_misses",
-    "major_recall",
-    "unsupported_pass_verdict",
-    "critical_false_positive_gate",
-    "abstention_recall",
-    "integrity_failures",
-    "evidence_faithfulness",
-    "modality_conformance",
-)
+PRIMARY_PACKS = frozenset({"core", "micro", "abstention"})
+AUDIO_MODES = ("T-gold", "T-asr", "A", "A+T", "A+T-platform")
 
 
-def slice_by(irs: list[ItemRep], key: Callable[[ItemRep], str], policy: IntervalPolicy,
-             metrics: tuple[str, ...] = CORE_METRICS) -> dict[str, dict[str, Any]]:
-    groups: dict[str, list[ItemRep]] = {}
-    for ir in irs:
-        groups.setdefault(key(ir), []).append(ir)
-    return {g: {m: compute(m, sub, policy).to_dict() for m in metrics} for g, sub in sorted(groups.items())}
+@dataclass(frozen=True)
+class UnitCtx:
+    unit_id: str
+    meta: ItemMeta
+    facts: UnitFacts
+    gold: ModeGold
+
+    @property
+    def item_id(self) -> str:
+        return self.meta.item_id
+
+    @property
+    def mode(self) -> str:
+        return self.facts.unit_mode.value
+
+    @property
+    def pack(self) -> str:
+        return self.meta.pack.value
 
 
-def language_delta(irs: list[ItemRep], policy: IntervalPolicy, reference: str | None = None,
-                   metrics: tuple[str, ...] = CORE_METRICS) -> dict[str, Any]:
-    per_lang = slice_by(irs, lambda ir: ir.language, policy, metrics)
-    if not per_lang:
-        return {"reference": None, "per_language": {}, "deltas": {}, "note": "no item-reps"}
-    counts = Counter(ir.language for ir in irs)
-    ref = reference if reference in per_lang else sorted(counts, key=lambda lang: (-counts[lang], lang))[0]
-    note = None if reference in (None, ref) else f"configured reference {reference!r} absent; used {ref!r}"
-    deltas: dict[str, dict[str, Any]] = {}
-    for lang, res in per_lang.items():
-        if lang == ref:
-            continue
-        deltas[lang] = {}
-        for m in metrics:
-            a, b = res[m], per_lang[ref][m]
-            if a.get("rate") is None or b.get("rate") is None:
-                deltas[lang][m] = {"delta": None, "note": "undefined on one side (n=0 or not measurable)"}
-                continue
-            small = (a["n"] or 0) < policy.min_n or (b["n"] or 0) < policy.min_n
-            deltas[lang][m] = {
-                "delta": a["rate"] - b["rate"],
-                "delta_pct_points": round(100 * (a["rate"] - b["rate"]), 4),
-                "n_language": a["n"], "n_reference": b["n"],
-                "note": f"n below min_n={policy.min_n}: descriptive only" if small else None,
-            }
-    return {"reference": ref, "per_language": per_lang, "deltas": deltas, "note": note,
-            "definition": "delta = rate(language) - rate(reference); point estimate only, no interval"}
+def is_scored(u: UnitCtx) -> bool:
+    return u.meta.scoring_role == "scored"
+
+
+def primary(units: list[UnitCtx], split: str) -> list[UnitCtx]:
+    packs = frozenset({"redteam"}) if split == "redteam" else PRIMARY_PACKS
+    return [u for u in units if is_scored(u) and u.mode == "TRANSCRIPT" and u.pack in packs]
+
+
+def all_scored(units: list[UnitCtx]) -> list[UnitCtx]:
+    return [u for u in units if is_scored(u)]
+
+
+def audio_by_mode(units: list[UnitCtx]) -> dict[str, list[UnitCtx]]:
+    return {m: [u for u in units if is_scored(u) and u.mode == m] for m in AUDIO_MODES}
+
+
+def twins(units: list[UnitCtx]) -> list[UnitCtx]:
+    return [u for u in units if is_scored(u) and u.pack == "language_twin"]
+
+
+def by_pack(units: list[UnitCtx]) -> dict[str, list[UnitCtx]]:
+    out: dict[str, list[UnitCtx]] = {}
+    for u in all_scored(units):
+        out.setdefault(u.pack, []).append(u)
+    return out

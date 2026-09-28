@@ -1,34 +1,32 @@
-"""Capability derivation: what a (normalized) canonical input makes observable.
-
-Used by evaluators (to know what they may assert) and by the scorer (modality conformance). Both use the
-same declared contract; neither depends on the other.
-"""
+"""Unit-level capability helpers (frozen-contract.md §8), resolved through the rubric's applicable_modes."""
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from typing import TYPE_CHECKING
 
-from ignosis_eval.contracts.canonical_input import CanonicalInput
-from ignosis_eval.contracts.enums import Capability
+from ignosis_eval.contracts.benchmark import UnitFacts
+from ignosis_eval.contracts.enums import InputMode, ModeApplicability, OosReason, TranscriptProvenance
 
-
-def available_capabilities(inp: CanonicalInput) -> frozenset[Capability]:
-    ea = inp.evidence_availability
-    caps: set[Capability] = set()
-    if inp.transcript is not None and inp.transcript.turns:
-        caps.add(Capability.CONTENT)
-    if inp.audio is not None:
-        caps.add(Capability.AUDIO)
-    if ea.turn_timestamps:
-        caps.add(Capability.TURN_TIMESTAMPS)
-    if ea.speaker_labels and inp.transcript is not None and inp.transcript.turns:
-        caps.add(Capability.SPEAKER_LABELS)
-    if inp.call_start_ts is not None:
-        caps.add(Capability.CALL_START_TS)
-    if ea.call_start_captured:
-        caps.add(Capability.CALL_START_CAPTURED)
-    return frozenset(caps)
+if TYPE_CHECKING:  # pragma: no cover
+    from ignosis_eval.spec.registry import Registry
 
 
-def missing_capabilities(required: Iterable[Capability], available: frozenset[Capability]) -> list[Capability]:
-    return [c for c in required if c not in available]
+def unit_mode_status(registry: "Registry", check_id: str, facts: UnitFacts) -> tuple[ModeApplicability,
+                                                                                    OosReason | None]:
+    return registry.mode_status(check_id, facts.input_mode, has_call_start_ts=facts.has_call_start_ts,
+                                has_timestamps=facts.has_timestamps, provenance=facts.provenance)
+
+
+def oos_checks_for_unit(registry: "Registry", facts: UnitFacts) -> dict[str, OosReason]:
+    """Every MVP check (gates, codes, PLT) the unit's mode cannot evaluate, with the OOS reason."""
+    out: dict[str, OosReason] = {}
+    for cid in registry.checks:
+        app, reason = unit_mode_status(registry, cid, facts)
+        if app is ModeApplicability.OUT_OF_SCOPE:
+            out[cid] = reason or OosReason.MODE_CAPABILITY
+    return out
+
+
+def perception_allowed(input_mode: InputMode, provenance: TranscriptProvenance | None) -> bool:
+    """R-17: PERCEPTION attribution only in AUDIO_TRANSCRIPT with declared platform_live_asr."""
+    return input_mode is InputMode.AUDIO_TRANSCRIPT and provenance is TranscriptProvenance.PLATFORM_LIVE_ASR

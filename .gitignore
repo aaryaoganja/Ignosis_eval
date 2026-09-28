@@ -16,6 +16,10 @@ htmlcov/
 # Archive official runs deliberately (see docs/experiment-protocol.md).
 /runs/
 /scoring/
+/blinding/
+/blinded/
+# Cached ASR output of benchmark audio (derived from audio; same policy as audio)
+bench/asr_cache/
 
 # Secrets — never commit
 .env

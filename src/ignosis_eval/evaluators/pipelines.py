@@ -1,158 +1,172 @@
-"""Evaluator A, A+ and B — INTERFACE STUBS with minimal pipelines.
+"""Evaluators A, A+ and B — reconciled with frozen-contract §11 and experiment-protocol P-3/P-4.
 
-All three accept the same normalized Canonical Input and emit the same Evaluation Record contract. The
-pipeline shapes below exist to exercise the infrastructure (one call / call + verification pass /
-per-gate decomposition). They are NOT the Stage 4 architecture definitions (docs/gap-analysis.md G12) and
-their prompts are unoptimized stubs. Replace the internals in the evaluator-design phase; keep the
-interface.
+A   shared front end -> ONE structured LLM call -> schema validation (1 retry, then EVALUATION_FAILED).
+    The LLM emits findings, confidence and verdict; nothing is post-processed (A is the raw baseline).
+A+  derived from A's stored raw output of the same rep: evidence verifier, confidence ceiling, attribution
+    rules and the deterministic verdict engine (engine/finalize.py, the same modules B uses). No LLM call,
+    no prompt of its own, no tuning.
+B   extraction (LLM #1) -> evidence verifier -> rule engine -> targeted batched judgments (LLM #2, only if
+    triggered) -> attribution -> verdict. The rule engine is the next build phase (interface only).
+Prompts are unoptimized stubs (evaluators/prompts/); the rubric section is generated from the spec.
 """
 
 from __future__ import annotations
 
 import json
-from typing import Any
+from collections.abc import Callable
 
-from ignosis_eval.contracts.canonical_input import CanonicalInput
-from ignosis_eval.contracts.capabilities import available_capabilities
-from ignosis_eval.contracts.enums import EvaluatorArchitecture, OutcomeCode
-from ignosis_eval.contracts.evaluation_record import EvaluationRecord, EvidenceItem
-from ignosis_eval.contracts.evidence import check_evidence
-from ignosis_eval.contracts.run_manifest import EvaluatorRunConfig, RetryPolicy
-from ignosis_eval.evaluators.base import EvaluationContext, Evaluator, config_hash
-from ignosis_eval.evaluators.builder import RecordBuilder
-from ignosis_eval.evaluators.judgement import EvaluatorOutputError, apply_judgement
-from ignosis_eval.evaluators.llm import LLMClient, LLMRequest, RecordingLLMClient
-from ignosis_eval.evaluators.prompts import prompt_hashes, render, render_transcript
+from ignosis_eval.contracts.canonical_input import NormalizedInput
+from ignosis_eval.contracts.enums import RecordStatus, System
+from ignosis_eval.contracts.evaluation_record import EvaluationRecord, Evidence, RecordBody
+from ignosis_eval.contracts.run_manifest import SystemConfig, TransportRetryPolicy
+from ignosis_eval.engine.finalize import DerivationLog, Facts, finalize, verify_evidence
+from ignosis_eval.evaluators.base import EvaluationContext, Evaluator, input_sha256
+from ignosis_eval.evaluators.builder import failed_record, parse_ok_record
+from ignosis_eval.evaluators.judgement import (
+    ExtractionOutput,
+    JudgmentOutput,
+    NotImplementedRuleEngine,
+    RuleEngine,
+    judgment_text,
+)
+from ignosis_eval.evaluators.llm import LLMClient, LLMRequest, OutputSchemaError, RecordingClient, structured_call
+from ignosis_eval.evaluators.prompts import (
+    A_PROMPTS,
+    B_PROMPTS,
+    capability_summary,
+    prompt_hashes,
+    render,
+    render_transcript,
+    rubric_section,
+)
+from ignosis_eval.spec.loader import Spec
 
-DEFAULT_RETRY = RetryPolicy(max_attempts=3, backoff_initial_s=1.0, backoff_multiplier=2.0,
-                            retry_on=["LLMTransientError"])
 
-
-class LLMEvaluator(Evaluator):
+class _LLMSystem(Evaluator):
     PROMPTS: tuple[str, ...] = ()
 
-    def __init__(self, client: LLMClient, *, temperature: float = 0.0, max_output_tokens: int = 2048,
-                 retry_policy: RetryPolicy = DEFAULT_RETRY, options: dict[str, Any] | None = None, sleep=None):
-        self.client = client
-        self.temperature = temperature
-        self.max_output_tokens = max_output_tokens
-        self.retry_policy = retry_policy
-        self.options = dict(options or {})
+    def __init__(self, client: LLMClient, spec: Spec, *, max_tokens: int | None = None, seed: int | None = None,
+                 transport: TransportRetryPolicy | None = None, sleep: Callable[[float], None] | None = None):
+        self.client, self.spec = client, spec
+        self.max_tokens, self.seed = max_tokens, seed
+        self.transport = transport or TransportRetryPolicy()
         self._sleep = sleep
 
-    def run_config(self) -> EvaluatorRunConfig:
-        ph = prompt_hashes(self.PROMPTS)
-        cfg = {"name": self.name, "version": self.version, "architecture": self.architecture.value,
-               "backend": self.client.backend, "model_id": self.client.model_id, "temperature": self.temperature,
-               "max_output_tokens": self.max_output_tokens, "prompts": ph, "options": self.options,
-               "retry": self.retry_policy.model_dump()}
-        return EvaluatorRunConfig(
-            name=self.name, version=self.version, architecture=self.architecture, llm_backend=self.client.backend,
-            model_id=self.client.model_id, temperature=self.temperature, max_output_tokens=self.max_output_tokens,
-            prompt_hashes=ph, retry_policy=self.retry_policy, options=self.options, config_hash=config_hash(cfg))
+    def config(self) -> SystemConfig:
+        return SystemConfig(system=self.system, version=self.version, llm_backend=self.client.backend,  # type: ignore[arg-type]
+                            model_snapshot_id=self.client.model_id, temperature=0.0, seed=self.seed,
+                            seed_supported=None, max_tokens=self.max_tokens, structured_output=True,
+                            prompt_hashes=prompt_hashes(self.PROMPTS, self.spec),
+                            rubric_prompt_template_version=__import__("ignosis_eval.versions").versions
+                            .PROMPT_TEMPLATE_VERSION,
+                            transport_retry=self.transport, schema_retries=1)
 
-    # ------------------------------------------------------------------------------------ helpers
-    def _builder(self, inp: CanonicalInput, ctx: EvaluationContext) -> RecordBuilder:
-        return RecordBuilder(self.info(), inp, ctx.profile, ctx.profile_sha256, ctx.rep_seed)
+    def _recording(self, ctx: EvaluationContext) -> RecordingClient:
+        kw = {"sleep": self._sleep} if self._sleep else {}
+        return RecordingClient(self.client, self.transport, ctx.trace, **kw)
 
-    def _common(self, inp: CanonicalInput, ctx: EvaluationContext) -> dict[str, str]:
-        p = ctx.profile
-        return {
-            "profile_id": p.profile_id, "profile_version": p.profile_version, "input_mode": inp.input_mode.value,
-            "capabilities": ", ".join(sorted(c.value for c in available_capabilities(inp))) or "none",
-            "gates": "; ".join(f"{g.gate_id}: {g.title}" for g in p.gates),
-            "defects": "; ".join(f"{d.defect_id} ({d.severity.value})" for d in p.defects),
-            "dimensions": "; ".join(f"{d.dimension_id}: {d.title}" for d in p.dimensions),
-            "outcome_codes": ", ".join(o.value for o in OutcomeCode),
-            "transcript": render_transcript(inp),
-        }
-
-    def _call(self, ctx: EvaluationContext, task: str, prompt: str, payload: dict[str, Any],
-              **render_values: object) -> dict[str, Any]:
-        client = RecordingLLMClient(self.client, self.retry_policy, ctx.trace,
-                                    **({"sleep": self._sleep} if self._sleep else {}))
-        n = len(ctx.trace.requests) + 1
-        req = LLMRequest(
-            request_id=f"r{ctx.repetition}-{n:03d}-{task}", task=task, model_id=self.client.model_id,
-            temperature=self.temperature, max_output_tokens=self.max_output_tokens,
-            messages=[{"role": "user", "content": render(prompt, **render_values)}],
-            metadata={"payload": payload, "rep_seed": ctx.rep_seed, "prompt": prompt})
-        resp = client.complete(req)
-        try:
-            out = json.loads(resp.content)
-        except json.JSONDecodeError as exc:
-            raise EvaluatorOutputError(f"{task}: model output is not JSON: {exc}") from exc
-        if not isinstance(out, dict):
-            raise EvaluatorOutputError(f"{task}: model output is not a JSON object")
-        return out
+    def _request(self, task: str, content: str, ni: NormalizedInput, ctx: EvaluationContext) -> LLMRequest:
+        sha = input_sha256(ni)
+        return LLMRequest(request_id=f"{self.system.value}-{task}-r{ctx.repetition}-{sha[:12]}", task=task,
+                          model_id=self.client.model_id, temperature=0.0, max_tokens=self.max_tokens,
+                          messages=[{"role": "user", "content": content}],
+                          metadata={"input_sha256": sha, "repetition": ctx.repetition, "seed": self.seed})
 
 
-class EvaluatorA(LLMEvaluator):
-    """Stub: single holistic structured call."""
+class EvaluatorA(_LLMSystem):
+    system, version = System.A, "0.1.0-stub"
+    PROMPTS = A_PROMPTS
 
-    name, version, architecture = "evaluator-a", "0.0.1-stub", EvaluatorArchitecture.A
-    PROMPTS = ("a_holistic",)
-
-    def _holistic(self, inp: CanonicalInput, ctx: EvaluationContext) -> dict[str, Any]:
-        return self._call(ctx, "holistic_judge", "a_holistic", {"input": inp.to_json_dict()},
-                          **self._common(inp, ctx))
-
-    def evaluate(self, inp: CanonicalInput, ctx: EvaluationContext) -> EvaluationRecord:
-        b = self._builder(inp, ctx)
-        conf = apply_judgement(b, self._holistic(inp, ctx))
-        return b.build(conf, "self_reported")
-
-
-class EvaluatorAPlus(EvaluatorA):
-    """Stub: A + a verification pass + deterministic evidence grounding (drops ungrounded findings)."""
-
-    name, version, architecture = "evaluator-a-plus", "0.0.1-stub", EvaluatorArchitecture.A_PLUS
-    PROMPTS = ("a_holistic", "a_plus_verify")
-
-    def evaluate(self, inp: CanonicalInput, ctx: EvaluationContext) -> EvaluationRecord:
-        j = self._holistic(inp, ctx)
-        findings = j.get("findings", [])
-        common = self._common(inp, ctx)
-        v = self._call(ctx, "verify_findings", "a_plus_verify", {"input": inp.to_json_dict(), "findings": findings},
-                       transcript=common["transcript"], findings=json.dumps(findings, ensure_ascii=False))
-        keep = set(v.get("keep", []))
-        grounded = []
-        for i, f in enumerate(findings):
-            if i not in keep:
-                continue
-            evs = [EvidenceItem(evidence_id=f"g{k}", **{a: b for a, b in e.items() if b is not None})
-                   for k, e in enumerate(f.get("evidence", []))]
-            if evs and all(check_evidence(e, inp).faithful for e in evs):
-                grounded.append(f)
-        j["findings"] = grounded
-        b = self._builder(inp, ctx)
-        conf = apply_judgement(b, j)
-        return b.build(conf, "self_reported")
+    def evaluate(self, ni: NormalizedInput, ctx: EvaluationContext) -> EvaluationRecord:
+        spec, info = ctx.spec, self.system_info()
+        content = render("a_holistic", profile_id=spec.profile_id, profile_version=spec.profile_version,
+                         gates=rubric_section(spec), defects="(see the generated rubric section above)",
+                         input_mode=ni.input_mode.value, capabilities=capability_summary(ni, spec),
+                         transcript=render_transcript(ni))
+        req = self._request("a_evaluate", content, ni, ctx)
+        rec, _raw, err, attempts = structured_call(self._recording(ctx), req,
+                                                   lambda c: parse_ok_record(c, ni, spec, info))
+        return rec if rec is not None else failed_record(ni, spec, info, err or "schema-invalid", attempts)
 
 
-class EvaluatorB(LLMEvaluator):
-    """Stub: decomposed — one call per gate, one defect/evaluability scan, one outcome call; deterministic merge."""
+def a_final_raw_output(trace_responses: list[dict]) -> str | None:
+    """The raw content of A's last successful response in a rep (what A+ derives from)."""
+    ok = [r for r in trace_responses if r.get("ok")]
+    return ok[-1]["content"] if ok else None
 
-    name, version, architecture = "evaluator-b", "0.0.1-stub", EvaluatorArchitecture.B
-    PROMPTS = ("b_gate_check", "b_defect_scan", "b_outcome")
 
-    def evaluate(self, inp: CanonicalInput, ctx: EvaluationContext) -> EvaluationRecord:
-        common = self._common(inp, ctx)
-        payload = {"input": inp.to_json_dict()}
-        scan = self._call(ctx, "defect_scan", "b_defect_scan", payload, **common)
-        j: dict[str, Any] = {"evaluability": scan.get("evaluability"), "gates": [], "findings": list(scan.get("findings", [])),
-                             "dimensions": scan.get("dimensions", []), "confidence": scan.get("confidence")}
-        for g in ctx.profile.gates:
-            r = self._call(ctx, "gate_check", "b_gate_check", {**payload, "gate_id": g.gate_id},
-                           gate_id=g.gate_id, gate_description=g.description,
-                           gate_requires=", ".join(c.value for c in g.requires) or "none", **common)
-            if "gate" not in r:
-                raise EvaluatorOutputError(f"gate_check {g.gate_id}: missing 'gate'")
-            j["gates"].append(r["gate"])
-            j["findings"] += r.get("findings", [])
-        oc = self._call(ctx, "outcome_extract", "b_outcome", payload, **common)
-        j["outcome"] = oc.get("outcome")
-        j["primary_attribution"] = oc.get("primary_attribution")
-        b = self._builder(inp, ctx)
-        conf = apply_judgement(b, j)
-        return b.build(conf, "self_reported")
+class APlusDeriver:
+    """A+ — no LLM call, no prompt, no tuning. Derived per rep from A's stored raw output (P-4, P-6)."""
+
+    system, version = System.A_PLUS, "0.1.0"
+
+    def __init__(self, spec: Spec):
+        self.spec = spec
+
+    def config(self) -> SystemConfig:
+        return SystemConfig(system=System.A_PLUS, version=self.version, llm_backend="none", derived_from="A")
+
+    def system_info(self):  # noqa: ANN201
+        c = self.config()
+        from ignosis_eval.contracts.evaluation_record import SystemInfo
+
+        return SystemInfo(system=c.system.value, version=c.version)
+
+    def derive(self, a_record: EvaluationRecord | None, a_raw_output: str | None, ni: NormalizedInput,
+               spec: Spec) -> tuple[EvaluationRecord, DerivationLog]:
+        log = DerivationLog()
+        info = self.system_info()
+        if a_record is None or a_record.record_status is RecordStatus.EVALUATION_FAILED or a_raw_output is None:
+            log.add("derive", "record", "A produced no valid output in this rep -> A+ EVALUATION_FAILED")
+            return failed_record(ni, spec, info, "A output unavailable or EVALUATION_FAILED", 0), log
+        body = RecordBody.model_validate(json.loads(a_raw_output))
+        log.add("derive", "record", "derived from A raw output", a_verdict=body.verdict.value if body.verdict else None)
+        return finalize(body, ni, spec, system=info, facts=Facts(), log=log), log
+
+
+class EvaluatorB(_LLMSystem):
+    system, version = System.B, "0.1.0-stub"
+    PROMPTS = B_PROMPTS
+
+    def __init__(self, client: LLMClient, spec: Spec, *, rule_engine: RuleEngine | None = None, **kw):
+        super().__init__(client, spec, **kw)
+        self.rule_engine = rule_engine or NotImplementedRuleEngine()
+
+    def evaluate(self, ni: NormalizedInput, ctx: EvaluationContext) -> EvaluationRecord:
+        spec, info = ctx.spec, self.system_info()
+        rec_client = self._recording(ctx)
+        content = render("b_extraction", rubric_section=rubric_section(spec), input_mode=ni.input_mode.value,
+                         transcript=render_transcript(ni))
+
+        def parse_extraction(c: str) -> ExtractionOutput:
+            try:
+                ex = ExtractionOutput.model_validate(json.loads(c))
+            except (json.JSONDecodeError, ValueError) as exc:
+                raise OutputSchemaError(str(exc)) from exc
+            errs = ex.check_vocabulary(spec)
+            if errs:
+                raise OutputSchemaError("; ".join(errs))
+            return ex
+
+        ex, _, err, attempts = structured_call(rec_client, self._request("b_extract", content, ni, ctx), parse_extraction)
+        if ex is None:
+            return failed_record(ni, spec, info, err or "schema-invalid extraction", attempts)
+        threshold = float(spec.threshold("quote_match_min"))
+        ex = ex.model_copy(update={"events": [e for e in ex.events if verify_evidence(
+            Evidence(turn=e.turn, quote=e.quote, role=e.role), ni, threshold)[0]]})
+        result = self.rule_engine.apply(ex, ni, spec)
+        if result.judgments_needed:
+            jcontent = render("b_judgments", judgments=judgment_text(spec, result.judgments_needed),
+                              transcript=render_transcript(ni))
+
+            def parse_j(c: str) -> JudgmentOutput:
+                try:
+                    return JudgmentOutput.model_validate(json.loads(c))
+                except (json.JSONDecodeError, ValueError) as exc:
+                    raise OutputSchemaError(str(exc)) from exc
+
+            ans, _, err, attempts = structured_call(rec_client, self._request("b_judge", jcontent, ni, ctx), parse_j)
+            if ans is None:
+                return failed_record(ni, spec, info, err or "schema-invalid judgments", attempts)
+            result = self.rule_engine.integrate(result, ans, spec)
+        return finalize(result.body, ni, spec, system=info, facts=result.facts)

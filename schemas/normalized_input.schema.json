@@ -1,0 +1,852 @@
+{
+  "$defs": {
+    "ASRRef": {
+      "additionalProperties": false,
+      "properties": {
+        "engine": {
+          "minLength": 1,
+          "title": "Engine",
+          "type": "string"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "params_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Params Sha256",
+          "type": "string"
+        },
+        "version": {
+          "minLength": 1,
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "engine",
+        "version",
+        "params_sha256"
+      ],
+      "title": "ASRRef",
+      "type": "object"
+    },
+    "ActionType": {
+      "enum": [
+        "REVIEW",
+        "REMEDIATE",
+        "FIX"
+      ],
+      "title": "ActionType",
+      "type": "string"
+    },
+    "Attribution": {
+      "enum": [
+        "AGENT_BEHAVIOR",
+        "PERCEPTION",
+        "PLATFORM_AUDIO",
+        "CUSTOMER_DRIVEN",
+        "INDETERMINATE"
+      ],
+      "title": "Attribution",
+      "type": "string"
+    },
+    "AttributionBasis": {
+      "enum": [
+        "RUBRIC",
+        "PROFILE_DEFAULT",
+        "DECLARED_PROVENANCE"
+      ],
+      "title": "AttributionBasis",
+      "type": "string"
+    },
+    "AttributionResult": {
+      "additionalProperties": false,
+      "properties": {
+        "basis": {
+          "$ref": "#/$defs/AttributionBasis"
+        },
+        "notes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Notes",
+          "type": "array"
+        },
+        "primary": {
+          "$ref": "#/$defs/Attribution"
+        },
+        "secondary": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Attribution"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "primary",
+        "basis"
+      ],
+      "title": "AttributionResult",
+      "type": "object"
+    },
+    "AudioRef": {
+      "additionalProperties": false,
+      "properties": {
+        "format": {
+          "enum": [
+            "wav",
+            "mp3",
+            "m4a"
+          ],
+          "title": "Format",
+          "type": "string"
+        },
+        "path": {
+          "minLength": 1,
+          "title": "Path",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "sha256",
+        "format"
+      ],
+      "title": "AudioRef",
+      "type": "object"
+    },
+    "Confidence": {
+      "enum": [
+        "HIGH",
+        "MEDIUM",
+        "LOW"
+      ],
+      "title": "Confidence",
+      "type": "string"
+    },
+    "CriticalStatus": {
+      "enum": [
+        "CONFIRMED",
+        "SUSPECTED"
+      ],
+      "title": "CriticalStatus",
+      "type": "string"
+    },
+    "EvaluabilityStatus": {
+      "enum": [
+        "EVALUABLE",
+        "PARTIAL",
+        "NOT_EVALUABLE"
+      ],
+      "title": "EvaluabilityStatus",
+      "type": "string"
+    },
+    "Evidence": {
+      "additionalProperties": false,
+      "description": "A cited span. `turn` is the 1-based turn number of the normalized input (SD-12 anchors use it).",
+      "properties": {
+        "element": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Element"
+        },
+        "header_field": {
+          "anyOf": [
+            {
+              "const": "call_start_ts",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Header Field"
+        },
+        "quote": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Quote"
+        },
+        "role": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Role"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "source": {
+          "anyOf": [
+            {
+              "enum": [
+                "supplied",
+                "asr"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source"
+        },
+        "turn": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turn"
+        }
+      },
+      "title": "Evidence",
+      "type": "object"
+    },
+    "Finding": {
+      "additionalProperties": false,
+      "properties": {
+        "action_type": {
+          "$ref": "#/$defs/ActionType"
+        },
+        "anchor_turn": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Anchor Turn"
+        },
+        "attribution": {
+          "$ref": "#/$defs/AttributionResult"
+        },
+        "code": {
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "confidence": {
+          "$ref": "#/$defs/Confidence"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          },
+          "minItems": 1,
+          "title": "Evidence",
+          "type": "array"
+        },
+        "evidence_unverified": {
+          "default": false,
+          "title": "Evidence Unverified",
+          "type": "boolean"
+        },
+        "finding_state": {
+          "$ref": "#/$defs/FindingState",
+          "default": "ASSERTED"
+        },
+        "repair_status": {
+          "$ref": "#/$defs/RepairStatus",
+          "default": "UNREPAIRED"
+        },
+        "severity": {
+          "$ref": "#/$defs/Severity"
+        },
+        "sub_rule": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sub Rule"
+        }
+      },
+      "required": [
+        "code",
+        "severity",
+        "confidence",
+        "action_type",
+        "attribution",
+        "evidence"
+      ],
+      "title": "Finding",
+      "type": "object"
+    },
+    "FindingState": {
+      "enum": [
+        "ASSERTED",
+        "POSSIBLE"
+      ],
+      "title": "FindingState",
+      "type": "string"
+    },
+    "FrontendCheck": {
+      "additionalProperties": false,
+      "description": "Status of one front-end step (DC-xx, pre-check). Pending or unimplemented steps are explicit.",
+      "properties": {
+        "blocker": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Blocker"
+        },
+        "check": {
+          "minLength": 1,
+          "title": "Check",
+          "type": "string"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note"
+        },
+        "status": {
+          "enum": [
+            "done",
+            "pending_signoff",
+            "not_implemented",
+            "not_applicable"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "check",
+        "status"
+      ],
+      "title": "FrontendCheck",
+      "type": "object"
+    },
+    "FrontendResult": {
+      "additionalProperties": false,
+      "properties": {
+        "evaluability_status": {
+          "$ref": "#/$defs/EvaluabilityStatus"
+        },
+        "precheck_findings": {
+          "items": {
+            "$ref": "#/$defs/Finding"
+          },
+          "title": "Precheck Findings",
+          "type": "array"
+        },
+        "prechecks": {
+          "items": {
+            "$ref": "#/$defs/GateResult"
+          },
+          "title": "Prechecks",
+          "type": "array"
+        },
+        "reason_codes": {
+          "items": {
+            "$ref": "#/$defs/ReasonCode"
+          },
+          "title": "Reason Codes",
+          "type": "array"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/FrontendCheck"
+          },
+          "title": "Steps",
+          "type": "array"
+        }
+      },
+      "required": [
+        "evaluability_status"
+      ],
+      "title": "FrontendResult",
+      "type": "object"
+    },
+    "GateId": {
+      "description": "rubric.yaml \u203a gates.",
+      "enum": [
+        "G1",
+        "G2",
+        "G3",
+        "G4",
+        "G5",
+        "G6",
+        "G7",
+        "G8",
+        "G9"
+      ],
+      "title": "GateId",
+      "type": "string"
+    },
+    "GateResult": {
+      "additionalProperties": false,
+      "properties": {
+        "attribution": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AttributionResult"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "confidence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Confidence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "critical_status": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CriticalStatus"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          },
+          "title": "Evidence",
+          "type": "array"
+        },
+        "evidence_unverified": {
+          "default": false,
+          "title": "Evidence Unverified",
+          "type": "boolean"
+        },
+        "gate": {
+          "$ref": "#/$defs/GateId"
+        },
+        "in_span_trigger": {
+          "default": false,
+          "title": "In Span Trigger",
+          "type": "boolean"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note"
+        },
+        "oos_reason": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OosReason"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "reason_codes": {
+          "items": {
+            "$ref": "#/$defs/ReasonCode"
+          },
+          "title": "Reason Codes",
+          "type": "array"
+        },
+        "status": {
+          "$ref": "#/$defs/GateStatus"
+        },
+        "sub_rule": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sub Rule"
+        }
+      },
+      "required": [
+        "gate",
+        "status"
+      ],
+      "title": "GateResult",
+      "type": "object"
+    },
+    "GateStatus": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "NA",
+        "INCONCLUSIVE",
+        "OUT_OF_SCOPE"
+      ],
+      "title": "GateStatus",
+      "type": "string"
+    },
+    "InputMode": {
+      "enum": [
+        "AUDIO",
+        "TRANSCRIPT",
+        "AUDIO_TRANSCRIPT"
+      ],
+      "title": "InputMode",
+      "type": "string"
+    },
+    "OosReason": {
+      "enum": [
+        "EXTERNAL_DATA_REQUIRED",
+        "MODE_CAPABILITY"
+      ],
+      "title": "OosReason",
+      "type": "string"
+    },
+    "ReasonCode": {
+      "enum": [
+        "ROLE_UNCERTAIN",
+        "TRANSCRIPT_UNRELIABLE",
+        "AUDIO_POOR",
+        "SPAN_UNRELIABLE",
+        "NON_CONVERSATIONAL",
+        "CONTRADICTORY_EVIDENCE",
+        "POLICY_UNKNOWN",
+        "EXTERNAL_DATA_REQUIRED",
+        "LANGUAGE_UNSUPPORTED",
+        "TRANSCRIPT_TRUNCATED",
+        "STAGE_UNKNOWN"
+      ],
+      "title": "ReasonCode",
+      "type": "string"
+    },
+    "RepairStatus": {
+      "enum": [
+        "REPAIRED",
+        "UNREPAIRED"
+      ],
+      "title": "RepairStatus",
+      "type": "string"
+    },
+    "Role": {
+      "description": "frozen-contract.md \u00a72.3 role labels (CUSTOMER is an accepted alias of BORROWER at parse time).",
+      "enum": [
+        "AGENT",
+        "BORROWER",
+        "OTHER",
+        "UNKNOWN"
+      ],
+      "title": "Role",
+      "type": "string"
+    },
+    "Severity": {
+      "enum": [
+        "CRITICAL",
+        "MAJOR",
+        "MINOR",
+        "INFORMATIONAL"
+      ],
+      "title": "Severity",
+      "type": "string"
+    },
+    "TranscriptHeader": {
+      "additionalProperties": false,
+      "description": "\u00a72.3 header. call_start_ts only ever comes from here (R-08); audio metadata is never used.",
+      "properties": {
+        "call_start_ts": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Call Start Ts"
+        },
+        "transcript_provenance": {
+          "$ref": "#/$defs/TranscriptProvenance",
+          "default": "unknown"
+        },
+        "truncated_start": {
+          "default": false,
+          "title": "Truncated Start",
+          "type": "boolean"
+        }
+      },
+      "title": "TranscriptHeader",
+      "type": "object"
+    },
+    "TranscriptProvenance": {
+      "enum": [
+        "platform_live_asr",
+        "human",
+        "offline_asr",
+        "unknown"
+      ],
+      "title": "TranscriptProvenance",
+      "type": "string"
+    },
+    "Turn": {
+      "additionalProperties": false,
+      "properties": {
+        "asr_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Asr Text"
+        },
+        "end_s": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End S"
+        },
+        "language": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Language"
+        },
+        "role": {
+          "$ref": "#/$defs/Role"
+        },
+        "role_confidence": {
+          "default": 1.0,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Role Confidence",
+          "type": "number"
+        },
+        "start_s": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start S"
+        },
+        "supplied_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Supplied Text"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "turn": {
+          "minimum": 1,
+          "title": "Turn",
+          "type": "integer"
+        },
+        "unreliable": {
+          "default": false,
+          "title": "Unreliable",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "turn",
+        "role",
+        "text"
+      ],
+      "title": "Turn",
+      "type": "object"
+    },
+    "UnitMode": {
+      "description": "Unit modes (experiment-protocol P-5). Directory-safe spelling of `A+T(platform)` is `A+T-platform`.",
+      "enum": [
+        "TRANSCRIPT",
+        "T-gold",
+        "T-asr",
+        "A",
+        "A+T",
+        "A+T-platform"
+      ],
+      "title": "UnitMode",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "asr": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ASRRef"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "audio": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AudioRef"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "frontend": {
+      "$ref": "#/$defs/FrontendResult"
+    },
+    "has_timestamps": {
+      "title": "Has Timestamps",
+      "type": "boolean"
+    },
+    "header": {
+      "$ref": "#/$defs/TranscriptHeader"
+    },
+    "input_mode": {
+      "$ref": "#/$defs/InputMode"
+    },
+    "schema_version": {
+      "const": "normalized_input/2.0.0",
+      "default": "normalized_input/2.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "turns": {
+      "items": {
+        "$ref": "#/$defs/Turn"
+      },
+      "title": "Turns",
+      "type": "array"
+    },
+    "unit_mode": {
+      "$ref": "#/$defs/UnitMode"
+    }
+  },
+  "required": [
+    "input_mode",
+    "unit_mode",
+    "has_timestamps",
+    "turns",
+    "frontend"
+  ],
+  "title": "NormalizedInput",
+  "type": "object"
+}

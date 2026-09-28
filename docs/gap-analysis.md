@@ -87,3 +87,28 @@ Every metric in `metrics.json` carries `"provisional": true` and
   therefore circular and says nothing about evaluator quality.
 - No UI and no production API.
 - No measured results.
+
+## 6. Reconciliation with the frozen specification (branch `spec/frozen-stage4`)
+
+The Stage 1–4 documents are now in the repository as the frozen specification pack (`docs/spec/`, contract
+`1.0.0-frozen`). Every provisional item above is reconciled. The full table is in
+[`spec-reconciliation.md`](spec-reconciliation.md).
+
+| # | Resolution |
+|---|---|
+| G1 | Taxonomy = `rubric.yaml` 1.0-mvp (G1–G9, MVP codes, PLT, OOS, NOT_EVALUATED) and `profile.yaml` `collections_default_v1`. The placeholder profile is unreferenced. |
+| G2 | Vocabularies = `rubric.yaml › enums`, mirrored exactly in `contracts/enums.py`. |
+| G3 | Evaluability EVALUABLE / PARTIAL / NOT_EVALUABLE + reason codes; V2 (NOT_EVALUABLE unless a pre-check gate failed). |
+| G4 | V3: any gate FAIL ⇒ CRITICAL_FAIL (CONFIRMED / SUSPECTED); gates never repairable. |
+| G5 | SD-03 / SD-05: fired = gate FAIL; majority fired ≥ 3/5 (SD-04, SD-07). |
+| G6 | SD-09 unsupported pass (H4). |
+| G7 | SD-02 schema errors ⇒ EVALUATION_FAILED; H1–H7 (SD-27). |
+| G8 | SD-13 quote faithfulness (Levenshtein window, threshold 90); H2. |
+| G9 | SD-20 pairs from the pair registry with `target_check`; inversion (H5); collateral change. |
+| G10 | SD-26: Wilson (z = 1.96) only when n ≥ 10; zero-failure bound; whole percent. |
+| G11 | The language delta is replaced by SD-21 twin agreement and separate language strata (SD-29). |
+| G12 | Architectures per §11 / P-4. A+ is derived from A's raw output (no LLM call); B = extraction → rule engine → judgments (rule engine: next phase). Prompts remain unoptimized stubs. |
+| G13 | One deterministic engine (§6, §7, §10) shared by A+, B and K0; attribution never changes the verdict. |
+| G14 | G7 calling window from `profile.yaml` (08:00–19:00 Asia/Kolkata, header only). |
+
+The items in §4 above that remain open are tracked as blockers B-01..B-16 in `docs/spec/implementation-blockers.md`.

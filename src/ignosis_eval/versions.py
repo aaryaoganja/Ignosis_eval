@@ -1,21 +1,36 @@
-"""Single source of truth for contract and component versions.
+"""Versions of this implementation and of the contracts it emits.
 
-Schema versions are embedded in every serialized artifact (`schema_version` field) and are
-validated as exact literals. Changing a contract's shape requires bumping its version here and
-documenting the change in docs/data-contracts.md.
+The authoritative specification versions live in `docs/spec/` (contract `1.0.0-frozen`, rubric
+`1.0-mvp`, profile `collections_default_v1`). The loader (ignosis_eval/spec/loader.py) checks that the
+files on disk carry the versions below and fails closed otherwise.
 """
 
-PACKAGE_VERSION = "0.1.0"
+from typing import Final
 
-CANONICAL_INPUT_SCHEMA = "canonical_input/1.0.0"
-EVALUATION_RECORD_SCHEMA = "evaluation_record/1.0.0"
-GOLD_LABEL_SCHEMA = "gold_label/1.0.0"
-CASE_CARD_SCHEMA = "case_card/1.0.0"
-PROFILE_SCHEMA = "profile/1.0.0"
-BENCHMARK_MANIFEST_SCHEMA = "benchmark_manifest/1.0.0"
-GOLD_MANIFEST_SCHEMA = "gold_manifest/1.0.0"
-RUN_MANIFEST_SCHEMA = "run_manifest/1.0.0"
-SCORING_MANIFEST_SCHEMA = "scoring_manifest/1.0.0"
+PACKAGE_VERSION = "0.2.0"
 
-SCORER_VERSION = "scorer/0.1.0"
-METRIC_DEFINITIONS_VERSION = "metrics/0.1.0-provisional"
+# Frozen specification pack this implementation is reconciled against.
+SPEC_CONTRACT_VERSION = "1.0.0-frozen"
+SPEC_RUBRIC_VERSION = "1.0-mvp"
+SPEC_PROFILE_ID = "collections_default_v1"
+
+# Serialized artifact schemas produced by this implementation (bumped by the reconciliation).
+NORMALIZED_INPUT_SCHEMA: Final = "normalized_input/2.0.0"
+EVALUATION_RECORD_SCHEMA: Final = "evaluation_record/2.0.0"
+GOLD_LABEL_SCHEMA: Final = "gold_label/2.0.0"
+CASE_CARD_SCHEMA: Final = "case_card/2.0.0"
+ITEM_META_SCHEMA: Final = "item_meta/1.0.0"
+REGISTRIES_SCHEMA: Final = "registries/1.0.0"
+BENCH_MANIFEST_SCHEMA: Final = "bench_manifest/2.0.0"
+GOLD_MANIFEST_SCHEMA: Final = "gold_manifest/2.0.0"
+RUN_MANIFEST_SCHEMA: Final = "run_manifest/2.0.0"
+SCORING_MANIFEST_SCHEMA: Final = "scoring_manifest/2.0.0"
+BLIND_VIEW_SCHEMA: Final = "blind_view/1.0.0"
+
+# Components.
+SCORER_VERSION = "scorer/1.0.0"
+METRIC_DEFINITIONS_VERSION = "scoring-spec@1.0.0-frozen"
+PROMPT_TEMPLATE_VERSION = "rubric-prompt-template/0.1.0"
+FRONTEND_VERSION = "frontend/0.1.0"
+ENGINE_VERSION = "engine/0.1.0"
+GOLD_DERIVATION_VERSION = "golddrv/0.1.0"

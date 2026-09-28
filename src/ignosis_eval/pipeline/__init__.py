@@ -1,1 +1,1 @@
-"""Input normalization (the stage between the benchmark input and the evaluator), incl. pipeline ASR."""
+"""Shared front end L0–L3 (experiment-protocol P-2): intake, ASR adapter, lexicon engine, pre-checks, normalization."""

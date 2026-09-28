@@ -1,11 +1,8 @@
-"""Case Card contract: the human-authored specification of one benchmark case.
+"""Case Card — authoring contract for B-01 (case content is written by the human case author, never by the
+implementing agent). Vocabulary reconciled with rubric 1.0-mvp; ids are canonical bench-a1 ids (R-07).
 
-The case card records AUTHOR INTENT (what the case is designed to test). It is not the gold label: gold
-is a separate, independently validated record (contracts/gold_label.py) that may cite the card.
-Case cards reveal the answer key and are therefore protected from the evaluator process.
-
-Structural requirements are enforced here; semantic authoring rules (with rule ids) are enforced by
-ignosis_eval/benchmark/case_card_rules.py.
+The card records author intent (scenario, target behavior, intended labels, pair membership). Gold is a
+separate, blind-labeled record (contracts/gold_label.py).
 """
 
 from __future__ import annotations
@@ -16,18 +13,20 @@ from typing import Literal
 
 from pydantic import Field
 
-from ignosis_eval.contracts._base import CaseId, Contract, Id, LanguageTag, NonEmptyStr
-from ignosis_eval.contracts.benchmark import CapabilityBoundaries, CaseMetadata
+from ignosis_eval.contracts._base import Contract, ItemId, NonEmptyStr
 from ignosis_eval.contracts.enums import (
-    AttributionTarget,
+    DangerousWin,
+    Disposition,
     EvaluabilityStatus,
-    InputMode,
-    OutcomeClass,
-    OutcomeCode,
+    GateId,
+    Pack,
+    ReasonCode,
     RepairStatus,
-    SourceKind,
+    Severity,
     Split,
+    UnitMode,
 )
+from ignosis_eval.contracts.gold_label import AttributionFacts
 from ignosis_eval.versions import CASE_CARD_SCHEMA
 
 
@@ -37,123 +36,52 @@ class CardStatus(StrEnum):
     APPROVED = "approved"
 
 
-class CardSeverity(StrEnum):
-    CRITICAL = "critical"
-    MAJOR = "major"
-    MINOR = "minor"
-    NONE = "none"
-
-
 class Authoring(Contract):
     author_id: NonEmptyStr
     created_on: date
     reviewers: list[str] = Field(default_factory=list)
-
-
-class CustomerContext(Contract):
-    persona: NonEmptyStr
-    account_context: NonEmptyStr  # narrative only; no real account data
-    situation: NonEmptyStr
-    vulnerability_flags: list[str] = Field(default_factory=list)
-
-
-class TargetDefect(Contract):
-    defect_id: Id
-    description: NonEmptyStr
-
-
-class IncidentalDefect(Contract):
-    defect_id: Id
-    severity: CardSeverity
-    description: NonEmptyStr
-
-
-class CardAttribution(Contract):
-    target: AttributionTarget
-    determinable: bool
-    rationale: NonEmptyStr
+    llm_assisted: bool = False
+    llm_family: str | None = None  # B-01 rule 1: must differ from the evaluator's model family
 
 
 class CardOutcome(Contract):
-    outcome_class: OutcomeClass
-    outcomes: list[OutcomeCode] = Field(default_factory=list)
-    notes: str | None = None
+    dispositions: list[Disposition] = Field(default_factory=list)
+    positive: bool = False
 
 
-class CardModality(Contract):
-    intended_modality: InputMode
-    constraints: list[str] = Field(default_factory=list)
-    capability_boundaries: CapabilityBoundaries
-
-
-class MinimalPair(Contract):
-    pair_id: Id
-    role: NonEmptyStr
-    counterpart_case_id: CaseId
-    manipulated_factor: NonEmptyStr
-    held_constant: list[NonEmptyStr]
-
-
-class AttributionPair(Contract):
-    attribution_pair_id: Id
-    counterpart_case_ids: list[CaseId]
-    manipulated_cause: NonEmptyStr
-
-
-class JudgeBait(Contract):
-    kind: NonEmptyStr
-    description: NonEmptyStr
+class PairMembership(Contract):
+    pair_id: NonEmptyStr  # e.g. MP-01, CP-01 (frozen-contract §12)
+    role: Literal["clean", "violating"]
+    counterpart_item_id: ItemId
 
 
 class CaseCard(Contract):
-    case_card_version: Literal["case_card/1.0.0"] = CASE_CARD_SCHEMA
-    case_id: CaseId
+    case_card_version: Literal["case_card/2.0.0"] = CASE_CARD_SCHEMA
+    item_id: ItemId
     status: CardStatus
     authoring: Authoring
     split: Split
-    scenario: NonEmptyStr
-    category: NonEmptyStr
-    language: LanguageTag
-    source_kind: SourceKind
+    pack: Pack
+    language: Literal["en", "hi", "hi-en", "other"]
+    unit_modes: list[UnitMode] = Field(min_length=1)
+    intent: NonEmptyStr  # one-line intent (frozen-contract §12)
     rationale: NonEmptyStr
-    customer_context: CustomerContext
-    intended_behavior: NonEmptyStr
-    agent_behavior: NonEmptyStr
-    target_defect: TargetDefect | None
-    gate: Id | None
-    severity: CardSeverity
-    repair_status: RepairStatus
-    evidence_turns: list[Id]
-    evidence_metadata_fields: list[Literal["call_start_ts"]] = Field(default_factory=list)
-    evidence_audio_spans_ms: list[tuple[int, int]] = Field(default_factory=list)
-    attribution: CardAttribution | None
-    incidental_defects: list[IncidentalDefect] = Field(default_factory=list)
-    outcome: CardOutcome
-    dangerous_win: bool
-    clean_loss: bool
-    modality: CardModality
-    expected_evaluability: EvaluabilityStatus
+    scenario: NonEmptyStr
+    target_behavior: NonEmptyStr
+    target_check: str | None  # gate id or MVP code, or null for a clean case
+    target_sub_rule: str | None = None
+    severity: Severity | None  # post-repair; null for a clean case
+    repair_status: RepairStatus | None
+    evidence_turns: list[int] = Field(default_factory=list)
+    evidence_header: bool = False  # G7 evidence is the header call_start_ts
+    attribution_facts: AttributionFacts = Field(default_factory=AttributionFacts)
+    outcome: CardOutcome = Field(default_factory=CardOutcome)
+    dangerous_win: DangerousWin = DangerousWin.NONE
+    clean_loss: bool = False
+    expected_evaluability: EvaluabilityStatus = EvaluabilityStatus.EVALUABLE
+    expected_reason_codes: list[ReasonCode] = Field(default_factory=list)
+    pair: PairMembership | None = None
+    control_target_gates: list[GateId] = Field(default_factory=list)
+    twin_of: ItemId | None = None
     ambiguity_notes: NonEmptyStr
-    minimal_pair: MinimalPair | None
-    attribution_pair: AttributionPair | None
-    judge_bait: JudgeBait | None
     tags: list[str] = Field(default_factory=list)
-
-    def to_metadata(self) -> CaseMetadata:
-        return CaseMetadata(
-            case_id=self.case_id,
-            split=self.split,
-            scenario=self.scenario,
-            category=self.category,
-            intended_modality=self.modality.intended_modality,
-            language=self.language,
-            synthetic=self.source_kind.is_synthetic,
-            source_kind=self.source_kind,
-            pair_id=self.minimal_pair.pair_id if self.minimal_pair else None,
-            pair_role=self.minimal_pair.role if self.minimal_pair else None,
-            attribution_pair_id=self.attribution_pair.attribution_pair_id if self.attribution_pair else None,
-            judge_bait=self.judge_bait is not None,
-            judge_bait_kind=self.judge_bait.kind if self.judge_bait else None,
-            capability_boundaries=self.modality.capability_boundaries,
-            tags=list(self.tags),
-        )

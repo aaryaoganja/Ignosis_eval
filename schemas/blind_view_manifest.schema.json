@@ -1,0 +1,455 @@
+{
+  "$defs": {
+    "DatasetRef": {
+      "additionalProperties": false,
+      "properties": {
+        "bench_manifest_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Bench Manifest Sha256",
+          "type": "string"
+        },
+        "dataset_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Dataset Hash",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "registries_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Registries Sha256",
+          "type": "string"
+        },
+        "scope": {
+          "enum": [
+            "dev",
+            "private"
+          ],
+          "title": "Scope",
+          "type": "string"
+        },
+        "split": {
+          "$ref": "#/$defs/Split"
+        },
+        "units": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Units",
+          "type": "array"
+        },
+        "version": {
+          "minLength": 1,
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "split",
+        "scope",
+        "bench_manifest_sha256",
+        "dataset_hash",
+        "registries_sha256",
+        "units"
+      ],
+      "title": "DatasetRef",
+      "type": "object"
+    },
+    "FileHash": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "json_canonical",
+            "raw_bytes"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "path": {
+          "minLength": 1,
+          "title": "Path",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "sha256",
+        "kind"
+      ],
+      "title": "FileHash",
+      "type": "object"
+    },
+    "GoldRef": {
+      "additionalProperties": false,
+      "properties": {
+        "gold_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Gold Hash",
+          "type": "string"
+        },
+        "gold_manifest_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Gold Manifest Sha256",
+          "type": "string"
+        },
+        "gold_version": {
+          "minLength": 1,
+          "title": "Gold Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "gold_version",
+        "gold_manifest_sha256",
+        "gold_hash"
+      ],
+      "title": "GoldRef",
+      "type": "object"
+    },
+    "H7Audit": {
+      "additionalProperties": false,
+      "description": "What the scorer needs to audit H7 without seeing system identities.",
+      "properties": {
+        "git_dirty": {
+          "title": "Git Dirty",
+          "type": "boolean"
+        },
+        "git_tag": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Git Tag"
+        },
+        "hash_verification": {
+          "$ref": "#/$defs/HashVerification"
+        },
+        "kind": {
+          "enum": [
+            "dev",
+            "dev_tuning",
+            "locked_holdout",
+            "locked_redteam"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "locked": {
+          "title": "Locked",
+          "type": "boolean"
+        },
+        "run_created_at": {
+          "format": "date-time",
+          "title": "Run Created At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "locked",
+        "git_tag",
+        "git_dirty",
+        "hash_verification",
+        "run_created_at"
+      ],
+      "title": "H7Audit",
+      "type": "object"
+    },
+    "HashVerification": {
+      "additionalProperties": false,
+      "description": "P-8 step 3: hashes verified before the run (recorded; H7).",
+      "properties": {
+        "bench_manifest": {
+          "title": "Bench Manifest",
+          "type": "boolean"
+        },
+        "gold": {
+          "title": "Gold",
+          "type": "boolean"
+        },
+        "item_files": {
+          "title": "Item Files",
+          "type": "boolean"
+        },
+        "lexicons": {
+          "title": "Lexicons",
+          "type": "boolean"
+        },
+        "private_hash_list": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Private Hash List"
+        },
+        "profile": {
+          "title": "Profile",
+          "type": "boolean"
+        },
+        "rubric": {
+          "title": "Rubric",
+          "type": "boolean"
+        },
+        "verified_at": {
+          "format": "date-time",
+          "title": "Verified At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "verified_at",
+        "bench_manifest",
+        "item_files",
+        "private_hash_list",
+        "gold",
+        "rubric",
+        "profile",
+        "lexicons"
+      ],
+      "title": "HashVerification",
+      "type": "object"
+    },
+    "PendingRef": {
+      "additionalProperties": false,
+      "properties": {
+        "blocker": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Blocker"
+        },
+        "blocks_locked_run": {
+          "title": "Blocks Locked Run",
+          "type": "boolean"
+        },
+        "path": {
+          "minLength": 1,
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "blocks_locked_run"
+      ],
+      "title": "PendingRef",
+      "type": "object"
+    },
+    "SpecRef": {
+      "additionalProperties": false,
+      "properties": {
+        "contract_version": {
+          "minLength": 1,
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "lexicons_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Lexicons Sha256",
+          "type": "string"
+        },
+        "profile_id": {
+          "minLength": 1,
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "profile_is_canonical": {
+          "title": "Profile Is Canonical",
+          "type": "boolean"
+        },
+        "profile_path": {
+          "minLength": 1,
+          "title": "Profile Path",
+          "type": "string"
+        },
+        "profile_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Profile Sha256",
+          "type": "string"
+        },
+        "profile_version": {
+          "minLength": 1,
+          "title": "Profile Version",
+          "type": "string"
+        },
+        "rubric_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Rubric Sha256",
+          "type": "string"
+        },
+        "rubric_version": {
+          "minLength": 1,
+          "title": "Rubric Version",
+          "type": "string"
+        },
+        "spec_file_sha256": {
+          "additionalProperties": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "title": "Spec File Sha256",
+          "type": "object"
+        }
+      },
+      "required": [
+        "contract_version",
+        "rubric_version",
+        "rubric_sha256",
+        "profile_id",
+        "profile_version",
+        "profile_sha256",
+        "profile_path",
+        "profile_is_canonical",
+        "lexicons_sha256",
+        "spec_file_sha256"
+      ],
+      "title": "SpecRef",
+      "type": "object"
+    },
+    "Split": {
+      "description": "experiment-protocol.md P-1 (dev in-repo; holdout and red team under $BENCH_PRIVATE_DIR).",
+      "enum": [
+        "dev",
+        "holdout",
+        "redteam"
+      ],
+      "title": "Split",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "P-10 aliased scoring view. It never names a system: aliases SYS-1..n only. K0's single run is\nreplicated as reps 1..k; A+ timing is A's latency plus the derivation time and A+ usage is A's (SD-24/25).",
+  "properties": {
+    "alias_mapping_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Alias Mapping Sha256",
+      "type": "string"
+    },
+    "aliases": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Aliases",
+      "type": "array"
+    },
+    "base_seed": {
+      "title": "Base Seed",
+      "type": "integer"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "dataset": {
+      "$ref": "#/$defs/DatasetRef"
+    },
+    "files": {
+      "items": {
+        "$ref": "#/$defs/FileHash"
+      },
+      "title": "Files",
+      "type": "array"
+    },
+    "gold": {
+      "$ref": "#/$defs/GoldRef"
+    },
+    "h7": {
+      "$ref": "#/$defs/H7Audit"
+    },
+    "mock_backend": {
+      "title": "Mock Backend",
+      "type": "boolean"
+    },
+    "model_snapshot_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Model Snapshot Ids",
+      "type": "array"
+    },
+    "pending_signoff": {
+      "items": {
+        "$ref": "#/$defs/PendingRef"
+      },
+      "title": "Pending Signoff",
+      "type": "array"
+    },
+    "repetitions": {
+      "minimum": 1,
+      "title": "Repetitions",
+      "type": "integer"
+    },
+    "run_id": {
+      "minLength": 1,
+      "title": "Run Id",
+      "type": "string"
+    },
+    "run_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Run Manifest Sha256",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "blind_view/1.0.0",
+      "default": "blind_view/1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "spec": {
+      "$ref": "#/$defs/SpecRef"
+    },
+    "view_hash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "View Hash",
+      "type": "string"
+    }
+  },
+  "required": [
+    "run_id",
+    "run_manifest_sha256",
+    "alias_mapping_sha256",
+    "aliases",
+    "repetitions",
+    "base_seed",
+    "dataset",
+    "gold",
+    "spec",
+    "mock_backend",
+    "h7",
+    "created_at",
+    "files",
+    "view_hash"
+  ],
+  "title": "BlindViewManifest",
+  "type": "object"
+}

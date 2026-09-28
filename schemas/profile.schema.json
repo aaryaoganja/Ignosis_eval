@@ -1,35 +1,104 @@
 {
   "$defs": {
-    "Capability": {
-      "description": "What an input makes observable. Used for modality conformance (see contracts/capabilities.py).",
-      "enum": [
-        "content",
-        "audio",
-        "turn_timestamps",
-        "speaker_labels",
-        "call_start_ts",
-        "call_start_captured"
-      ],
-      "title": "Capability",
-      "type": "string"
-    },
-    "DefectDef": {
-      "additionalProperties": false,
+    "CallingWindow": {
+      "additionalProperties": true,
       "properties": {
-        "defect_id": {
-          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$",
-          "title": "Defect Id",
+        "end": {
+          "pattern": "^\\d{2}:\\d{2}$",
+          "title": "End",
           "type": "string"
         },
-        "description": {
-          "minLength": 1,
-          "title": "Description",
+        "requires": {
+          "title": "Requires",
           "type": "string"
         },
-        "dimension_id": {
+        "start": {
+          "pattern": "^\\d{2}:\\d{2}$",
+          "title": "Start",
+          "type": "string"
+        },
+        "timezone": {
+          "title": "Timezone",
+          "type": "string"
+        }
+      },
+      "required": [
+        "start",
+        "end",
+        "timezone",
+        "requires"
+      ],
+      "title": "CallingWindow",
+      "type": "object"
+    },
+    "Consequences": {
+      "additionalProperties": true,
+      "properties": {
+        "permitted_categories": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Permitted Categories",
+          "type": "array"
+        },
+        "prohibited_categories": {
+          "additionalProperties": {
+            "enum": [
+              "G2",
+              "G3"
+            ],
+            "type": "string"
+          },
+          "title": "Prohibited Categories",
+          "type": "object"
+        }
+      },
+      "required": [
+        "permitted_categories",
+        "prohibited_categories"
+      ],
+      "title": "Consequences",
+      "type": "object"
+    },
+    "Offers": {
+      "additionalProperties": true,
+      "properties": {
+        "allowed": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowed",
+          "type": "array"
+        },
+        "authority_unknown": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Authority Unknown",
+          "type": "array"
+        },
+        "not_ai_authorized": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Not Ai Authorized",
+          "type": "array"
+        }
+      },
+      "required": [
+        "not_ai_authorized",
+        "authority_unknown",
+        "allowed"
+      ],
+      "title": "Offers",
+      "type": "object"
+    },
+    "ThresholdSpec": {
+      "additionalProperties": true,
+      "properties": {
+        "decision_required": {
           "anyOf": [
             {
-              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$",
               "type": "string"
             },
             {
@@ -37,12 +106,11 @@
             }
           ],
           "default": null,
-          "title": "Dimension Id"
+          "title": "Decision Required"
         },
-        "gate_id": {
+        "note": {
           "anyOf": [
             {
-              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$",
               "type": "string"
             },
             {
@@ -50,236 +118,157 @@
             }
           ],
           "default": null,
-          "title": "Gate Id"
+          "title": "Note"
         },
-        "requires": {
-          "items": {
-            "$ref": "#/$defs/Capability"
-          },
-          "title": "Requires",
-          "type": "array"
+        "status": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status"
         },
-        "severity": {
-          "$ref": "#/$defs/Severity"
-        },
-        "title": {
-          "minLength": 1,
-          "title": "Title",
-          "type": "string"
+        "value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "const": "PENDING_HUMAN_SIGNOFF",
+              "type": "string"
+            }
+          ],
+          "title": "Value"
         }
       },
       "required": [
-        "defect_id",
-        "title",
-        "description",
-        "severity"
+        "value"
       ],
-      "title": "DefectDef",
+      "title": "ThresholdSpec",
       "type": "object"
-    },
-    "DimensionDef": {
-      "additionalProperties": false,
-      "properties": {
-        "description": {
-          "minLength": 1,
-          "title": "Description",
-          "type": "string"
-        },
-        "dimension_id": {
-          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$",
-          "title": "Dimension Id",
-          "type": "string"
-        },
-        "requires": {
-          "items": {
-            "$ref": "#/$defs/Capability"
-          },
-          "title": "Requires",
-          "type": "array"
-        },
-        "scale_max": {
-          "default": 5.0,
-          "title": "Scale Max",
-          "type": "number"
-        },
-        "scale_min": {
-          "default": 1.0,
-          "title": "Scale Min",
-          "type": "number"
-        },
-        "title": {
-          "minLength": 1,
-          "title": "Title",
-          "type": "string"
-        }
-      },
-      "required": [
-        "dimension_id",
-        "title",
-        "description"
-      ],
-      "title": "DimensionDef",
-      "type": "object"
-    },
-    "GateDef": {
-      "additionalProperties": false,
-      "properties": {
-        "description": {
-          "minLength": 1,
-          "title": "Description",
-          "type": "string"
-        },
-        "gate_id": {
-          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$",
-          "title": "Gate Id",
-          "type": "string"
-        },
-        "requires": {
-          "items": {
-            "$ref": "#/$defs/Capability"
-          },
-          "title": "Requires",
-          "type": "array"
-        },
-        "severity": {
-          "$ref": "#/$defs/Severity",
-          "default": "critical"
-        },
-        "title": {
-          "minLength": 1,
-          "title": "Title",
-          "type": "string"
-        }
-      },
-      "required": [
-        "gate_id",
-        "title",
-        "description"
-      ],
-      "title": "GateDef",
-      "type": "object"
-    },
-    "OutcomeClass": {
-      "enum": [
-        "win",
-        "loss",
-        "neutral",
-        "unknown"
-      ],
-      "title": "OutcomeClass",
-      "type": "string"
-    },
-    "OutcomeCode": {
-      "enum": [
-        "promise_to_pay",
-        "payment_committed_on_call",
-        "payment_plan_agreed",
-        "dispute_raised",
-        "callback_scheduled",
-        "refusal_to_pay",
-        "wrong_party",
-        "hardship_disclosed",
-        "no_resolution",
-        "call_dropped"
-      ],
-      "title": "OutcomeCode",
-      "type": "string"
-    },
-    "Severity": {
-      "enum": [
-        "critical",
-        "major",
-        "minor"
-      ],
-      "title": "Severity",
-      "type": "string"
     }
   },
-  "additionalProperties": false,
+  "additionalProperties": true,
   "properties": {
-    "defects": {
-      "items": {
-        "$ref": "#/$defs/DefectDef"
-      },
-      "title": "Defects",
-      "type": "array"
-    },
-    "description": {
-      "minLength": 1,
-      "title": "Description",
-      "type": "string"
-    },
-    "dimensions": {
-      "items": {
-        "$ref": "#/$defs/DimensionDef"
-      },
-      "title": "Dimensions",
-      "type": "array"
-    },
-    "gates": {
-      "items": {
-        "$ref": "#/$defs/GateDef"
-      },
-      "title": "Gates",
-      "type": "array"
-    },
-    "outcome_classes": {
-      "additionalProperties": {
-        "$ref": "#/$defs/OutcomeClass"
-      },
-      "propertyNames": {
-        "$ref": "#/$defs/OutcomeCode"
-      },
-      "title": "Outcome Classes",
+    "asks": {
+      "additionalProperties": true,
+      "title": "Asks",
       "type": "object"
     },
+    "calling_window": {
+      "$ref": "#/$defs/CallingWindow"
+    },
+    "consequences": {
+      "$ref": "#/$defs/Consequences"
+    },
+    "disclosures": {
+      "additionalProperties": true,
+      "title": "Disclosures",
+      "type": "object"
+    },
+    "escalation_triggers": {
+      "additionalProperties": true,
+      "title": "Escalation Triggers",
+      "type": "object"
+    },
+    "identity_verification": {
+      "additionalProperties": true,
+      "title": "Identity Verification",
+      "type": "object"
+    },
+    "languages_supported": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Languages Supported",
+      "type": "array"
+    },
+    "lexicons": {
+      "additionalProperties": true,
+      "title": "Lexicons",
+      "type": "object"
+    },
+    "offers": {
+      "$ref": "#/$defs/Offers"
+    },
     "profile_id": {
-      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$",
       "title": "Profile Id",
       "type": "string"
     },
     "profile_version": {
-      "minLength": 1,
       "title": "Profile Version",
       "type": "string"
     },
-    "rubric_version": {
-      "minLength": 1,
-      "title": "Rubric Version",
+    "prohibited_phrases": {
+      "additionalProperties": true,
+      "title": "Prohibited Phrases",
+      "type": "object"
+    },
+    "ptp": {
+      "additionalProperties": true,
+      "title": "Ptp",
+      "type": "object"
+    },
+    "rights": {
+      "additionalProperties": true,
+      "title": "Rights",
+      "type": "object"
+    },
+    "rubric_ref": {
+      "title": "Rubric Ref",
       "type": "string"
     },
-    "schema_version": {
-      "const": "profile/1.0.0",
-      "default": "profile/1.0.0",
-      "title": "Schema Version",
-      "type": "string"
+    "scenario_paths": {
+      "additionalProperties": true,
+      "title": "Scenario Paths",
+      "type": "object"
     },
-    "status": {
-      "enum": [
-        "placeholder",
-        "draft",
-        "frozen"
-      ],
-      "title": "Status",
-      "type": "string"
+    "thresholds": {
+      "additionalProperties": {
+        "$ref": "#/$defs/ThresholdSpec"
+      },
+      "title": "Thresholds",
+      "type": "object"
     },
     "use_case": {
       "const": "collections",
-      "default": "collections",
       "title": "Use Case",
       "type": "string"
+    },
+    "vulnerability_protocol": {
+      "additionalProperties": true,
+      "title": "Vulnerability Protocol",
+      "type": "object"
     }
   },
   "required": [
     "profile_id",
     "profile_version",
-    "rubric_version",
-    "status",
-    "description",
-    "gates",
-    "defects",
-    "outcome_classes"
+    "rubric_ref",
+    "use_case",
+    "identity_verification",
+    "asks",
+    "ptp",
+    "offers",
+    "consequences",
+    "rights",
+    "vulnerability_protocol",
+    "escalation_triggers",
+    "disclosures",
+    "prohibited_phrases",
+    "calling_window",
+    "languages_supported",
+    "scenario_paths",
+    "thresholds",
+    "lexicons"
   ],
-  "title": "Profile",
+  "title": "ProfileSpec",
   "type": "object"
 }

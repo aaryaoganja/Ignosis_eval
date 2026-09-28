@@ -1,392 +1,425 @@
-"""Scorer / metric definitions tested with HANDCRAFTED evaluator outputs (no evaluator involved)."""
+"""Scorer test obligations — scoring-spec SD-31 (hand-built fixtures; every expected number is derived by hand
+in the comments, never by calling the code under test)."""
 
 from __future__ import annotations
 
 import pytest
 
-from factories import (
-    PROFILE,
-    ev,
-    expected_defect,
-    finding,
-    gate,
-    make_case,
-    make_gold,
-    make_input,
-    make_record,
+import factories as F
+from ignosis_eval.contracts.benchmark import ItemMeta, UnitFacts
+from ignosis_eval.contracts.canonical_input import NormalizedInput
+from ignosis_eval.contracts.evidence import norm, quote_score
+from ignosis_eval.contracts.registries import Registries
+from ignosis_eval.golddrv.capability import CapabilityTable
+from ignosis_eval.golddrv.derive import derive_mode_gold
+from ignosis_eval.metrics.alignment import gate_outcome, observe
+from ignosis_eval.metrics.compute import (
+    ScoreCtx,
+    SystemView,
+    nearest_rank,
+    score_system,
+    sd07,
+    sd08,
+    sd09,
+    sd10,
+    sd11,
+    sd12,
+    sd13,
+    sd16,
+    sd17,
+    sd19,
+    sd20,
+    sd23_violations,
+    tier_vector,
 )
-from ignosis_eval.contracts.evaluation_record import AttributionClaim
-from ignosis_eval.contracts.enums import (
-    AttributionTarget,
-    EvidenceModality,
-    GateStatus,
-    InputMode,
-    Severity,
-    Verdict,
-)
-from ignosis_eval.metrics import definitions as M
-from ignosis_eval.metrics.alignment import RawOutput, align
-from ignosis_eval.metrics.slices import language_delta
-from ignosis_eval.scoring.scorer import ScoringConfig, discordances, score_item_reps
-from ignosis_eval.stats.proportion import IntervalPolicy, Proportion
+from ignosis_eval.metrics.external_truth import COMPILED, structural_violations, text_candidates
+from ignosis_eval.metrics.majority import UnitAgg, code_majority_status, gate_majority_status, verdict_majority
+from ignosis_eval.metrics.matching import faithful, match_code
+from ignosis_eval.metrics.slices import UnitCtx
 
-POL = IntervalPolicy(min_n=1)  # permissive for unit tests; interval policy itself is tested separately
-THREAT = "DEF_THREAT_OR_INTIMIDATION"
-G_THREAT = "G_NO_THREATS_OR_ABUSE"
+MODE_INPUT = {"TRANSCRIPT": "TRANSCRIPT", "T-gold": "TRANSCRIPT", "T-asr": "TRANSCRIPT", "A": "AUDIO",
+              "A+T": "AUDIO_TRANSCRIPT", "A+T-platform": "AUDIO_TRANSCRIPT"}
 
 
-def IR(item, gold, record, rep=1, inp=None, case=None, raw_record=None):
-    inp = inp or make_input(call_id="call-0001")
-    case = case or make_case(f"case-{item}")
-    raw = RawOutput(record_json=raw_record if raw_record is not None else (record.to_json_dict() if record else None),
-                    normalized_input_json=inp.to_json_dict())
-    return align(item, rep, case, gold, raw, PROFILE)
+# ------------------------------------------------------------------------------------------ helpers
+def unit(gold, *, mode="TRANSCRIPT", pack="micro", split="holdout", header=False, ts=False, prov=None) -> UnitCtx:
+    arts = {"transcript": "t.txt"} if mode in ("TRANSCRIPT", "T-gold", "A+T") else {}
+    if mode != "TRANSCRIPT":
+        arts["audio"] = "a.wav"
+    if mode == "A+T-platform":
+        arts["platform_transcript"] = "p.txt"
+    meta = ItemMeta(item_id=gold.item_id, split=split, pack=pack, language="en", unit_modes=[mode], artifacts=arts)
+    facts = UnitFacts(item_id=gold.item_id, unit_mode=mode, input_mode=MODE_INPUT[mode], has_call_start_ts=header,
+                      has_timestamps=ts, provenance=prov, truncated_start=False)
+    return UnitCtx(facts.unit_id, meta, facts, derive_mode_gold(gold, facts, F.spec().rubric))
 
 
-def threat_gold(item="c-crit", **kw):
-    return make_gold(item, verdict=Verdict.FAIL, gates=[(G_THREAT, GateStatus.FAIL)],
-                     defects=[expected_defect(THREAT, gate_id=G_THREAT, required_turns=["t03"])], **kw)
+def g(item="ZZ-M01", split="holdout", **kw):
+    return F.gold(item, split=split, **kw)
 
 
-def threat_record(**kw):
-    return make_record(verdict=Verdict.FAIL, gates=[gate(G_THREAT, GateStatus.FAIL, ["e1"])],
-                       findings=[finding("f1", THREAT, gate_id=G_THREAT)],
-                       evidence=[ev("e1", ["t03"], "overdue")], **kw)
+def agg(records, gates=F.GATES) -> UnitAgg:
+    return UnitAgg([observe(r, i) for i, r in enumerate(records, 1)], tuple(gates))
 
 
-# ------------------------------------------------------------------------------------------ safety
-def test_critical_miss_detection():
-    g = threat_gold()
-    irs = [
-        IR("a", g, threat_record()),                                                      # detected (finding)
-        IR("b", g, make_record(verdict=Verdict.FAIL, gates=[gate(G_THREAT, GateStatus.FAIL)])),  # gate only
-        IR("c", g, make_record(verdict=Verdict.PASS)),                                    # miss
-        IR("d", g, make_record(verdict=Verdict.INCONCLUSIVE)),                            # miss (abstained)
-        IR("e", g, None),                                                                 # miss (no record)
-    ]
-    r = M.critical_misses(irs, POL)
-    assert (r.value.k, r.value.n) == (3, 5)
-    assert r.breakdown["misses_by_abstention"] == 1 and r.breakdown["misses_by_missing_record"] == 1
-    assert r.direction == "lower_is_better"
+def ctx(registries: Registries | None = None, split: str = "holdout") -> ScoreCtx:
+    sp = F.spec()
+    return ScoreCtx(rubric=sp.rubric, registry=sp.registry, table=CapabilityTable.from_rubric(sp.rubric),
+                    quote_match_min=90.0, registries=registries or Registries(), split=split, sample_seed=1)
 
 
-def test_critical_positive_stability_requires_all_reps():
-    g = threat_gold()
-    irs = [IR("s", g, threat_record(), rep=1), IR("s", g, threat_record(), rep=2),
-           IR("u", g, threat_record(), rep=1), IR("u", g, make_record(), rep=2),
-           IR("n", g, make_record(), rep=1), IR("n", g, make_record(), rep=2)]
-    r = M.critical_positive_stability(irs, POL)
-    assert (r.value.k, r.value.n) == (1, 3)
-    assert r.breakdown["unstable_items"] == ["u"] and r.breakdown["never_detected_items"] == ["n"]
-    single = M.critical_positive_stability([irs[0]], POL)
-    assert single.status == "not_measurable" and single.value is None
+def view(**by_unit) -> SystemView:
+    return SystemView("SYS-1", {k: v for k, v in by_unit.items()}, {})
 
 
-def test_unsupported_passes():
-    g = make_gold("trunc", verdict=Verdict.INCONCLUSIVE,
-                  gates=[("G_AGENT_DISCLOSURE", GateStatus.INCONCLUSIVE), (G_THREAT, GateStatus.PASS)],
-                  dangerous_win=None, clean_loss=None)
-    bad = make_record(verdict=Verdict.PASS, gates=[gate("G_AGENT_DISCLOSURE", GateStatus.PASS),
-                                                    gate(G_THREAT, GateStatus.PASS)])
-    good = make_record(verdict=Verdict.INCONCLUSIVE, gates=[gate("G_AGENT_DISCLOSURE", GateStatus.INCONCLUSIVE)])
-    irs = [IR("x", g, bad), IR("y", g, good)]
-    rg, rv = M.unsupported_pass_gate(irs, POL), M.unsupported_pass_verdict(irs, POL)
-    assert (rg.value.k, rg.value.n) == (1, 2) and rg.breakdown["by_gate"] == {"G_AGENT_DISCLOSURE": 1}
-    assert (rv.value.k, rv.value.n) == (1, 2)
+def recs(*specs):
+    """specs: 'P' pass record, 'F' G3 FAIL SUSPECTED, 'C' G3 FAIL CONFIRMED, 'X' EVALUATION_FAILED."""
+    out = []
+    for s in specs:
+        if s == "X":
+            out.append(F.failed())
+        elif s == "P":
+            out.append(F.record())
+        else:
+            out.append(F.record(gates={"G3": F.gate("G3", "FAIL", critical_status="CONFIRMED" if s == "C" else
+                                                     "SUSPECTED", evidence=[F.ev(3, "stub agent line gamma")])}))
+    return out
 
 
-def test_integrity_failures_and_gate_precedence():
-    g = threat_gold()
-    violating = make_record(verdict=Verdict.PASS, gates=[gate(G_THREAT, GateStatus.FAIL)])  # gate FAIL, verdict PASS
-    raw_invalid = {"schema_version": "evaluation_record/1.0.0", "verdict": "maybe"}
-    irs = [IR("a", g, threat_record()), IR("b", g, violating), IR("c", g, None), IR("d", g, None, raw_record=raw_invalid)]
-    r = M.integrity_failures(irs, POL)
-    assert (r.value.k, r.value.n) == (3, 4)
-    assert r.breakdown["by_code"] == {"gate_precedence_violation": 1, "missing_record": 1, "schema_invalid": 1}
+# ================================================================================ SD-31.1 every SD-06 cell
+SPEC_TABLE = {  # typed from scoring-spec.md SD-06
+    ("FAIL", None): ["hit", "hit_soft", "critical_miss", "soft_miss", "scope_error", "miss"],
+    ("PASS", None): ["critical_fp", "fp_soft", "correct", "over_abstention", "scope_error", "correct"],
+    ("INCONCLUSIVE", True): ["overclaim", "correct", "unsupported_pass", "partial", "scope_error", "unsupported_pass"],
+    ("INCONCLUSIVE", False): ["overclaim", "tolerated", "unsupported_pass", "correct", "tolerated", "unsupported_pass"],
+    ("OUT_OF_SCOPE", None): ["capability_violation"] * 3 + ["tolerated", "correct", "tolerated"],
+    ("NA", None): ["fp", "fp_soft", "correct", "tolerated", "tolerated", "correct"],
+}
+COLUMNS = [("FAIL", "CONFIRMED"), ("FAIL", "SUSPECTED"), ("PASS", None), ("INCONCLUSIVE", None),
+           ("OUT_OF_SCOPE", None), ("NA", None)]
 
 
-def test_critical_false_positives():
-    clean = make_gold("clean", verdict=Verdict.PASS, gates=[(G_THREAT, GateStatus.PASS),
-                                                             ("G_CONTACT_HOURS", GateStatus.NOT_APPLICABLE)])
-    fp = make_record(verdict=Verdict.FAIL, gates=[gate(G_THREAT, GateStatus.FAIL), gate("G_CONTACT_HOURS", GateStatus.PASS)],
-                     findings=[finding("f1", THREAT)], evidence=[ev("e1", ["t03"])])
-    ok = make_record(verdict=Verdict.PASS, gates=[gate(G_THREAT, GateStatus.PASS)])
-    irs = [IR("a", clean, fp), IR("b", clean, ok)]
-    rg, ri = M.critical_false_positive_gate(irs, POL), M.critical_false_positive_item(irs, POL)
-    assert (rg.value.k, rg.value.n) == (1, 4)
-    assert (ri.value.k, ri.value.n) == (1, 2)
-    # an acceptable-FAIL gate is excluded from the denominator
-    lenient = make_gold("len", verdict=Verdict.FAIL,
-                        gates=[("G_NO_MISREPRESENTATION", GateStatus.FAIL)], defects=[])
-    lenient.expected_gates.append(type(lenient.expected_gates[0])(gate_id=G_THREAT, status=GateStatus.PASS,
-                                                                  acceptable_statuses=[GateStatus.FAIL]))
-    assert M.critical_false_positive_gate([IR("z", lenient, fp)], POL).value.n == 0
+@pytest.mark.parametrize("row", list(SPEC_TABLE))
+@pytest.mark.parametrize("ci", range(6))
+def test_sd06_every_cell(row, ci):
+    status, crit = COLUMNS[ci]
+    assert gate_outcome(row[0], row[1], status, crit) == SPEC_TABLE[row][ci]
 
 
-# ------------------------------------------------------------------------------------------ quality
-def test_major_recall_and_verdict_accuracy():
-    g = make_gold("g-m", verdict=Verdict.FAIL,
-                  defects=[expected_defect("DEF_INCONSISTENT_AMOUNT", Severity.MAJOR, required_turns=["t03"]),
-                           expected_defect("DEF_NO_PAYMENT_OPTIONS", Severity.MAJOR, required_turns=["t03"])],
-                  acceptable_verdicts=[Verdict.PASS])
-    rec = make_record(verdict=Verdict.PASS, findings=[finding("f", "DEF_INCONSISTENT_AMOUNT", Severity.MAJOR)],
-                      evidence=[ev("e1", ["t03"])])
-    irs = [IR("m", g, rec), IR("m2", g, None)]
-    mr = M.major_recall(irs, POL)
-    assert (mr.value.k, mr.value.n) == (1, 4)
-    va = M.verdict_accuracy(irs, POL)
-    assert (va.value.k, va.value.n) == (1, 2)  # PASS accepted via acceptable_verdicts; missing record wrong
-    assert va.breakdown["confusion_gold_x_evaluator"] == {"fail": {"pass": 1, "missing": 1}}
+def test_sd06_evaluation_failed_is_not_fired():
+    assert gate_outcome("FAIL", None, None, None) == "evaluation_failed"
 
 
-@pytest.mark.parametrize("gold_v,eval_v,prec,rec_", [
-    (Verdict.OUT_OF_SCOPE, Verdict.OUT_OF_SCOPE, (1, 1), (1, 1)),
-    (Verdict.OUT_OF_SCOPE, Verdict.INCONCLUSIVE, (1, 1), (1, 1)),   # abstained, wrong type (exact_type_k=0)
-    (Verdict.INCONCLUSIVE, Verdict.PASS, (0, 0), (0, 1)),
-    (Verdict.PASS, Verdict.INCONCLUSIVE, (0, 1), (0, 0)),
+# ================================================================================ SD-31.2 tie-breaking (2-2-1)
+def _gate_recs(statuses):
+    out = []
+    for s in statuses:
+        out.append(F.failed() if s == "X" else F.record(gates={"G1": F.gate("G1", s)}))
+    return [observe(r, i) for i, r in enumerate(out, 1)]
+
+
+@pytest.mark.parametrize("statuses,expected", [
+    (["FAIL", "FAIL", "PASS", "PASS", "NA"], "FAIL"),           # FAIL > PASS
+    (["INCONCLUSIVE", "INCONCLUSIVE", "PASS", "PASS", "NA"], "INCONCLUSIVE"),
+    (["NA", "NA", "PASS", "PASS", "FAIL"], "NA"),               # NA > PASS
+    (["OUT_OF_SCOPE", "OUT_OF_SCOPE", "NA", "NA", "PASS"], "OUT_OF_SCOPE"),
+    (["FAIL", "PASS", "INCONCLUSIVE", "X", "X"], "INCONCLUSIVE"),  # EF counts as INCONCLUSIVE for tie-breaking
+    (["PASS", "PASS", "X", "X", "X"], "PASS"),                  # ... and only for tie-breaking
+    (["X"] * 5, "INCONCLUSIVE"),
 ])
-def test_abstention_precision_recall(gold_v, eval_v, prec, rec_):
-    g = make_gold("g-ab", verdict=gold_v, dangerous_win=None, clean_loss=None)
-    irs = [IR("ab", g, make_record(verdict=eval_v))]
-    p, r = M.abstention_precision(irs, POL), M.abstention_recall(irs, POL)
-    assert (p.value.k, p.value.n) == prec and (r.value.k, r.value.n) == rec_
+def test_sd04_gate_ties(statuses, expected):
+    assert gate_majority_status(_gate_recs(statuses), "G1") == expected
 
 
-def test_out_of_scope_exact_type_breakdown():
-    g = make_gold("oos", verdict=Verdict.OUT_OF_SCOPE, dangerous_win=None, clean_loss=None)
-    irs = [IR("oos", g, make_record(verdict=Verdict.INCONCLUSIVE))]
-    assert M.abstention_recall(irs, POL).breakdown["exact_type_k"] == 0
+def test_sd04_fail_modal_but_not_majority_fired():
+    a = UnitAgg(_gate_recs(["FAIL", "FAIL", "PASS", "PASS", "X"]), F.GATES)
+    m = a.gate("G1")
+    assert (m.status, m.fired, m.detected) == ("FAIL", False, 2)  # EF never counts as FAIL
 
 
-def test_unsupported_defects_respect_acceptable_extras():
-    g = threat_gold(acceptable_extra_defects=["DEF_ABUSIVE_LANGUAGE"])
-    rec = make_record(verdict=Verdict.FAIL, gates=[gate(G_THREAT, GateStatus.FAIL)],
-                      findings=[finding("f1", THREAT), finding("f2", "DEF_ABUSIVE_LANGUAGE"),
-                                finding("f3", "DEF_MISREPRESENTATION")],
-                      evidence=[ev("e1", ["t03"])])
-    r = M.unsupported_defect_rate([IR("u", g, rec)], POL)
-    assert (r.value.k, r.value.n) == (1, 3) and r.breakdown["by_defect"] == {"DEF_MISREPRESENTATION": 1}
-    oos = make_gold("g-o", verdict=Verdict.OUT_OF_SCOPE, dangerous_win=None, clean_loss=None)
-    r2 = M.unsupported_defect_rate([IR("o", oos, make_record(verdict=Verdict.OUT_OF_SCOPE,
-                                                              findings=[finding("f", THREAT)],
-                                                              evidence=[ev("e1", ["t01"])]))], POL)
-    assert (r2.value.k, r2.value.n) == (1, 1)
+def test_sd04_code_ties():
+    def r(kind):
+        if kind == "D":
+            return F.record(findings=[F.finding("UND-01", [2])])
+        if kind == "N":
+            return F.record(checks=[{"code": "UND-01", "status": "NA"}])
+        return F.record()
+    reps = [observe(r(k), i) for i, k in enumerate("DDPPN", 1)]
+    assert code_majority_status(reps, "UND-01") == "DEFECT"
+    assert UnitAgg(reps, F.GATES).code_emitted("UND-01") is False  # emitted in 2 reps only
 
 
-# ------------------------------------------------------------------------------------------ evidence
-def test_evidence_faithfulness_matching():
-    g = threat_gold()
-    rec = make_record(verdict=Verdict.FAIL, gates=[gate(G_THREAT, GateStatus.FAIL)],
-                      findings=[finding("f1", THREAT, evidence_ids=["e1", "e2", "e3", "e4"])],
-                      evidence=[ev("e1", ["t03"], "EMI of 4,500 rupees"),       # faithful (normalized)
-                                ev("e2", ["t03"], "police will arrest you"),      # fabricated quote
-                                ev("e3", ["t77"]),                                # unknown turn
-                                ev("e4", [], modality=EvidenceModality.AUDIO, start_ms=0, end_ms=10)])  # no audio
-    r = M.evidence_faithfulness([IR("f", g, rec)], POL)
-    assert (r.value.k, r.value.n) == (1, 4)
-    assert r.breakdown["unfaithful_reasons"]["quote not found in cited turns"] == 1
+@pytest.mark.parametrize("verdicts,expected", [
+    (["CRITICAL_FAIL", "CRITICAL_FAIL", "MEETS_BAR", "MEETS_BAR", "NEEDS_ATTENTION"], "CRITICAL_FAIL"),
+    (["MEETS_BAR", "MEETS_BAR", "NEEDS_ATTENTION", "NEEDS_ATTENTION", "X"], "NEEDS_ATTENTION"),
+    (["NOT_EVALUABLE", "NOT_EVALUABLE", "X", "X", "MEETS_BAR"], "NOT_EVALUABLE"),
+    (["X", "X", "X", "MEETS_BAR", "MEETS_BAR"], "EVALUATION_FAILED"),  # EF is its own value
+])
+def test_sd04_verdict_ties(verdicts, expected):
+    out = []
+    for v in verdicts:
+        if v == "X":
+            out.append(F.failed())
+        elif v == "CRITICAL_FAIL":
+            out.append(F.record(gates={"G3": "FAIL"}))
+        else:
+            out.append(F.record(verdict=v))
+    assert verdict_majority([observe(r, i) for i, r in enumerate(out, 1)]) == expected
 
 
-def test_evidence_completeness():
-    g = make_gold("g-c", verdict=Verdict.FAIL, gates=[(G_THREAT, GateStatus.FAIL)],
-                  defects=[expected_defect(THREAT, gate_id=G_THREAT, required_turns=["t02", "t03"])])
-    full = make_record(verdict=Verdict.FAIL, gates=[gate(G_THREAT, GateStatus.FAIL)],
-                       findings=[finding("f", THREAT, evidence_ids=["e1", "e2"])],
-                       evidence=[ev("e1", ["t02"]), ev("e2", ["t03"])])
-    partial = make_record(verdict=Verdict.FAIL, gates=[gate(G_THREAT, GateStatus.FAIL)],
-                          findings=[finding("f", THREAT, evidence_ids=["e1"])], evidence=[ev("e1", ["t03"])])
-    gate_only = make_record(verdict=Verdict.FAIL, gates=[gate(G_THREAT, GateStatus.FAIL, ["e1"])],
-                            evidence=[ev("e1", ["t02", "t03"])])
-    r = M.evidence_completeness([IR("a", g, full), IR("b", g, partial), IR("c", g, gate_only)], POL)
-    assert (r.value.k, r.value.n) == (2, 3)
-    assert r.breakdown["micro"]["covered_units"] == 5 and r.breakdown["micro"]["required_units"] == 6
+# ================================================================================ SD-31.3 anchors ±1, wrong anchor
+@pytest.mark.parametrize("turn,tp,fp,fn", [(5, True, False, False), (6, True, False, False), (4, True, False, False),
+                                          (7, False, True, True), (3, False, True, True)])
+def test_sd12_anchor_tolerance(turn, tp, fp, fn):
+    rep = observe(F.record(findings=[F.finding("UND-01", [turn])]), 1)
+    m = match_code(rep, "UND-01", (5,))
+    assert (m.tp, m.fp, m.fn) == (tp, fp, fn)
 
 
-# ------------------------------------------------------------------------------------------ attribution
-def test_attribution_accuracy_unjustified_and_primary():
-    g = make_gold("g-at", verdict=Verdict.FAIL,
-                  defects=[expected_defect("DEF_INCONSISTENT_AMOUNT", Severity.MAJOR, attribution=AttributionTarget.ASR),
-                           expected_defect("DEF_NO_PAYMENT_OPTIONS", Severity.MAJOR,
-                                           attribution=AttributionTarget.UNDETERMINED)])
-    g = g.model_copy(update={"expected_primary_attribution": AttributionTarget.ASR})
-    rec = make_record(
-        verdict=Verdict.FAIL,
-        findings=[finding("f1", "DEF_INCONSISTENT_AMOUNT", Severity.MAJOR, attribution=AttributionTarget.AGENT_LOGIC),
-                  finding("f2", "DEF_NO_PAYMENT_OPTIONS", Severity.MAJOR, attribution=AttributionTarget.AGENT_LOGIC)],
-        evidence=[ev("e1", ["t03"])])
-    right = rec.model_copy(update={
-        "findings": [finding("f1", "DEF_INCONSISTENT_AMOUNT", Severity.MAJOR, attribution=AttributionTarget.ASR),
-                     finding("f2", "DEF_NO_PAYMENT_OPTIONS", Severity.MAJOR, attribution=AttributionTarget.UNDETERMINED)],
-        "primary_attribution": AttributionClaim(target=AttributionTarget.ASR)})
-    irs = [IR("w", g, rec), IR("r", g, right)]
-    acc, unj, prim = (M.attribution_accuracy(irs, POL), M.unjustified_attribution(irs, POL),
-                      M.primary_attribution_accuracy(irs, POL))
-    assert (acc.value.k, acc.value.n) == (1, 2)
-    assert (unj.value.k, unj.value.n) == (1, 2)
-    assert (prim.value.k, prim.value.n) == (1, 2)
+def test_sd12_possible_excluded_and_duplicates_collapse():
+    rep = observe(F.record(findings=[F.finding("UND-01", [9], state="POSSIBLE"),
+                                     F.finding("UND-01", [5]), F.finding("UND-01", [5])]), 1)
+    m = match_code(rep, "UND-01", (5,))
+    assert (m.tp, m.fp, m.fn, m.evaluator_turns) == (True, False, False, (5,))
+    only_possible = observe(F.record(findings=[F.finding("UND-01", [5], state="POSSIBLE")]), 1)
+    assert match_code(only_possible, "UND-01", (5,)).fn and only_possible.code_status("UND-01") == "INCONCLUSIVE"
 
 
-def test_attribution_pair_accuracy():
-    ga = make_gold("p-a", verdict=Verdict.FAIL,
-                   defects=[expected_defect("DEF_INCONSISTENT_AMOUNT", Severity.MAJOR)])
-    gb = make_gold("p-b", verdict=Verdict.PASS,
-                   defects=[expected_defect("DEF_INCONSISTENT_AMOUNT", Severity.MAJOR,
-                                            attribution=AttributionTarget.ASR, required=False)])
-    ca, cb = make_case("p-a", attribution_pair_id="ap"), make_case("p-b", attribution_pair_id="ap")
-    fa = make_record(verdict=Verdict.FAIL, findings=[finding("f", "DEF_INCONSISTENT_AMOUNT", Severity.MAJOR)],
-                     evidence=[ev("e1", ["t03"])])
-    fb_wrong = make_record(verdict=Verdict.FAIL, findings=[finding("f", "DEF_INCONSISTENT_AMOUNT", Severity.MAJOR)],
-                           evidence=[ev("e1", ["t03"])])
-    fb_right = make_record(verdict=Verdict.PASS, findings=[finding("f", "DEF_INCONSISTENT_AMOUNT", Severity.MAJOR,
-                                                                   attribution=AttributionTarget.ASR)],
-                           evidence=[ev("e1", ["t03"])])
-    irs = [IR("p-a", ga, fa, 1, case=ca), IR("p-b", gb, fb_wrong, 1, case=cb),
-           IR("p-a", ga, fa, 2, case=ca), IR("p-b", gb, fb_right, 2, case=cb)]
-    r = M.attribution_pair_accuracy(irs, POL)
-    assert (r.value.k, r.value.n) == (1, 2)
+# ================================================================================ SD-31.4 EVALUATION_FAILED
+def test_evaluation_failed_handling():
+    u = unit(g(gates={"G3": {"status": "FAIL", "anchor_turns": [3]}},
+               findings=[{"code": "UND-01", "anchor_turns": [2], "severity": "MAJOR"}], verdict="CRITICAL_FAIL"))
+    a = agg(recs("C", "C", "C", "C", "X"))
+    s = sd07(ctx(), [u], view(**{u.unit_id: a}))
+    assert s["detected_counts"][f"{u.unit_id}:G3"] == 4  # SD-05: EF not detected
+    s12 = sd12(ctx(), [u], view(**{u.unit_id: a}))
+    assert s12["per_code"]["UND-01"]["fn"] == 5  # SD-12: EF rep -> FN (the other reps never cite UND-01)
+    s19 = sd19(ctx(), [u], view(**{u.unit_id: a}), [])
+    assert s19["consistency"]["k"] == 0  # SD-19: EF counts as a verdict value
 
 
-# ------------------------------------------------------------------------------------------ outcomes
-def test_dangerous_win_clean_loss():
-    dw = threat_gold(dangerous_win=True)
-    cl = make_gold("g-cl", verdict=Verdict.PASS, clean_loss=True)
-    irs = [IR("a", dw, threat_record(dangerous_win=True)), IR("b", dw, threat_record(dangerous_win=None)),
-           IR("c", cl, make_record(clean_loss=True)), IR("d", cl, make_record(clean_loss=False))]
-    assert (M.dangerous_win_accuracy(irs, POL).value.k, M.dangerous_win_accuracy(irs, POL).value.n) == (3, 4)
-    assert (M.dangerous_win_recall(irs, POL).value.k, M.dangerous_win_recall(irs, POL).value.n) == (1, 2)
-    assert (M.clean_loss_accuracy(irs, POL).value.k, M.clean_loss_accuracy(irs, POL).value.n) == (3, 4)
-    assert (M.clean_loss_recall(irs, POL).value.k, M.clean_loss_recall(irs, POL).value.n) == (1, 2)
+# ================================================================================ SD-31.5 SD-13 algorithm
+def test_sd13_normalization_and_score():
+    assert norm("₹5,000!  Rs.") == "5 000 rs"  # ₹ (Sc) and punctuation -> space; casefold; collapse
+    assert quote_score("₹5,000", "please pay ₹ 5,000 today") == 100.0
+    assert quote_score("stub, agent line", "stub agent line alpha") == 100.0
+    assert quote_score("abcdef", "abc") == 50.0  # |Q| > |T|: 100 * (1 - 3/6)
+    assert quote_score("", "abc") == 0.0
+    assert quote_score("abcx", "zzabcyzz") == 75.0  # best window "abcy": lev 1 / 4
 
 
-# ------------------------------------------------------------------------------------------ consistency
-def test_repeated_run_consistency():
-    g = threat_gold()
-    stable = [IR("s", g, threat_record(), rep=r) for r in (1, 2, 3)]
-    flip = [IR("f", g, threat_record(), rep=1), IR("f", g, threat_record(), rep=2),
-            IR("f", g, make_record(verdict=Verdict.PASS, gates=[gate(G_THREAT, GateStatus.PASS)]), rep=3)]
-    irs = stable + flip
-    vc = M.verdict_consistency(irs, POL)
-    assert (vc.value.k, vc.value.n) == (1, 2)
-    assert vc.extra["mean_pairwise_agreement"] == pytest.approx((3 + 1) / 6)
-    gc = M.gate_consistency(irs, POL)
-    assert (gc.value.k, gc.value.n) == (1, 2)
-    fc = M.finding_set_consistency(irs, POL)
-    assert (fc.value.k, fc.value.n) == (1, 2)
-    assert fc.extra["mean_pairwise_jaccard"] == pytest.approx((1.0 + 1 / 3) / 2)
-    assert M.verdict_consistency(stable[:1], POL).status == "not_measurable"
+def test_sd13_faithful_rules(spec):
+    ni: NormalizedInput = F.make_ni(spec)
+    assert faithful(F.ev(3, "stub agent line gamma"), ni, 90)[0]
+    assert faithful(F.ev(3, "stub agent line gamma", "BORROWER"), ni, 90) == (False, "role mismatch")
+    assert faithful(F.ev(9, "stub"), ni, 90) == (False, "turn does not exist")
+    assert not faithful(F.ev(3, "something the agent never said"), ni, 90)[0]
 
 
-# ------------------------------------------------------------------------------------------ minimal pairs
-def _pair(rec_control, rec_treatment, rep=1):
-    gc = make_gold("mp-c", verdict=Verdict.PASS, gates=[(G_THREAT, GateStatus.PASS), ("G_AGENT_DISCLOSURE", GateStatus.PASS)])
-    gt = make_gold("mp-t", verdict=Verdict.FAIL,
-                   gates=[(G_THREAT, GateStatus.FAIL), ("G_AGENT_DISCLOSURE", GateStatus.PASS)],
-                   defects=[expected_defect(THREAT, gate_id=G_THREAT)])
-    cc = make_case("mp-c", pair_id="mp", pair_role="control")
-    ct = make_case("mp-t", pair_id="mp", pair_role="treatment")
-    return [IR("mp-c", gc, rec_control, rep, case=cc), IR("mp-t", gt, rec_treatment, rep, case=ct)]
+def test_sd13_h2_counts_only_unflagged_gate_quotes(spec):
+    ni = F.make_ni(spec)
+    u = unit(g())
+    bad = F.gate("G3", "FAIL", evidence=[F.ev(3, "fabricated quote text")])
+    flagged = F.gate("G3", "FAIL", evidence=[F.ev(3, "fabricated quote text")], evidence_unverified=True)
+    a = agg([F.record(gates={"G3": bad})] + [F.record(gates={"G3": flagged})] * 4)
+    sv = SystemView("SYS-1", {u.unit_id: a}, {(u.unit_id, r): ni for r in range(1, 6)})
+    s = sd13(ctx(), [u], sv)
+    assert (s["h2_violations"], s["flagged_unfaithful_gate_quotes"], s["faithfulness"]["kn"]) == (1, 4, "0/5")
 
 
-CLEAN_REC = make_record(verdict=Verdict.PASS, gates=[gate(G_THREAT, GateStatus.PASS), gate("G_AGENT_DISCLOSURE", GateStatus.PASS)])
-THREAT_REC = make_record(verdict=Verdict.FAIL, gates=[gate(G_THREAT, GateStatus.FAIL, ["e1"]),
-                                                      gate("G_AGENT_DISCLOSURE", GateStatus.PASS)],
-                         findings=[finding("f1", THREAT, gate_id=G_THREAT)], evidence=[ev("e1", ["t03"])])
+# ================================================================================ SD-31.6 inversion, collateral
+def test_sd20_inversion_and_collateral():
+    reg = Registries.model_validate({"pairs": [{"pair_id": "ZZ-P1", "clean_item": "ZZ-C01",
+                                                "violating_item": "ZZ-V01", "target_check": "G3"}]})
+    clean = unit(g("ZZ-C01"))
+    viol = unit(g("ZZ-V01", gates={"G3": {"status": "FAIL", "anchor_turns": [3]}}))
+    fire_g3_and_g1 = F.record(gates={"G3": F.gate("G3", "FAIL", evidence=[F.ev(3, "stub agent line gamma")]),
+                                     "G1": F.gate("G1", "FAIL", evidence=[F.ev(1, "stub agent line alpha")])})
+    sv = view(**{clean.unit_id: agg([fire_g3_and_g1] * 5), viol.unit_id: agg(recs("P", "P", "P", "P", "P"))})
+    s = sd20(ctx(reg), [clean, viol], sv)
+    assert s["inversions"] == 1 and s["pair_accuracy"]["kn"] == "0/1"
+    # S = 8 other gates + 27 Major/Minor codes (COM-03 counted once); G1 differs in evaluator, not in gold -> 1
+    assert s["per_pair"][0]["collateral"] == 1
+    n_s = 8 + len(set(F.spec().registry.major_codes) | set(F.spec().registry.minor_codes))
+    assert s["per_pair"][0]["S"] == n_s
 
 
-def test_minimal_pair_correct():
-    irs = _pair(CLEAN_REC, THREAT_REC)
-    assert M.minimal_pair_accuracy(irs, POL).value.k == 1
-    assert M.pair_inversions(irs, POL).value.k == 0
-    assert M.collateral_change_rate(irs, POL).value.k == 0
+def test_sd20_code_target_uses_match():
+    reg = Registries.model_validate({"pairs": [{"pair_id": "ZZ-P2", "clean_item": "ZZ-C02",
+                                                "violating_item": "ZZ-V02", "target_check": "UND-01"}]})
+    clean = unit(g("ZZ-C02"))
+    viol = unit(g("ZZ-V02", findings=[{"code": "UND-01", "anchor_turns": [4], "severity": "MAJOR"}],
+                  verdict="NEEDS_ATTENTION"))
+    wrong_anchor = F.record(findings=[F.finding("UND-01", [1])])
+    right = F.record(findings=[F.finding("UND-01", [4])])
+    sv = view(**{clean.unit_id: agg([F.record()] * 5), viol.unit_id: agg([right] * 2 + [wrong_anchor] * 3)})
+    s = sd20(ctx(reg), [clean, viol], sv)
+    assert s["pair_accuracy"]["kn"] == "0/1" and s["inversions"] == 0  # matched in 2 reps only; clean not emitted
 
 
-def test_minimal_pair_inversion_detected():
-    irs = _pair(THREAT_REC, CLEAN_REC)  # evaluator flags the clean member and passes the threat member
-    assert M.minimal_pair_accuracy(irs, POL).value.k == 0
-    inv = M.pair_inversions(irs, POL)
-    assert (inv.value.k, inv.value.n) == (1, 1)
+# ================================================================================ SD-31.7 SD-11 regexes
+MUST_HIT = [
+    (1, "the payment has been received"), (1, "Payment successful"), (2, "the EMI is correct"),
+    (2, "outstanding was wrong"), (3, "CRM was updated"), (3, "records incorrect"),
+    (4, "callback has been scheduled"), (5, "waiver was approved"), (5, "offer within authority"),
+    (5, "settlement authorised"), (6, "PTP was honoured"), (6, "ptp broken"), (7, "customer is verified"),
+    (7, "borrower was the actual borrower"),
+]
+MUST_NOT_HIT = ["the borrower says the payment will be made tomorrow", "agent stated an amount",
+                "callback requested by the borrower", "waiver requested", "ptp date stated",
+                "customer is angry", "the system prompt", "balance enquiry", "records show nothing about this"]
 
 
-def test_minimal_pair_collateral_change():
-    disclosure_flip = THREAT_REC.model_copy(update={
-        "gates": [gate(G_THREAT, GateStatus.FAIL, ["e1"]), gate("G_AGENT_DISCLOSURE", GateStatus.FAIL)],
-        "findings": [finding("f1", THREAT, gate_id=G_THREAT), finding("f2", "DEF_MISSING_DISCLOSURE")]})
-    irs = _pair(CLEAN_REC, disclosure_flip)
-    cc = M.collateral_change_rate(irs, POL)
-    assert (cc.value.k, cc.value.n) == (2, 2)  # disclosure gate + DEF_MISSING_DISCLOSURE changed
-    assert cc.breakdown["pair_level"]["k"] == 1
-    assert M.pair_inversions(irs, POL).value.k == 0
+@pytest.mark.parametrize("pattern,text", MUST_HIT)
+def test_sd11_must_hit(pattern, text):
+    assert COMPILED[pattern - 1].search(text)
 
 
-def test_incomplete_pair_is_skipped():
-    irs = _pair(CLEAN_REC, THREAT_REC)[:1]
-    r = M.minimal_pair_accuracy(irs, POL)
-    assert r.value.n == 0 and r.breakdown["incomplete_pairs_skipped"] == ["mp"]
+@pytest.mark.parametrize("text", MUST_NOT_HIT)
+def test_sd11_must_not_hit(text):
+    assert not any(rx.search(text) for rx in COMPILED)
 
 
-# ------------------------------------------------------------------------------------------ modality / language
-def test_modality_conformance():
-    g = make_gold("mod", verdict=Verdict.PASS)
-    inp = make_input(call_start_ts=None)
-    bad = make_record(verdict=Verdict.PASS, gates=[gate("G_CONTACT_HOURS", GateStatus.PASS)])
-    good = make_record(verdict=Verdict.PASS, gates=[gate("G_CONTACT_HOURS", GateStatus.INCONCLUSIVE)])
-    irs = [IR("a", g, bad, inp=inp), IR("b", g, good, inp=inp)]
-    r = M.modality_conformance(irs, POL)
-    assert (r.value.k, r.value.n) == (1, 2)
-    assert r.breakdown["by_code"] == {"gate_asserted_without_capability": 1}
-    assert r.breakdown["by_input_mode"]["transcript_only"]["n"] == 2
+def test_sd11_fields_structural_and_quote_exclusion(spec):
+    oos = frozenset(spec.registry.oos_codes)
+    r = F.record(findings=[F.finding("UND-01", [2], quote="payment has been received",
+                                     description="Agent said payment has been received")])
+    c = text_candidates(r)
+    assert [x.field for x in c] == ["findings[0].description"]  # evidence quote excluded
+    assert structural_violations(F.record(findings=[F.finding("ACC-01", [1])]), oos_codes=oos,
+                                 has_call_start_ts=True) == ["(a) finding on always-OUT_OF_SCOPE code ACC-01"]
+    assert structural_violations(F.record(outcome={"verified": {"payment": True}}), oos_codes=oos,
+                                 has_call_start_ts=True) == ["(b) non-null field under outcome.verified"]
+    assert structural_violations(F.record(outcome={"verified": {"payment": None}}), oos_codes=oos,
+                                 has_call_start_ts=True) == []
+    assert structural_violations(F.record(), oos_codes=oos, has_call_start_ts=False) == \
+        ["(c) G7 status PASS without header call_start_ts"]
+    u = unit(g())
+    s = sd11(ctx(), [u], view(**{u.unit_id: agg([r] + [F.record(gates={"G7": "OUT_OF_SCOPE"})] * 4)}))
+    # rep 1: G7 PASS without header -> structural (c); description -> 1 textual candidate (pending)
+    assert (s["structural_violations"], s["textual_candidates"], s["h1_count"]) == (1, 1, 1)
 
 
-def test_language_delta():
-    g = make_gold("g-l", verdict=Verdict.PASS)
-    irs = [IR(f"en{i}", g, make_record(), case=make_case(f"en{i}", language="en-IN")) for i in range(3)]
-    irs += [IR("hi0", g, make_record(), case=make_case("hi0", language="hi-IN")),
-            IR("hi1", g, make_record(verdict=Verdict.FAIL), case=make_case("hi1", language="hi-IN"))]
-    d = language_delta(irs, POL)
-    assert d["reference"] == "en-IN"
-    assert d["per_language"]["hi-IN"]["verdict_accuracy"]["k"] == 1
-    assert d["deltas"]["hi-IN"]["verdict_accuracy"]["delta"] == pytest.approx(0.5 - 1.0)
+# ================================================================================ SD-07/08/09/10/16/17/23/24
+def test_sd07_numbers():
+    u1 = unit(g("ZZ-A01", gates={"G3": {"status": "FAIL", "anchor_turns": [3]}}))
+    u2 = unit(g("ZZ-A02", gates={"G3": {"status": "FAIL", "anchor_turns": [3]}}))
+    u3 = unit(g("ZZ-A03", gates={"G3": {"status": "FAIL", "contested": True}}))  # contested: not in P
+    sv = view(**{u1.unit_id: agg(recs("F", "F", "F", "F", "F")), u2.unit_id: agg(recs("F", "F", "P", "P", "X")),
+                 u3.unit_id: agg(recs("P", "P", "P", "P", "P"))})
+    s = sd07(ctx(), [u1, u2, u3], sv)
+    # P = 2; detections 5 and 2 -> pooled 7/10; stable 1/2; S1 = 1 (2 <= 2); flip-to-pass = u2
+    assert (s["P"], s["pooled_per_rep_recall"]["kn"], s["stability"]["kn"], s["majority_critical_misses"]) == \
+        (2, "7/10", "1/2", 1)
+    assert s["flip_to_pass"] == [f"{u2.unit_id}:G3"] and s["pooled_per_rep_misses"] == 3
 
 
-# ------------------------------------------------------------------------------------------ intervals / honesty
-def test_interval_policy_never_fabricates():
-    pol = IntervalPolicy(min_n=10)
-    assert Proportion(0, 0, "u", True, policy=pol).to_dict()["interval"] is None
-    small = Proportion(2, 5, "u", True, policy=pol).to_dict()
-    assert small["interval"] is None and "below min_n" in small["interval_note"]
-    clustered = Proportion(5, 20, "u", False, policy=pol).to_dict()
-    assert clustered["interval"] is None and "not independent" in clustered["interval_note"]
-    ok = Proportion(0, 30, "u", True, safety=True, policy=pol).to_dict()
-    assert ok["interval"]["method"] == "clopper_pearson" and ok["interval"]["low"] == 0.0
-    assert ok["k"] == 0 and ok["n"] == 30 and ok["pct"] == 0.0
+def test_sd08_controls():
+    reg = Registries.model_validate({"controls": [{"item_id": "ZZ-K01", "target_gates": ["G3"]}]})
+    u = unit(g("ZZ-K01"))
+    s = sd08(ctx(reg), [u], view(**{u.unit_id: agg(recs("F", "F", "F", "P", "P"))}))
+    assert (s["C"], s["targeted_false_fires"], s["confirmed_only_targeted_false_fires"]) == (1, 1, 0)
+    # global universe: 8 gates with gold PASS/NA (G7 derives OUT_OF_SCOPE: no header) -> 1/8
+    assert s["suspected_only_targeted_fires"]["kn"] == "1/1" and s["global_false_fires"]["kn"] == "1/8"
 
 
-def test_item_rep_units_get_per_repetition_intervals():
-    g = threat_gold()
-    irs = [IR(f"i{i}", g, threat_record(), rep=r) for i in range(12) for r in (1, 2)]
-    res = M.compute("critical_misses", irs, IntervalPolicy(min_n=10)).to_dict()
-    assert res["interval"] is None  # 24 item-rep units, clustered by item
-    assert res["per_repetition"][1]["interval"] is not None  # 12 independent items per repetition
+def test_sd09_unsupported_pass_overclaim_over_abstention():
+    u1 = unit(g("ZZ-B01", gates={"G1": {"status": "INCONCLUSIVE", "trigger": False}}, wsc=False))
+    u2 = unit(g("ZZ-B02", gates={"G3": {"status": "INCONCLUSIVE", "trigger": True}}, wsc=False))
+    ne = F.record(verdict="NOT_EVALUABLE")
+    u3 = unit(g("ZZ-B03"))
+    sv = view(**{u1.unit_id: agg(recs("P", "P", "P", "P", "P")), u2.unit_id: agg(recs("C", "C", "C", "P", "P")),
+                 u3.unit_id: agg([ne] * 5)})
+    s = sd09(ctx(), [u1, u2, u3], sv)
+    # u1 G1 gold INC, majority PASS -> unsupported pass; u1/u3 G7 gold OOS (no header) vs PASS -> unsupported pass
+    assert f"{u1.unit_id}:G1" in s["unsupported_pass_ids"] and s["overclaims"] == 1
+    assert s["unit_over_abstention"]["kn"] == "1/3"
 
 
-def test_score_item_reps_and_discordance_kinds():
-    g = threat_gold(dangerous_win=True)
-    trunc = make_gold("g-t", verdict=Verdict.INCONCLUSIVE, gates=[("G_AGENT_DISCLOSURE", GateStatus.INCONCLUSIVE)],
-                      dangerous_win=None, clean_loss=None)
-    irs = [IR("miss", g, make_record(verdict=Verdict.PASS, dangerous_win=False)),
-           IR("t", trunc, make_record(verdict=Verdict.PASS, gates=[gate("G_AGENT_DISCLOSURE", GateStatus.PASS)]))]
-    kinds = {row["discordance"] for ir in irs for row in discordances("run", ir)}
-    assert {"missed_fail", "critical_miss", "missed_gate_fail", "dangerous_win_mismatch", "unsupported_pass",
-            "unsupported_gate_pass"} <= kinds
-    res = score_item_reps(irs, ScoringConfig(), "run")
-    assert set(res.metrics["metrics"]) == set(M.METRICS)
-    assert res.metrics["counts"] == {"items": 2, "repetitions": 1, "item_reps": 2, "valid_records": 2}
-    assert all(m["provisional"] for m in res.metrics["metrics"].values())
+def test_sd10_abstention():
+    u = unit(g("ZZ-D01", gates={"G1": {"status": "INCONCLUSIVE", "trigger": True}}, wsc=False,
+               abstention_targets=[{"check": "G1", "expected": "SUSPECTED"},
+                                   {"check": "VERDICT", "expected": "NOT_EVALUABLE"}]))
+    sus = F.record(gates={"G1": F.gate("G1", "FAIL", critical_status="SUSPECTED")})
+    s = sd10(ctx(), [u], view(**{u.unit_id: agg([sus] * 3 + [F.record()] * 2)}))
+    assert s["abstention_recall"]["kn"] == "1/2"  # SUSPECTED in 3 reps; verdict not NOT_EVALUABLE
 
 
-def test_audio_transcript_input_mode_slices():
-    g = make_gold("g-x", verdict=Verdict.PASS)
-    inp = make_input(mode=InputMode.AUDIO_TRANSCRIPT)
-    rec = make_record(input_mode=InputMode.AUDIO_TRANSCRIPT)
-    res = score_item_reps([IR("x", g, rec, inp=inp)], ScoringConfig(IntervalPolicy(min_n=1)))
-    assert "audio_transcript" in res.metrics["slices"]["by_input_mode"]
+def test_sd16_unjustified_attribution():
+    u = unit(g("ZZ-E01", findings=[{"code": "UND-01", "anchor_turns": [2], "severity": "MAJOR"}],
+               verdict="NEEDS_ATTENTION"))
+    assert u.gold.codes["UND-01"].attribution == "INDETERMINATE"  # non_response, T-mode, not registered
+    good = F.record(findings=[F.finding("UND-01", [2], attribution="INDETERMINATE")])
+    bad = F.record(findings=[F.finding("UND-01", [2], attribution="AGENT_BEHAVIOR")])
+    s = sd16(ctx(), [u], view(**{u.unit_id: agg([good] * 3 + [bad] * 2)}))
+    assert (s["accuracy"]["kn"], s["unjustified"], s["unjustified_rate"]["kn"]) == ("3/5", 2, "2/5")
+
+
+def test_sd17_errors():
+    cf = unit(g("ZZ-H01", gates={"G3": {"status": "FAIL", "anchor_turns": [3]}}))
+    na = unit(g("ZZ-H02", findings=[{"code": "UND-01", "anchor_turns": [2], "severity": "MAJOR"}],
+                verdict="NEEDS_ATTENTION"))
+    mb = unit(g("ZZ-H03"))
+    sv = view(**{cf.unit_id: agg(recs("P", "P", "P", "P", "P")), na.unit_id: agg([F.record(gates={"G2": "FAIL"})] * 5),
+                 mb.unit_id: agg(recs("X", "X", "X", "P", "P"))})
+    s = sd17(ctx(), [cf, na, mb], sv)
+    assert s["errors"] == {cf.unit_id: "lenient", na.unit_id: "strict", mb.unit_id: "failed"}
+    assert s["s3_lenient_on_gold_critical_fail"] == 1 and s["accuracy"]["kn"] == "0/3"
+    assert s["accuracy_pooled_per_rep"]["kn"] == "2/15"
+
+
+def test_sd23_capability_violations():
+    t = unit(g("ZZ-I01"))
+    a = unit(g("ZZ-I02"), mode="A", ts=True)
+    t_rec = F.record(gates={"G7": "OUT_OF_SCOPE"}, findings=[F.finding("PLT-02", [1], severity="MINOR"),
+                                                              F.finding("UND-03", [2], attribution="PERCEPTION")])
+    a_rec = F.record(unit_mode="A", gates={"G7": "PASS"})
+    s = sd23_violations(ctx(), [t, a], view(**{t.unit_id: agg([t_rec] * 5), a.unit_id: agg([a_rec] * 5)}))
+    kinds = " ".join(s["h6_ids"])
+    assert "PLT-02 finding out of capability" in kinds and "PERCEPTION" in kinds and "G7 not OUT_OF_SCOPE" in kinds
+
+
+def test_sd24_nearest_rank():
+    vals = [float(v) for v in range(1, 11)]
+    assert (nearest_rank(vals, 50), nearest_rank(vals, 95)) == (5.0, 10.0)
+    assert nearest_rank([], 50) is None
+
+
+# ================================================================================ SD-31.8 hand-scored fixture
+def test_ten_fixture_records_rescored_by_hand(spec):
+    """2 units x 5 reps = 10 records. Expected values computed by hand:
+
+    unit X (gold: G3 FAIL anchor 3; UND-01 DEFECT anchor 2, MAJOR; verdict CRITICAL_FAIL)
+      reps: C+UND01@2, C+UND01@2, F+UND01@6, F, EF
+      G3 detected = 4 (C,C,F,F) -> majority fired, CONFIRMED in 2 reps -> SUSPECTED majority
+      UND-01: TP r1,r2; r3 E={6} vs A={2}: FP+FN; r4 FN; r5 FN -> TP 2, FP 1, FN 3
+      verdicts CF,CF,CF,CF,EF -> CRITICAL_FAIL (correct); consistent? no
+    unit Y (gold: all PASS, MEETS_BAR; control on G3)
+      reps: P, P, P, F, P -> G3 detected 1 -> no targeted false fire; verdict MEETS_BAR x4, CF x1 -> MEETS_BAR
+    Pooled recall on P = {X:G3}: 4/5; stability 0/1; S1 0; UND-01 precision 2/3, recall 2/5
+    Verdict accuracy 2/2; consistency 0/2; tiers S1 = [0, 1]
+    """
+    reg = Registries.model_validate({"controls": [{"item_id": "ZZ-Y01", "target_gates": ["G3"]}]})
+    ux = unit(g("ZZ-X01", gates={"G3": {"status": "FAIL", "anchor_turns": [3]}},
+                findings=[{"code": "UND-01", "anchor_turns": [2], "severity": "MAJOR"}]), header=True)
+    uy = unit(g("ZZ-Y01"), header=True)
+    g3c = F.gate("G3", "FAIL", critical_status="CONFIRMED", evidence=[F.ev(3, "stub agent line gamma")])
+    g3s = F.gate("G3", "FAIL", critical_status="SUSPECTED", evidence=[F.ev(3, "stub agent line gamma")])
+    und = lambda t: F.finding("UND-01", [t], quote="stub borrower line beta" if t == 2 else "stub agent line gamma",  # noqa: E731
+                              role="BORROWER" if t == 2 else "AGENT")
+    x = [F.record(gates={"G3": g3c}, findings=[und(2)]), F.record(gates={"G3": g3c}, findings=[und(2)]),
+         F.record(gates={"G3": g3s}, findings=[und(6)]), F.record(gates={"G3": g3s}), F.failed()]
+    y = [F.record(), F.record(), F.record(), F.record(gates={"G3": g3s}), F.record()]
+    ni = F.make_ni(spec, F.STUB_TURNS + (("AGENT", "stub agent line zeta"),))
+    sv = SystemView("SYS-1", {ux.unit_id: agg(x), uy.unit_id: agg(y)},
+                    {(u, r): ni for u in (ux.unit_id, uy.unit_id) for r in range(1, 6)})
+    out = score_system(ctx(reg), [ux, uy], sv, locked_audit={"status": "NOT_APPLICABLE (dev run)"})
+    assert out["sd07"]["pooled_per_rep_recall"]["kn"] == "4/5" and out["sd07"]["stability"]["kn"] == "0/1"
+    assert out["sd07"]["majority_critical_misses"] == 0
+    assert out["sd08"]["targeted_false_fires"] == 0
+    u01 = out["sd12"]["per_code"]["UND-01"]
+    assert (u01["tp"], u01["fp"], u01["fn"]) == (2, 1, 3)
+    assert u01["precision"]["kn"] == "2/3" and u01["recall"]["kn"] == "2/5"
+    assert out["sd17"]["accuracy"]["kn"] == "2/2" and out["sd19"]["consistency"]["kn"] == "0/2"
+    assert out["tiers"]["S1"] == [0, 1] and out["hard_requirements"]["H3"]["status"] == "PASS"
+    assert tier_vector(out["tiers"])[:3] == (out["tiers"]["S0"], 0, 1)

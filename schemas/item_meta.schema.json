@@ -1,0 +1,142 @@
+{
+  "$defs": {
+    "ItemArtifacts": {
+      "additionalProperties": false,
+      "properties": {
+        "audio": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Audio"
+        },
+        "platform_transcript": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Platform Transcript"
+        },
+        "transcript": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Transcript"
+        }
+      },
+      "title": "ItemArtifacts",
+      "type": "object"
+    },
+    "Pack": {
+      "description": "frozen-contract.md \u00a712 packs.",
+      "enum": [
+        "core",
+        "micro",
+        "abstention",
+        "modality",
+        "language_twin",
+        "snippet",
+        "redteam",
+        "calibration"
+      ],
+      "title": "Pack",
+      "type": "string"
+    },
+    "Split": {
+      "description": "experiment-protocol.md P-1 (dev in-repo; holdout and red team under $BENCH_PRIVATE_DIR).",
+      "enum": [
+        "dev",
+        "holdout",
+        "redteam"
+      ],
+      "title": "Split",
+      "type": "string"
+    },
+    "UnitMode": {
+      "description": "Unit modes (experiment-protocol P-5). Directory-safe spelling of `A+T(platform)` is `A+T-platform`.",
+      "enum": [
+        "TRANSCRIPT",
+        "T-gold",
+        "T-asr",
+        "A",
+        "A+T",
+        "A+T-platform"
+      ],
+      "title": "UnitMode",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "One benchmark item. Audio renderings of a textual item (e.g. P-01@audio) are units of the same item\n(T-gold, T-asr, A, A+T[, A+T-platform]) so that they share its content gold and can never cross splits;\naudio-native items (S-01..S-04) have audio units only.",
+  "properties": {
+    "artifacts": {
+      "$ref": "#/$defs/ItemArtifacts"
+    },
+    "item_id": {
+      "pattern": "^[A-Z][A-Z0-9]*(-[A-Z0-9]+)+$",
+      "title": "Item Id",
+      "type": "string"
+    },
+    "language": {
+      "enum": [
+        "en",
+        "hi",
+        "hi-en",
+        "other"
+      ],
+      "title": "Language",
+      "type": "string"
+    },
+    "pack": {
+      "$ref": "#/$defs/Pack"
+    },
+    "schema_version": {
+      "const": "item_meta/1.0.0",
+      "default": "item_meta/1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "split": {
+      "$ref": "#/$defs/Split"
+    },
+    "synthetic": {
+      "default": true,
+      "title": "Synthetic",
+      "type": "boolean"
+    },
+    "unit_modes": {
+      "items": {
+        "$ref": "#/$defs/UnitMode"
+      },
+      "minItems": 1,
+      "title": "Unit Modes",
+      "type": "array"
+    }
+  },
+  "required": [
+    "item_id",
+    "split",
+    "pack",
+    "language",
+    "unit_modes",
+    "artifacts"
+  ],
+  "title": "ItemMeta",
+  "type": "object"
+}

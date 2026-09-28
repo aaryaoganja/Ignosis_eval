@@ -4,19 +4,23 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ignosis-eval"
-version = "0.1.0"
+version = "0.2.0"
 description = "Reliability-experiment infrastructure for the Ignosis Voice AI Quality Evaluator (collections)."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
   "pydantic>=2.6,<3",
   "PyYAML>=6.0",
+  "tzdata>=2024.1",  # zoneinfo Asia/Kolkata for the G7 calling-window pre-check on hosts without a tz database
 ]
 
 [project.optional-dependencies]
 dev = [
   "pytest>=8",
   "jsonschema>=4.20",
+  "ruff>=0.4",
+  "mypy>=1.8",
+  "types-PyYAML",
 ]
 
 [project.scripts]
@@ -35,3 +39,12 @@ addopts = "-q"
 [tool.ruff]
 line-length = 110
 target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+packages = ["ignosis_eval"]
+mypy_path = "src"
+ignore_missing_imports = true
+# Superseded infrastructure-phase module kept on disk pending the owner's decision (docs/spec-reconciliation.md,
+# "Superseded files"); no live module imports it (tests/test_architecture_boundaries.py).
+exclude = ["src/ignosis_eval/evaluators/heuristics\\.py"]

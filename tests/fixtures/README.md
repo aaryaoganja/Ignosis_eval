@@ -1,5 +1,10 @@
 # Test fixtures
 
+> **SUPERSEDED (branch `spec/frozen-stage4`).** No test uses `benchmark_smoke/` or `make_smoke_fixture.py` any
+> more. Their realistic-looking dialogs conflict with experiment-protocol P-1 rule 3 (tests must use minimal,
+> obviously synthetic stubs; see `tests/factories.py`). They are kept on disk only until the owner decides whether to
+> delete them (`docs/spec-reconciliation.md` §6). The commands below refer to the retired CLI.
+
 `benchmark_smoke/` is a **test fixture**. It is not benchmark data, and its `gold/` files are not
 benchmark gold. It contains 10 tiny synthetic cases. The transcripts were written by hand in
 `make_smoke_fixture.py`, and the "gold" files were written by hand alongside them. No evaluator output

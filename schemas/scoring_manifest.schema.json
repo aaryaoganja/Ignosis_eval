@@ -1,0 +1,114 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "bench_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Bench Manifest Sha256",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "gold_derivation_version": {
+      "minLength": 1,
+      "title": "Gold Derivation Version",
+      "type": "string"
+    },
+    "gold_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Gold Manifest Sha256",
+      "type": "string"
+    },
+    "human_confirmations_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Human Confirmations Sha256"
+    },
+    "metric_definitions_version": {
+      "minLength": 1,
+      "title": "Metric Definitions Version",
+      "type": "string"
+    },
+    "outputs": {
+      "additionalProperties": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "title": "Outputs",
+      "type": "object"
+    },
+    "profile_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Profile Sha256",
+      "type": "string"
+    },
+    "registries_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Registries Sha256",
+      "type": "string"
+    },
+    "rubric_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Rubric Sha256",
+      "type": "string"
+    },
+    "run_id": {
+      "minLength": 1,
+      "title": "Run Id",
+      "type": "string"
+    },
+    "sample_seed": {
+      "title": "Sample Seed",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "scoring_manifest/2.0.0",
+      "default": "scoring_manifest/2.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "scorer_version": {
+      "minLength": 1,
+      "title": "Scorer Version",
+      "type": "string"
+    },
+    "scoring_id": {
+      "minLength": 1,
+      "title": "Scoring Id",
+      "type": "string"
+    },
+    "view_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "View Manifest Sha256",
+      "type": "string"
+    }
+  },
+  "required": [
+    "run_id",
+    "scoring_id",
+    "scorer_version",
+    "metric_definitions_version",
+    "gold_derivation_version",
+    "view_manifest_sha256",
+    "bench_manifest_sha256",
+    "gold_manifest_sha256",
+    "registries_sha256",
+    "rubric_sha256",
+    "profile_sha256",
+    "sample_seed",
+    "created_at",
+    "outputs"
+  ],
+  "title": "ScoringManifest",
+  "type": "object"
+}

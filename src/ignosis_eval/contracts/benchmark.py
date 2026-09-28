@@ -1,7 +1,9 @@
-"""Benchmark metadata and manifest contracts.
+"""Benchmark item metadata, unit facts and manifests (experiment-protocol P-1, P-5; scoring-spec SD-01).
 
-Case metadata is hidden from evaluators (it lives in case cards and manifests, which are protected
-paths). Evaluators only ever receive the Canonical Input.
+Layout (see ignosis_eval/benchmark/layout.py):
+  dev      bench/dev/items/<item_id>/{item.json, transcript, audio}        (in repository)
+  private  $BENCH_PRIVATE_DIR/{holdout,redteam}/items/<item_id>/...      (outside the repository)
+Private files are hash-listed in the repository (P-1 rule 5) by a `private` scope BenchManifest.
 """
 
 from __future__ import annotations
@@ -10,126 +12,136 @@ from typing import Literal
 
 from pydantic import AwareDatetime, Field, model_validator
 
-from ignosis_eval.contracts._base import CaseId, Contract, Id, LanguageTag, NonEmptyStr, Sha256Hex
-from ignosis_eval.contracts.enums import Capability, InputMode, SourceKind, Split
-from ignosis_eval.versions import BENCHMARK_MANIFEST_SCHEMA, GOLD_MANIFEST_SCHEMA
+from ignosis_eval.contracts._base import Contract, ItemId, NonEmptyStr, Sha256Hex
+from ignosis_eval.contracts.enums import InputMode, Pack, Split, TranscriptProvenance, UnitMode
+from ignosis_eval.versions import BENCH_MANIFEST_SCHEMA, GOLD_MANIFEST_SCHEMA, ITEM_META_SCHEMA
+
+AUDIO_UNIT_MODES = frozenset({UnitMode.T_GOLD, UnitMode.T_ASR, UnitMode.A, UnitMode.A_T, UnitMode.A_T_PLATFORM})
 
 
-class CapabilityBoundaries(Contract):
-    """What the case needs to be fully evaluable, and which single modality would suffice."""
-
-    required_capabilities: list[Capability] = Field(default_factory=list)
-    transcript_sufficient: bool
-    audio_sufficient: bool
-    notes: str | None = None
+class ItemArtifacts(Contract):
+    transcript: str | None = None  # .txt or .json (§2.3), relative to the item directory
+    audio: str | None = None  # .wav / .mp3 / .m4a
+    platform_transcript: str | None = None  # weaker-ASR transcript for A+T-platform (B-07)
 
 
-class CaseMetadata(Contract):
-    case_id: CaseId
+class ItemMeta(Contract):
+    """One benchmark item. Audio renderings of a textual item (e.g. P-01@audio) are units of the same item
+    (T-gold, T-asr, A, A+T[, A+T-platform]) so that they share its content gold and can never cross splits;
+    audio-native items (S-01..S-04) have audio units only."""
+
+    schema_version: Literal["item_meta/1.0.0"] = ITEM_META_SCHEMA
+    item_id: ItemId
     split: Split
-    scenario: NonEmptyStr
-    category: NonEmptyStr
-    intended_modality: InputMode
-    language: LanguageTag
-    synthetic: bool
-    source_kind: SourceKind
-    pair_id: Id | None = None
-    pair_role: str | None = None
-    attribution_pair_id: Id | None = None
-    judge_bait: bool = False
-    judge_bait_kind: str | None = None
-    capability_boundaries: CapabilityBoundaries
-    tags: list[str] = Field(default_factory=list)
+    pack: Pack
+    language: Literal["en", "hi", "hi-en", "other"]
+    unit_modes: list[UnitMode] = Field(min_length=1)
+    artifacts: ItemArtifacts
+    synthetic: bool = True
 
     @model_validator(mode="after")
-    def _consistency(self) -> "CaseMetadata":
-        if self.synthetic != self.source_kind.is_synthetic:
-            raise ValueError("synthetic flag disagrees with source_kind")
-        if (self.pair_id is None) != (self.pair_role is None):
-            raise ValueError("pair_id and pair_role must be set together")
-        if self.judge_bait != (self.judge_bait_kind is not None):
-            raise ValueError("judge_bait and judge_bait_kind must be set together")
+    def _modes(self) -> "ItemMeta":
+        errs = []
+        a = self.artifacts
+        modes = set(self.unit_modes)
+        if len(modes) != len(self.unit_modes):
+            errs.append("duplicate unit modes")
+        need_transcript = {UnitMode.TRANSCRIPT, UnitMode.T_GOLD, UnitMode.A_T}
+        need_audio = AUDIO_UNIT_MODES
+        if modes & need_transcript and not a.transcript:
+            errs.append("TRANSCRIPT / T-gold / A+T units require a transcript artifact")
+        if modes & need_audio and not a.audio:
+            errs.append("audio units require an audio artifact")
+        if UnitMode.A_T_PLATFORM in modes and not a.platform_transcript:
+            errs.append("A+T-platform units require a platform_transcript artifact (B-07)")
+        for p in (a.transcript, a.audio, a.platform_transcript):
+            if p and (p.startswith("/") or ".." in p.split("/")):
+                errs.append(f"artifact path must be relative to the item directory: {p}")
+        if self.pack is Pack.REDTEAM and self.split is not Split.REDTEAM:
+            errs.append("red-team items belong to the redteam split")
+        if errs:
+            raise ValueError("; ".join(errs))
         return self
+
+    @property
+    def scoring_role(self) -> Literal["scored", "component", "never"]:
+        if self.pack is Pack.SNIPPET:
+            return "component"  # SD-22 component tests, not an architecture comparison
+        if self.pack is Pack.CALIBRATION:
+            return "never"  # §12.7 labeler calibration, never scored
+        return "scored"
+
+
+class UnitFacts(Contract):
+    """Facts about one unit that the capability table conditions on (derived at manifest build)."""
+
+    item_id: ItemId
+    unit_mode: UnitMode
+    input_mode: InputMode
+    has_call_start_ts: bool
+    has_timestamps: bool
+    provenance: TranscriptProvenance | None
+    truncated_start: bool
+
+    @property
+    def unit_id(self) -> str:
+        return f"{self.item_id}__{self.unit_mode.value}"
 
 
 class FileHash(Contract):
-    path: NonEmptyStr  # relative to the benchmark root, POSIX separators
+    path: NonEmptyStr  # relative to the scope root, POSIX separators
     sha256: Sha256Hex
     kind: Literal["json_canonical", "raw_bytes"]
 
 
-class CaseEntry(Contract):
-    metadata: CaseMetadata
-    input_path: NonEmptyStr
-    case_card_path: NonEmptyStr
-    files: list[FileHash]  # every benchmark file of the case except gold (input, audio, sidecars, card)
-    content_fingerprint: Sha256Hex  # modality content only; used to detect cross-split leakage
+class ItemEntry(Contract):
+    meta: ItemMeta
+    files: list[FileHash]
+    units: list[UnitFacts]
+    content_fingerprint: Sha256Hex
 
 
-class BenchmarkManifest(Contract):
-    schema_version: Literal["benchmark_manifest/1.0.0"] = BENCHMARK_MANIFEST_SCHEMA
+class BenchManifest(Contract):
+    schema_version: Literal["bench_manifest/2.0.0"] = BENCH_MANIFEST_SCHEMA
     dataset_name: NonEmptyStr
     dataset_version: NonEmptyStr
+    scope: Literal["dev", "private"]
     created_at: AwareDatetime
     created_by: NonEmptyStr
-    cases: list[CaseEntry]
-    split_hashes: dict[Split, Sha256Hex]
+    items: list[ItemEntry]
     dataset_hash: Sha256Hex
     notes: str | None = None
 
     @model_validator(mode="after")
-    def _unique(self) -> "BenchmarkManifest":
-        ids = [c.metadata.case_id for c in self.cases]
+    def _unique(self) -> "BenchManifest":
+        ids = [i.meta.item_id for i in self.items]
         if len(ids) != len(set(ids)):
-            raise ValueError("duplicate case ids in benchmark manifest")
+            raise ValueError("duplicate item ids")
         return self
 
-    def case(self, case_id: str) -> CaseEntry | None:
-        return next((c for c in self.cases if c.metadata.case_id == case_id), None)
-
-    def split_cases(self, split: Split) -> list[CaseEntry]:
-        return [c for c in self.cases if c.metadata.split is split]
+    def item(self, item_id: str) -> ItemEntry | None:
+        return next((i for i in self.items if i.meta.item_id == item_id), None)
 
 
 class GoldManifestEntry(Contract):
-    item_id: CaseId
+    item_id: ItemId
     split: Split
-    path: NonEmptyStr
+    path: NonEmptyStr  # relative to the gold directory of the scope
     sha256: Sha256Hex
 
 
 class GoldManifest(Contract):
-    schema_version: Literal["gold_manifest/1.0.0"] = GOLD_MANIFEST_SCHEMA
+    schema_version: Literal["gold_manifest/2.0.0"] = GOLD_MANIFEST_SCHEMA
     gold_version: NonEmptyStr
+    scope: Literal["dev", "private"]
     dataset_name: NonEmptyStr
     dataset_version: NonEmptyStr
-    benchmark_manifest_sha256: Sha256Hex
+    bench_manifest_sha256: Sha256Hex
     labeling_protocol_version: NonEmptyStr
     frozen_at: AwareDatetime
     frozen_by: NonEmptyStr
     entries: list[GoldManifestEntry]
-    split_hashes: dict[Split, Sha256Hex]
     gold_hash: Sha256Hex
 
     def entry(self, item_id: str) -> GoldManifestEntry | None:
         return next((e for e in self.entries if e.item_id == item_id), None)
-
-
-class HoldoutRegistryEntry(Contract):
-    case_id: CaseId
-    content_fingerprint: Sha256Hex
-    registered_at: AwareDatetime
-
-
-class HoldoutRegistry(Contract):
-    """Append-only record of every case ever placed in the holdout split.
-
-    Once registered, a case id (or its content) may never appear in another split, and a registered
-    case may never disappear. Guards against holdout cases leaking into dev/tuning.
-    """
-
-    schema_version: Literal["holdout_registry/1.0.0"] = "holdout_registry/1.0.0"
-    entries: list[HoldoutRegistryEntry] = Field(default_factory=list)
-
-    def ids(self) -> set[str]:
-        return {e.case_id for e in self.entries}

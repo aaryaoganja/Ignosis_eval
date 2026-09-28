@@ -1,9 +1,11 @@
-"""Normalization: benchmark Canonical Input -> the normalized input handed to the evaluator.
+"""Shared front end (L0–L3): intake -> ASR (cached) -> normalized turns -> role gate -> evaluability/pre-checks.
 
-* transcript_only / audio_transcript: identity (the provided transcript is used as-is).
-* audio_only: the pipeline ASR produces a transcript (provenance.source = pipeline_asr); if ASR yields
-  nothing, the input stays transcript-less and `asr_failed` is added to the evaluability signals.
-The audio file hash is verified before ASR. The normalized input is persisted per repetition.
+One implementation shared by every system (experiment-protocol P-2). Unit modes (P-5):
+  TRANSCRIPT / T-gold   supplied transcript as TRANSCRIPT
+  T-asr                 our cached ASR output supplied as TRANSCRIPT, provenance offline_asr
+  A                     audio only: ASR text, diarized roles; no header (call_start_ts never from audio, R-08)
+  A+T                   audio + supplied transcript (evaluation text per §2.4; divergence check not built yet)
+  A+T-platform          audio + weaker-ASR transcript, provenance platform_live_asr
 """
 
 from __future__ import annotations
@@ -11,49 +13,96 @@ from __future__ import annotations
 from pathlib import Path
 
 from ignosis_eval.canonical import sha256_bytes
-from ignosis_eval.contracts.canonical_input import (
-    CanonicalInput,
-    Transcript,
-    TranscriptProvenance,
-    derive_evidence_availability,
-)
-from ignosis_eval.contracts.enums import EvaluabilityIssue, InputMode, TimestampSource, TranscriptSource
-from ignosis_eval.pipeline.asr import ASRClient
+from ignosis_eval.contracts.benchmark import ItemMeta, UnitFacts
+from ignosis_eval.contracts.canonical_input import ASRRef, AudioRef, NormalizedInput, TranscriptHeader, Turn
+from ignosis_eval.contracts.enums import UNIT_MODE_INPUT, Role, TranscriptProvenance, UnitMode
+from ignosis_eval.pipeline.asr import ASRAdapter, ASRUnavailableError
+from ignosis_eval.pipeline.intake import ParsedTranscript, parse_transcript
+from ignosis_eval.pipeline.prechecks import run_frontend
+from ignosis_eval.spec.loader import Spec
 
 
 class NormalizationError(RuntimeError):
     pass
 
 
-def normalize_input(inp: CanonicalInput, case_dir: Path, asr: ASRClient | None) -> CanonicalInput:
-    if inp.input_mode is not InputMode.AUDIO_ONLY or inp.transcript is not None:
-        return inp
-    assert inp.audio is not None
-    audio_path = Path(case_dir) / inp.audio.uri
-    if not audio_path.exists():
-        raise NormalizationError(f"audio file missing: {inp.audio.uri}")
-    if sha256_bytes(audio_path.read_bytes()) != inp.audio.sha256:
-        raise NormalizationError(f"audio sha256 mismatch for {inp.audio.uri}")
-    if asr is None:
-        raise NormalizationError("audio_only input but no ASR client configured")
-    turns = asr.transcribe(inp.audio, audio_path)
-    ev = inp.evaluability.model_copy(deep=True)
-    if not turns:
-        if EvaluabilityIssue.ASR_FAILED not in ev.known_issues:
-            ev.known_issues.append(EvaluabilityIssue.ASR_FAILED)
-        return inp.model_copy(update={"evaluability": ev})
-    transcript = Transcript(
-        provenance=TranscriptProvenance(
-            source=TranscriptSource.PIPELINE_ASR, asr_engine=asr.engine, asr_model=asr.model,
-            asr_version=asr.version, diarization="model_diarized", timestamp_source=TimestampSource.ASR_ALIGNED,
-            produced_at=None,  # left null on purpose: normalized inputs must be byte-reproducible
-            derived_from_audio_sha256=inp.audio.sha256),
-        turns=turns)
-    availability = derive_evidence_availability(
-        transcript=transcript, audio=inp.audio, call_start_ts_present=inp.call_start_ts is not None,
-        call_start_captured=inp.evidence_availability.call_start_captured,
-        call_end_captured=inp.evidence_availability.call_end_captured)
-    data = inp.model_dump()
-    data.update(transcript=transcript.model_dump(), evidence_availability=availability.model_dump(),
-                evaluability=ev.model_dump())
-    return CanonicalInput.model_validate(data)
+def _transcript_path(meta: ItemMeta, item_dir: Path, mode: UnitMode) -> Path | None:
+    rel = meta.artifacts.platform_transcript if mode is UnitMode.A_T_PLATFORM else meta.artifacts.transcript
+    return (item_dir / rel) if rel else None
+
+
+def unit_facts(meta: ItemMeta, item_dir: Path) -> list[UnitFacts]:
+    """Capability-relevant facts per unit, computed from the artifacts (used by manifests and gold derivation)."""
+    out: list[UnitFacts] = []
+    for mode in meta.unit_modes:
+        tp = _transcript_path(meta, item_dir, mode)
+        parsed: ParsedTranscript | None = parse_transcript(tp) if tp else None
+        header = parsed.header if parsed else TranscriptHeader()
+        if mode is UnitMode.A:
+            out.append(UnitFacts(item_id=meta.item_id, unit_mode=mode, input_mode=UNIT_MODE_INPUT[mode],
+                                 has_call_start_ts=False, has_timestamps=True, provenance=None,
+                                 truncated_start=header.truncated_start))
+            continue
+        provenance = TranscriptProvenance.OFFLINE_ASR if mode is UnitMode.T_ASR else header.transcript_provenance
+        has_ts = True if mode is UnitMode.T_ASR else bool(parsed and parsed.has_timestamps)
+        out.append(UnitFacts(item_id=meta.item_id, unit_mode=mode, input_mode=UNIT_MODE_INPUT[mode],
+                             has_call_start_ts=header.call_start_ts is not None, has_timestamps=has_ts,
+                             provenance=provenance, truncated_start=header.truncated_start))
+    return out
+
+
+def _audio_ref(meta: ItemMeta, item_dir: Path) -> tuple[AudioRef, Path]:
+    assert meta.artifacts.audio
+    p = item_dir / meta.artifacts.audio
+    if not p.exists():
+        raise NormalizationError(f"audio file missing: {meta.artifacts.audio}")
+    fmt = p.suffix.lower().lstrip(".")
+    if fmt not in ("wav", "mp3", "m4a"):
+        raise NormalizationError(f"unsupported audio format {fmt!r} (wav/mp3/m4a)")
+    return AudioRef(path=meta.artifacts.audio, sha256=sha256_bytes(p.read_bytes()), format=fmt), p  # type: ignore[arg-type]
+
+
+def build_normalized_input(meta: ItemMeta, item_dir: Path, mode: UnitMode, spec: Spec,
+                           asr: ASRAdapter | None = None) -> NormalizedInput:
+    if mode not in meta.unit_modes:
+        raise NormalizationError(f"{meta.item_id} has no {mode} unit")
+    input_mode = UNIT_MODE_INPUT[mode]
+    tp = _transcript_path(meta, item_dir, mode)
+    parsed = parse_transcript(tp) if tp else None
+    header = parsed.header if parsed else TranscriptHeader()
+    turns: list[Turn] = []
+    audio_ref = asr_ref = None
+
+    if mode in (UnitMode.TRANSCRIPT, UnitMode.T_GOLD, UnitMode.A_T, UnitMode.A_T_PLATFORM):
+        assert parsed is not None
+        for i, pt in enumerate(parsed.turns, start=1):
+            conf = 0.0 if pt.role is Role.UNKNOWN else 1.0  # transcript labels (DC-00 source priority 1)
+            turns.append(Turn(turn=i, role=pt.role, text=pt.text, supplied_text=pt.text, start_s=pt.start_s,
+                              end_s=pt.end_s, unreliable=pt.unreliable, role_confidence=conf))
+        has_ts = parsed.has_timestamps
+    else:  # T-asr, A: evaluation text is our ASR
+        if asr is None:
+            raise ASRUnavailableError("audio unit but no ASR adapter configured (B-06 pending)")
+        audio_ref, audio_path = _audio_ref(meta, item_dir)
+        res = asr.transcribe(audio_path, audio_ref.sha256)
+        asr_ref = ASRRef(engine=res.engine, model=res.model, version=res.version, params_sha256=res.params_sha256)
+        for i, at in enumerate(res.turns, start=1):
+            turns.append(Turn(turn=i, role=at.role, text=at.text, asr_text=at.text, start_s=at.start_s,
+                              end_s=at.end_s, role_confidence=at.role_confidence))
+        has_ts = bool(turns)
+        if mode is UnitMode.T_ASR:
+            # P-5: our ASR supplied *as a transcript* with provenance offline_asr; header facts from the item.
+            header = TranscriptHeader(call_start_ts=header.call_start_ts, truncated_start=header.truncated_start,
+                                      transcript_provenance=TranscriptProvenance.OFFLINE_ASR)
+            for turn in turns:
+                turn.supplied_text = turn.text
+            audio_ref = None
+        else:
+            header = TranscriptHeader()  # AUDIO mode carries no transcript header
+    if mode in (UnitMode.A_T, UnitMode.A_T_PLATFORM):
+        audio_ref, _ = _audio_ref(meta, item_dir)
+    if mode is UnitMode.A_T_PLATFORM and header.transcript_provenance is not TranscriptProvenance.PLATFORM_LIVE_ASR:
+        raise NormalizationError("A+T-platform transcripts must declare transcript_provenance: platform_live_asr")
+    frontend = run_frontend(turns, header, input_mode, spec)
+    return NormalizedInput(input_mode=input_mode, unit_mode=mode, header=header, has_timestamps=has_ts,
+                           turns=turns, audio=audio_ref, asr=asr_ref, frontend=frontend)

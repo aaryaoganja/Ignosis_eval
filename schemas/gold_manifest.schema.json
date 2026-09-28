@@ -4,7 +4,7 @@
       "additionalProperties": false,
       "properties": {
         "item_id": {
-          "pattern": "^[a-z0-9][a-z0-9-]{2,63}$",
+          "pattern": "^[A-Z][A-Z0-9]*(-[A-Z0-9]+)+$",
           "title": "Item Id",
           "type": "string"
         },
@@ -32,11 +32,11 @@
       "type": "object"
     },
     "Split": {
+      "description": "experiment-protocol.md P-1 (dev in-repo; holdout and red team under $BENCH_PRIVATE_DIR).",
       "enum": [
         "dev",
         "holdout",
-        "redteam",
-        "calibration"
+        "redteam"
       ],
       "title": "Split",
       "type": "string"
@@ -44,9 +44,9 @@
   },
   "additionalProperties": false,
   "properties": {
-    "benchmark_manifest_sha256": {
+    "bench_manifest_sha256": {
       "pattern": "^[0-9a-f]{64}$",
-      "title": "Benchmark Manifest Sha256",
+      "title": "Bench Manifest Sha256",
       "type": "string"
     },
     "dataset_name": {
@@ -92,33 +92,30 @@
       "type": "string"
     },
     "schema_version": {
-      "const": "gold_manifest/1.0.0",
-      "default": "gold_manifest/1.0.0",
+      "const": "gold_manifest/2.0.0",
+      "default": "gold_manifest/2.0.0",
       "title": "Schema Version",
       "type": "string"
     },
-    "split_hashes": {
-      "additionalProperties": {
-        "pattern": "^[0-9a-f]{64}$",
-        "type": "string"
-      },
-      "propertyNames": {
-        "$ref": "#/$defs/Split"
-      },
-      "title": "Split Hashes",
-      "type": "object"
+    "scope": {
+      "enum": [
+        "dev",
+        "private"
+      ],
+      "title": "Scope",
+      "type": "string"
     }
   },
   "required": [
     "gold_version",
+    "scope",
     "dataset_name",
     "dataset_version",
-    "benchmark_manifest_sha256",
+    "bench_manifest_sha256",
     "labeling_protocol_version",
     "frozen_at",
     "frozen_by",
     "entries",
-    "split_hashes",
     "gold_hash"
   ],
   "title": "GoldManifest",
