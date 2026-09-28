@@ -240,3 +240,22 @@ def make_gold(
             )
         ],
     )
+
+
+# ------------------------------------------------------------------------------ scorer-test helpers
+from ignosis_eval.contracts.benchmark import CapabilityBoundaries, CaseMetadata  # noqa: E402
+from ignosis_eval.contracts.enums import SourceKind  # noqa: E402
+
+
+def make_case(
+    case_id: str = "case-0001", split: Split = Split.DEV, language: str = "en-IN",
+    mode: InputMode = InputMode.TRANSCRIPT_ONLY, pair_id: str | None = None, pair_role: str | None = None,
+    attribution_pair_id: str | None = None, judge_bait: bool = False,
+) -> CaseMetadata:
+    return CaseMetadata(
+        case_id=case_id, split=split, scenario="test_scenario", category="test", intended_modality=mode,
+        language=language, synthetic=True, source_kind=SourceKind.SYNTHETIC_SCRIPTED, pair_id=pair_id,
+        pair_role=pair_role, attribution_pair_id=attribution_pair_id, judge_bait=judge_bait,
+        judge_bait_kind="bait" if judge_bait else None,
+        capability_boundaries=CapabilityBoundaries(transcript_sufficient=True, audio_sufficient=True),
+    )
