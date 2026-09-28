@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Experiment outputs are measured results of specific runs; they are NOT committed by default.
+# Archive official runs deliberately (see docs/experiment-protocol.md).
+/runs/
+/scoring/
+
+# Secrets — never commit
+.env
+.env.*
+*.pem
+*.key
+secrets*.json
+credentials*.json
+
+# Audio: real call audio must never be committed. Benchmark audio storage is a pending human decision
+# (see docs/benchmark-authoring.md). Only tiny synthetic test fixtures are whitelisted.
+*.wav
+*.mp3
+*.flac
+*.opus
+*.m4a
+*.ogg
+!tests/fixtures/**/*.wav
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

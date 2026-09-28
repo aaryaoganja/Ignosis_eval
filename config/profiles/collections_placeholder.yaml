@@ -1,0 +1,144 @@
+# =====================================================================================================
+# PLACEHOLDER EVALUATION PROFILE — NOT THE STAGE 1-3 RUBRIC
+#
+# This file exists only so the reliability-experiment infrastructure can execute end-to-end with mock
+# evaluators. The gate/dimension/defect ids and capability requirements below are illustrative
+# scaffolding. They MUST be replaced by the rubric/profile defined in the Stage 1-3 artifacts before any
+# benchmark case is authored or any measured result is reported. Changing this file changes its hash,
+# which is recorded in every run manifest.
+# =====================================================================================================
+schema_version: profile/1.0.0
+profile_id: collections-placeholder
+profile_version: 0.0.1-placeholder
+rubric_version: rubric/0.0.0-placeholder
+status: placeholder
+use_case: collections
+description: >-
+  Placeholder collections profile used to exercise contracts, runner and scorer. Not a policy statement.
+
+gates:
+  - gate_id: G_AGENT_DISCLOSURE
+    title: Agent identifies self, lender and purpose
+    description: The agent states who they are, on whose behalf they call, and that the call concerns a debt.
+    severity: critical
+    requires: [content, call_start_captured]
+  - gate_id: G_RIGHT_PARTY_BEFORE_DISCLOSURE
+    title: Right-party verification before disclosure
+    description: Debt details are not disclosed before the counterparty is verified as the borrower.
+    severity: critical
+    requires: [content, speaker_labels]
+  - gate_id: G_NO_THREATS_OR_ABUSE
+    title: No threats, intimidation or abusive language
+    description: The agent does not threaten, intimidate, shame or abuse the customer.
+    severity: critical
+    requires: [content]
+  - gate_id: G_NO_MISREPRESENTATION
+    title: No misrepresentation of consequences or facts
+    description: The agent does not misstate legal consequences, authority or the nature of the debt.
+    severity: critical
+    requires: [content]
+  - gate_id: G_CONTACT_HOURS
+    title: Call placed within permitted contact hours
+    description: The call starts within the permitted local contact window (placeholder window 08:00-19:00).
+    severity: critical
+    requires: [call_start_ts]
+
+dimensions:
+  - dimension_id: D_NEGOTIATION_QUALITY
+    title: Negotiation quality
+    description: Offers options, explores ability to pay, secures a concrete next step.
+    scale_min: 1
+    scale_max: 5
+    requires: [content]
+  - dimension_id: D_CLARITY
+    title: Clarity of information
+    description: Amounts, dates and next steps are stated clearly and consistently.
+    scale_min: 1
+    scale_max: 5
+    requires: [content]
+  - dimension_id: D_TONE_EMPATHY
+    title: Tone and empathy (acoustic)
+    description: Vocal tone, pacing and interruption behaviour; requires the audio signal.
+    scale_min: 1
+    scale_max: 5
+    requires: [audio]
+
+defects:
+  - defect_id: DEF_MISSING_DISCLOSURE
+    title: "Missing disclosure"
+    severity: critical
+    gate_id: G_AGENT_DISCLOSURE
+    description: "Agent fails to identify self, lender or purpose."
+    requires: [content, call_start_captured]
+  - defect_id: DEF_THIRD_PARTY_DISCLOSURE
+    title: "Third-party disclosure"
+    severity: critical
+    gate_id: G_RIGHT_PARTY_BEFORE_DISCLOSURE
+    description: "Debt details disclosed to an unverified party."
+    requires: [content, speaker_labels]
+  - defect_id: DEF_THREAT_OR_INTIMIDATION
+    title: "Threat or intimidation"
+    severity: critical
+    gate_id: G_NO_THREATS_OR_ABUSE
+    description: "Threatens arrest, police, violence or public shaming."
+    requires: [content]
+  - defect_id: DEF_ABUSIVE_LANGUAGE
+    title: "Abusive language"
+    severity: critical
+    gate_id: G_NO_THREATS_OR_ABUSE
+    description: "Insults or demeaning language."
+    requires: [content]
+  - defect_id: DEF_MISREPRESENTATION
+    title: "Misrepresentation"
+    severity: critical
+    gate_id: G_NO_MISREPRESENTATION
+    description: "False statements about legal consequences or authority."
+    requires: [content]
+  - defect_id: DEF_OUTSIDE_CONTACT_HOURS
+    title: "Outside contact hours"
+    severity: critical
+    gate_id: G_CONTACT_HOURS
+    description: "Call started outside the permitted window."
+    requires: [call_start_ts]
+  - defect_id: DEF_INCONSISTENT_AMOUNT
+    title: "Inconsistent amount"
+    severity: major
+    dimension_id: D_CLARITY
+    description: "The agent states conflicting amounts within the call (no account data is available in the MVP)."
+    requires: [content]
+  - defect_id: DEF_NO_PAYMENT_OPTIONS
+    title: "No payment options offered"
+    severity: major
+    dimension_id: D_NEGOTIATION_QUALITY
+    description: "Demands full payment without exploring any option."
+    requires: [content]
+  - defect_id: DEF_IGNORED_DISPUTE
+    title: "Ignored dispute"
+    severity: major
+    dimension_id: D_NEGOTIATION_QUALITY
+    description: "Customer disputes the debt and the agent keeps collecting without acknowledgement."
+    requires: [content]
+  - defect_id: DEF_AGGRESSIVE_TONE
+    title: "Aggressive tone"
+    severity: major
+    dimension_id: D_TONE_EMPATHY
+    description: "Raised voice or hostile prosody, observable only in audio."
+    requires: [audio]
+  - defect_id: DEF_TALKOVER
+    title: "Talk-over"
+    severity: minor
+    dimension_id: D_TONE_EMPATHY
+    description: "Agent repeatedly speaks over the customer."
+    requires: [audio]
+
+outcome_classes:
+  promise_to_pay: win
+  payment_committed_on_call: win
+  payment_plan_agreed: win
+  dispute_raised: neutral
+  callback_scheduled: neutral
+  refusal_to_pay: loss
+  wrong_party: neutral
+  hardship_disclosed: neutral
+  no_resolution: loss
+  call_dropped: unknown
