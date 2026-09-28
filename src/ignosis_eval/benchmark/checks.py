@@ -12,11 +12,17 @@
   B013 pair transcripts differ in length by more than 10% (warning; authoring constraint 4, measured in words)
   B015 real (non-synthetic) item without the pii_reviewed tag on its card
   B016 TRT-06 monologue item that does not exceed both 30 s and 80 words (warning; FP-14 / AJ-02)
+  B017 identifier leak: a transcript contains an item id, a pair id or a rubric check id (evaluators would see it)
+  B018 an item expected EVALUABLE has no AGENT or no BORROWER turn (DC-00 would make it NOT_EVALUABLE; AJ-05)
+  B040 frozen DEV design (bench/public) problem (PDxxx rules, benchmark/public_dev.py)
+  B041 a dev item disagrees with the frozen DEV design (id, pack, language, unit modes, tuning-only, header)
+  B043 registries.json disagrees with the pairs / controls of the frozen DEV design
 """
 
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
@@ -31,6 +37,7 @@ from ignosis_eval.benchmark.case_card_rules import (
     load_case_card_file,
 )
 from ignosis_eval.benchmark.layout import CARD_SUFFIX, GOLD_SUFFIX, SCOPE_SPLITS, BenchLayout
+from ignosis_eval.benchmark.public_dev import DevDesign, PublicDevReport, validate_public_dev
 from ignosis_eval.contracts.benchmark import ItemMeta
 from ignosis_eval.contracts.case_card import CaseCard
 from ignosis_eval.contracts.gold_label import GoldLabel
@@ -74,6 +81,7 @@ class LoadedItem:
 class BenchReport:
     issues: list[Issue] = field(default_factory=list)
     items: dict[str, LoadedItem] = field(default_factory=dict)
+    public_dev: PublicDevReport | None = None
 
     @property
     def errors(self) -> list[Issue]:
@@ -117,6 +125,42 @@ def _monologue_warnings(turns: list[int], parsed, spec: Spec, item_id: str) -> l
     return out
 
 
+_PAIR_ID = re.compile(r"(?<![A-Za-z0-9-])(?:MP|CP|AP)-\d{2}(?![A-Za-z0-9])")
+
+
+def _leak_pattern(tokens: set[str]) -> re.Pattern[str]:
+    alts = "|".join(re.escape(t) for t in sorted(tokens, key=len, reverse=True))
+    return re.compile(rf"(?<![A-Za-z0-9-])(?:{alts})(?![A-Za-z0-9-])")
+
+
+def _identifier_leaks(parsed, pattern: re.Pattern[str]) -> list[str]:
+    found: set[str] = set()
+    for t in parsed.turns:
+        found |= set(pattern.findall(t.text)) | set(_PAIR_ID.findall(t.text))
+    return sorted(found)
+
+
+def _design_issues(li: LoadedItem, parsed, design: DevDesign) -> list[Issue]:
+    meta, iid = li.meta, li.meta.item_id
+    d = design.items.get(iid)
+    if d is None:
+        return [Issue("B041", "error", "dev item is not in the frozen DEV design (bench/public); DEV items are fixed "
+                                       "by frozen-contract §12 and the Stage 5 design", iid)]
+    out = []
+    for what, have, want in (("pack", meta.pack, d.pack), ("language", meta.language, d.language),
+                             ("unit_modes", sorted(m.value for m in meta.unit_modes),
+                              sorted(m.value for m in d.unit_modes)),
+                             ("tuning_only", meta.tuning_only, d.tuning_only)):
+        if have != want:
+            out.append(Issue("B041", "error", f"{what} {have!r} but the frozen DEV design says {want!r}", iid))
+    if parsed is not None and (parsed.header.call_start_ts is not None) != d.has_header:
+        seen = "present" if parsed.header.call_start_ts is not None else "absent"
+        wanted = "present" if d.has_header else "absent"
+        out.append(Issue("B041", "error", f"transcript header call_start_ts {seen} but the design says {wanted} (G7)",
+                         iid))
+    return out
+
+
 def check_bench(layout: BenchLayout, spec: Spec, *, scopes: tuple[str, ...] = ("dev",),
                 require_gold: bool = False) -> BenchReport:
     rep = BenchReport()
@@ -127,6 +171,13 @@ def check_bench(layout: BenchLayout, spec: Spec, *, scopes: tuple[str, ...] = ("
         add(Issue("B012", "error", f"registries.json invalid: {exc}"))
         registries = Registries()
     table = CapabilityTable.from_rubric(spec.rubric)
+    design: DevDesign | None = None
+    if "dev" in scopes and layout.public_dir.exists():  # the frozen DEV design; never needs BENCH_PRIVATE_DIR
+        rep.public_dev = validate_public_dev(layout.public_dir, spec)
+        rep.issues += [Issue("B040", i.severity, f"{i.rule_id} {i.message}", i.item_id) for i in rep.public_dev.issues]
+        design = rep.public_dev.design
+    leak_tokens = set(spec.registry.checks) | set(spec.registry.oos_codes) | registries.item_ids() | \
+        (set(design.items) if design else set())
     for scope in scopes:
         for split in SCOPE_SPLITS[scope]:
             items, problems = layout.discover(split)
@@ -156,6 +207,21 @@ def check_bench(layout: BenchLayout, spec: Spec, *, scopes: tuple[str, ...] = ("
                         li.words = sum(len(t.text.split()) for t in parsed.turns)
                     except (TranscriptParseError, OSError) as exc:
                         add(Issue("B006", "error", f"transcript unparseable: {exc}", meta.item_id))
+                if parsed is not None:
+                    leaks = _identifier_leaks(parsed, _leak_pattern(leak_tokens | {meta.item_id}))
+                    if leaks:
+                        add(Issue("B017", "error", f"transcript text contains identifiers {leaks}: evaluators would "
+                                                   "see them (item ids, pair ids and check ids never appear in a "
+                                                   "transcript)", meta.item_id))
+                    expect_evaluable = design is not None and meta.item_id in design.items and \
+                        design.items[meta.item_id].evaluability == "EVALUABLE"
+                    roles = {t.role.value for t in parsed.turns}
+                    if expect_evaluable and not {"AGENT", "BORROWER"} <= roles:
+                        add(Issue("B018", "error", f"expected EVALUABLE but the transcript has roles {sorted(roles)}: "
+                                                   "DC-00 needs an AGENT and a BORROWER turn (a third party on the "
+                                                   "customer side is labeled BORROWER)", meta.item_id))
+                if design is not None and split.value == "dev":
+                    rep.issues += _design_issues(li, parsed, design)
                 if not missing:
                     li.fingerprint = content_fingerprint(meta, ip.item_dir)
                 card, cissues = load_case_card_file(ip.card_path) if ip.card_path.exists() else (None, [])
@@ -237,4 +303,16 @@ def check_bench(layout: BenchLayout, spec: Spec, *, scopes: tuple[str, ...] = ("
     for c in registries.controls:
         if c.item_id not in known:
             add(Issue("B012", "warning", f"control {c.item_id} not present in the checked scopes"))
+    if design is not None:  # a populated registry must agree with the frozen DEV design
+        want = design.registries()
+        want_pairs = {p.pair_id: p for p in want.pairs}
+        want_controls = {c.item_id: sorted(g.value for g in c.target_gates) for c in want.controls}
+        for p in registries.pairs:
+            if {p.clean_item, p.violating_item} & set(design.items) and want_pairs.get(p.pair_id) != p:
+                add(Issue("B043", "error", f"pair {p.pair_id} disagrees with the frozen DEV design "
+                                           f"{want_pairs.get(p.pair_id)}"))
+        for c in registries.controls:
+            if c.item_id in design.items and sorted(g.value for g in c.target_gates) != want_controls.get(c.item_id):
+                add(Issue("B043", "error", f"control {c.item_id} target gates disagree with the frozen DEV design "
+                                           f"{want_controls.get(c.item_id)}", c.item_id))
     return rep

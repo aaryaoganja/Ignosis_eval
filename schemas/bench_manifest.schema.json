@@ -143,8 +143,8 @@
           "$ref": "#/$defs/Pack"
         },
         "schema_version": {
-          "const": "item_meta/1.0.0",
-          "default": "item_meta/1.0.0",
+          "const": "item_meta/1.1.0",
+          "default": "item_meta/1.1.0",
           "title": "Schema Version",
           "type": "string"
         },
@@ -154,6 +154,11 @@
         "synthetic": {
           "default": true,
           "title": "Synthetic",
+          "type": "boolean"
+        },
+        "tuning_only": {
+          "default": false,
+          "title": "Tuning Only",
           "type": "boolean"
         },
         "unit_modes": {
@@ -322,8 +327,8 @@
       "title": "Notes"
     },
     "schema_version": {
-      "const": "bench_manifest/2.0.0",
-      "default": "bench_manifest/2.0.0",
+      "const": "bench_manifest/2.1.0",
+      "default": "bench_manifest/2.1.0",
       "title": "Schema Version",
       "type": "string"
     },

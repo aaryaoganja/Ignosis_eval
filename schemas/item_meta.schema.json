@@ -107,8 +107,8 @@
       "$ref": "#/$defs/Pack"
     },
     "schema_version": {
-      "const": "item_meta/1.0.0",
-      "default": "item_meta/1.0.0",
+      "const": "item_meta/1.1.0",
+      "default": "item_meta/1.1.0",
       "title": "Schema Version",
       "type": "string"
     },
@@ -118,6 +118,11 @@
     "synthetic": {
       "default": true,
       "title": "Synthetic",
+      "type": "boolean"
+    },
+    "tuning_only": {
+      "default": false,
+      "title": "Tuning Only",
       "type": "boolean"
     },
     "unit_modes": {

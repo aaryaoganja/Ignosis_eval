@@ -99,6 +99,22 @@ H (a result would be wrong or unsafe), M (a metric or process would be incompara
   - **Untouched:** prompt `.md` files, `bench/` content and every other `bench/` file (except the case-card template's
     schema version and repair comment).
 
+- **DEV benchmark ingestion commit ("ingest frozen dev benchmark"):**
+  - **Added:**
+    - `bench/public/`: the four Stage 5 DEV design files verbatim, plus `MANIFEST.json` and `README.md`;
+    - `.gitattributes`, so git keeps the files byte-exact;
+    - `benchmark/public_dev.py` (PD001–PD017);
+    - bench checks B017, B018, B040, B041 and B043;
+    - CLI `bench public-check` and `bench public-manifest`.
+  - **Contract changes:**
+    - `ItemMeta.tuning_only` (`item_meta/1.1.0`, `bench_manifest/2.1.0`);
+    - `NormalizedInput.input_alias` and `AudioRef` without a file name (`normalized_input/2.2.0`).
+  - **Also changed:**
+    - the front end fails closed on identifiers in the evaluated text;
+    - `bench/public` is guard-protected.
+  - **Tests:** `test_public_dev.py`, `test_evaluator_isolation.py`.
+  - **Not written:** transcripts, gold, registries entries or case-card YAML.
+
 ## 3. Implementation conventions (the spec is silent or ambiguous; each is documented and tested)
 
 1. **Turn numbering is 1-based.** It is the unit of SD-12 anchors and SD-14 elements.
@@ -152,6 +168,19 @@ H (a result would be wrong or unsafe), M (a metric or process would be incompara
     see `docs/spec/final-adjudication.md` §3. Each is pinned by a test.
 27. **Majority "modal" wording removed from outputs.** SD-19's distribution key is
     `most_frequent_verdict_count_distribution`; per-unit scores carry `reps_holding_most_frequent_verdict`.
+28. **Frozen DEV design pack vocabulary.** The design uses the §12 pack names (`core`, `micro`, `modality`,
+    `language`). `language` items map to ItemMeta `snippet` (category "Snippet …") or `language_twin`.
+29. **"A (<id>@A dev rendering)" is the item's audio rendering**, with the §12.4 unit modes T-gold, T-asr, A and A+T.
+    A bare "A" or "A+T" (G-02-N5) is a literal unit mode. A token naming another design item is a cross-reference.
+30. **Items whose verdict is "Derived from actual ASR after B-06"** (G-02-N5) are `tuning_only` (ItemMeta
+    `scoring_role` = never), matching "never used for scoring claims".
+31. **Case-card default gates** ("all default") read G1 PASS, G3 PASS, G7 OUT_OF_SCOPE, all others NA. Any change to
+    that sentence fails closed.
+32. **Registration fact from the blueprint note.** A non_response finding is registered when its note says "override"
+    and not "no registration". This is what the TRANSCRIPT attribution check (§7 via `golddrv.derive_attribution`)
+    uses.
+33. **Opaque input alias.** `NormalizedInput.input_alias` = `in-` + 16 hex of the content hash. It is deterministic,
+    so replay fixtures stay stable, and it carries no benchmark metadata. Audio refs are content-addressed.
 
 ## 4. Open questions / inconsistencies found in the spec (for the spec owner)
 
@@ -171,6 +200,26 @@ H (a result would be wrong or unsafe), M (a metric or process would be incompara
    keeps the half-open [08:00, 19:00) IST (convention 3); a call at exactly 19:00:00 fails G7. Owner to confirm.
 10. **The owner-patched 1.1.0 files were not available** (see the header). The reconstructed details in
     `final-adjudication.md` §3 need the owner's diff.
+11. **SD-08 vs the DEV controls K-01 and K-07.** Both controls have gold `NA` for their target gate: G1 has no
+    disclosure event, and G4 has no offer event. SD-08 counts only gold `PASS` targets, so these two must-not-fire
+    targets are outside the targeted-false-fire metric. Either SD-08 should admit `NA`, or the design should label
+    them differently (PD016).
+12. **G5 row-7 evidence.** The rubric's G5 elements (`request_turn`, `continued_collection_turns_or_refusal_turn`)
+    cannot express row 7 (not honored, no collection, no refusal): MD-G5 uses `closing_turn`. C-10 and MD-G1 also
+    use non-rubric element names (PD014). SD-14 completeness keys on rubric names.
+13. **Third-party speakers vs DC-00 (AJ-05).** In wrong-party calls (K-01, C-01, MD-G6) every customer-side turn is a
+    third party. If it is labeled `OTHER`, the call has no BORROWER turn and becomes NOT_EVALUABLE. The rubric's
+    `borrower` role for `third_party_signal_turn` implies labeling by channel side (`BORROWER`). This is recorded as
+    an authoring rule (PD015, B018).
+14. **MP-01 / MP-10 header asymmetry.** G-02 and K-07 carry a `call_start_ts` header but M-01 and C-08 do not, so
+    each pair also differs on G7 (PD011).
+15. **Blueprint fields left for labelers.** Per the blueprint schema, the labeler still fills in:
+    - `verdict.within_scope_complete`;
+    - explicit lists;
+    - per-gate `contested` / `anchor_turns`;
+    - per-finding `repair_status` / `label_confidence` / `attribution_facts`;
+    - the evaluability reason.
+    The blueprint does not carry these fields; beats become turn ids only after transcripts are frozen.
 
 ## 5. Not implemented in this commit (next phase; explicit markers in code)
 

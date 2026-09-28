@@ -43,6 +43,8 @@ and what is still pending.
    - Real (non-synthetic) items need the `pii_reviewed` tag.
 9. **No benchmark content by the implementing agent** (P-1 rule 3).
    - Tests use minimal, obviously synthetic stubs.
+   - `bench/public/` is the human-authored frozen DEV design: never edit it, never write transcript wording from
+     its beats, never turn the blueprint into gold, and never put holdout / red-team material in the repository.
 
 ## Current phase boundary (STOP conditions)
 
@@ -67,6 +69,7 @@ The reconciliation with the frozen spec is complete. **Do not**, without an expl
 | Metric definitions | `metrics/` + `docs/reliability.md` (SD map); fixtures in `tests/test_metrics.py` |
 | Intervals | `stats/` (SD-26) |
 | Benchmark layout, card rules, checks | `benchmark/` (`bench/` on disk) |
+| Frozen DEV design (Stage 5, DEV only) | `bench/public/` (verbatim + `MANIFEST.json`); validator `benchmark/public_dev.py` |
 | Hash lists / gold freeze / guard | `integrity/` |
 | Run protocol, lock, blinding, storage | `runner/` |
 
@@ -78,7 +81,7 @@ python -m pytest                     # must pass before every commit
 ruff check src tests scripts && mypy # lint + types
 ignosis-eval schemas export          # after any contract change (a test enforces sync)
 ignosis-eval spec pending            # PENDING_HUMAN_SIGNOFF inventory
-ignosis-eval bench check --scope dev --require-gold
+ignosis-eval bench check --scope dev --require-gold   # includes bench/public (bench public-check alone)
 ignosis-eval bench manifest | gold freeze | run | blind | score | reveal   (see README)
 ```
 

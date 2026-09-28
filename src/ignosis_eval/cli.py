@@ -2,7 +2,9 @@
 
     spec check | spec pending                      spec pack versions, PENDING_HUMAN_SIGNOFF inventory
     casecard validate <cards...>                   CCxxx rules
-    bench check [--scope dev|private|all] [--require-gold]
+    bench check [--scope dev|private|all] [--require-gold]   (dev includes the frozen DEV design in bench/public)
+    bench public-check                              validate bench/public only (PDxxx rules; no private data)
+    bench public-manifest                           hash-list bench/public once at ingestion (write-once)
     bench manifest --scope ... --dataset-version V  hash list (P-1 rule 5)
     gold freeze --scope ... --gold-version V        |  bench verify / gold verify --scope ...
     run --split dev --systems K0,A,A+,B [...]       P-5/P-6 run (locked kinds need --confirm-holdout)
@@ -83,7 +85,32 @@ def cmd_bench_check(args) -> int:
     from ignosis_eval.benchmark.checks import check_bench
 
     rep = check_bench(_layout(args), _spec(args), scopes=_scopes(args.scope), require_gold=args.require_gold)
+    if rep.public_dev is not None and rep.public_dev.design is not None:
+        d = rep.public_dev.design
+        print(f"frozen DEV design: {len(d.items)} items, manifest {d.manifest_sha256[:16]}; "
+              f"{len(rep.items)} dev item(s) with transcripts")
     return _print_issues(rep.issues)
+
+
+def cmd_bench_public_check(args) -> int:
+    from ignosis_eval.benchmark.public_dev import validate_public_dev
+
+    rep = validate_public_dev(_layout(args).public_dir, _spec(args))
+    if rep.design is not None:
+        packs: dict[str, int] = {}
+        for it in rep.design.items.values():
+            packs[it.pack.value] = packs.get(it.pack.value, 0) + 1
+        reg = rep.design.registries()
+        print(f"frozen DEV design: {len(rep.design.items)} items {dict(sorted(packs.items()))}; pairs "
+              f"{[p.pair_id for p in reg.pairs]}; controls {[c.item_id for c in reg.controls]}")
+    return _print_issues(rep.issues)
+
+
+def cmd_bench_public_manifest(args) -> int:
+    from ignosis_eval.benchmark.public_dev import write_manifest
+
+    print(write_manifest(_layout(args).public_dir))
+    return 0
 
 
 def _validator(args, scope: str, require_gold: bool):
@@ -226,6 +253,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--scope", choices=["dev", "private", "all"], default="dev")
     p.add_argument("--require-gold", action="store_true")
     p.set_defaults(func=cmd_bench_check)
+    p = g.add_parser("public-check")
+    common(p)
+    p.set_defaults(func=cmd_bench_public_check)
+    p = g.add_parser("public-manifest")
+    common(p)
+    p.set_defaults(func=cmd_bench_public_manifest)
     p = g.add_parser("manifest")
     common(p)
     p.add_argument("--scope", choices=["dev", "private"], required=True)

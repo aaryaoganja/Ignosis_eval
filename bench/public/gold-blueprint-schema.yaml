@@ -1,0 +1,22 @@
+schema:
+  gold_blueprint_version: bench-a1/1.0
+  principle: Gold is entered by an independent human labeler from the FINAL transcript/audio, blind to the case card; then reconciled against the intent below. Never
+    derived from evaluator output.
+  anchors: Beats (B#) are mapped to real turn IDs by the labeler after transcripts are frozen.
+  per_item_fields:
+    gates: 'G1..G9 each: status PASS|FAIL|NA|INCONCLUSIVE|INCONCLUSIVE+trigger|OUT_OF_SCOPE; contested bool; anchor_turns; label_type'
+    findings: 'code, severity (post-repair), repair_status, anchor_turns, evidence_elements{name: turn}, attribution_facts, label_confidence Sure|Probable|Unsure,
+      label_type'
+    explicit_lists: inconclusive_checks, na_checks, oos_checks (unlisted MVP codes are implicitly PASS / Sure)
+    verdict: value + within_scope_complete
+    evaluability: EVALUABLE|PARTIAL|NOT_EVALUABLE + reason
+    outcome: observable dispositions (set), positive bool, outcome_attribution
+    tags: dangerous_win NONE|CRITICAL|MATERIAL; clean_loss bool
+    registries: control target gates; abstention_targets; pair/twin membership
+    meta: contested bool, label_confidence, ambiguity_notes, depends_on (spec clarifications / blockers)
+  label_type_legend:
+    observable: Directly visible in words/order/counts/header (disclosure order, values, counts, timestamps)
+    rubric: 'Requires a rubric judgment (J-* question: registration, path, firmness, consequence class, cue severity)'
+    profile: Depends on collections_default_v1 values (offer classes, ask limit, verification minimum, window, POL-01)
+    modality: Derived per input mode by the independent gold-derivation module (capability table, provenance, attribution)
+  mode_derivation: Content gold is labeled once (T-gold). Mode-specific statuses/attributions are DERIVED by code, then spot-checked by a human on every audio item.

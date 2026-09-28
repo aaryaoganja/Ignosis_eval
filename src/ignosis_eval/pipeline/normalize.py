@@ -10,6 +10,7 @@ One implementation shared by every system (experiment-protocol P-2). Unit modes 
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from ignosis_eval.canonical import sha256_bytes
@@ -59,7 +60,26 @@ def _audio_ref(meta: ItemMeta, item_dir: Path) -> tuple[AudioRef, Path]:
     fmt = p.suffix.lower().lstrip(".")
     if fmt not in ("wav", "mp3", "m4a"):
         raise NormalizationError(f"unsupported audio format {fmt!r} (wav/mp3/m4a)")
-    return AudioRef(path=meta.artifacts.audio, sha256=sha256_bytes(p.read_bytes()), format=fmt), p  # type: ignore[arg-type]
+    return AudioRef(sha256=sha256_bytes(p.read_bytes()), format=fmt), p  # type: ignore[arg-type]
+
+
+_PAIR_ID = r"(?:MP|CP|AP)-\d{2}"
+
+
+def assert_no_identifiers(meta: ItemMeta, item_dir: Path, turns: list[Turn]) -> None:
+    """Fail closed if the text a system will see names the item: its id, its directory, an artifact file stem that
+    is not a plain word, or a pair id. Systems receive turn text only, so this is the last place an identifier could
+    leak into a prompt (bench check B017 reports the wider set: every design id and every rubric check id)."""
+    stems = {Path(a).stem for a in (meta.artifacts.transcript, meta.artifacts.audio, meta.artifacts.platform_transcript)
+             if a}
+    tokens = {meta.item_id, item_dir.name} | {s for s in stems if re.search(r"[\d-]", s)}
+    alts = "|".join(re.escape(t) for t in sorted(tokens, key=len, reverse=True))
+    pattern = re.compile(rf"(?<![A-Za-z0-9-])(?:{alts}|{_PAIR_ID})(?![A-Za-z0-9-])", re.IGNORECASE)
+    for t in turns:
+        m = pattern.search(t.text)
+        if m:
+            raise NormalizationError(f"turn {t.turn} contains the identifier {m.group(0)!r}; systems must never see "
+                                     "item ids, file names or pair ids (fix the transcript)")
 
 
 def build_normalized_input(meta: ItemMeta, item_dir: Path, mode: UnitMode, spec: Spec,
@@ -107,6 +127,7 @@ def build_normalized_input(meta: ItemMeta, item_dir: Path, mode: UnitMode, spec:
         audio_ref, _ = _audio_ref(meta, item_dir)
     if mode is UnitMode.A_T_PLATFORM and header.transcript_provenance is not TranscriptProvenance.PLATFORM_LIVE_ASR:
         raise NormalizationError("A+T-platform transcripts must declare transcript_provenance: platform_live_asr")
+    assert_no_identifiers(meta, item_dir, turns)
     frontend = run_frontend(turns, header, input_mode, spec, role_mapping_confidence=mapping_confidence,
                             diarized=mode in (UnitMode.T_ASR, UnitMode.A))
     return NormalizedInput(input_mode=input_mode, unit_mode=mode, header=header, has_timestamps=has_ts,

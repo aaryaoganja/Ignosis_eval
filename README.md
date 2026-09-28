@@ -27,7 +27,8 @@ final Stage 4 adjudication (AJ-01..AJ-12, FP-01..FP-14) is recorded in
 | Contracts, front end, engine, K0 / A / A+ / B interfaces, gold derivation, scorer, runner, lock, blinding | Implemented and tested (`python -m pytest`). |
 | B extraction contract + verifier, adjudicated deterministic rules (G1, G2, G3 categories, G4, G5 table, ACC-03u, ACC-05, TRT-06) | Implemented and tested as a library (`engine/rules.py`); not yet wired as B's default rule engine. |
 | Full B rule engine, deterministic normalizer, DC-02 / DC-LANG / DC-01-audio, diarization turn threshold, timing signals | Next phase / pending sign-off (see the reconciliation doc §5). |
-| Benchmark content, gold, registries | **Empty.** Authored by humans (B-01..B-03). |
+| Frozen DEV design (Stage 5) | `bench/public/`: 25 DEV case cards (functional beats), master matrix and gold blueprint, verbatim and hash-listed; validated by `ignosis-eval bench public-check` (0 errors, 13 open warnings). DEV only. |
+| Transcripts, gold, registries | **Empty.** Written and labeled by humans (B-01..B-03); the blueprint is intent, not gold. |
 | Results | **None.** |
 
 ## Quick start
@@ -54,7 +55,7 @@ ignosis-eval score --run-id <run_id>     # -> scoring/<run_id>/{item_scores.csv,
 
 ```
 docs/spec/          frozen specification pack (authoritative)
-bench/              dev benchmark (empty scaffolding), hash lists, registries, card template
+bench/              frozen DEV design (public/), dev items (empty), hash lists, registries, card template
 src/ignosis_eval/
   spec/             spec loader, check registry from rubric.yaml, PENDING inventory
   contracts/        NormalizedInput, EvaluationRecord, GoldLabel, CaseCard, ItemMeta, Registries, manifests

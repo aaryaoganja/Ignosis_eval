@@ -1,0 +1,2 @@
+# bench/public holds the frozen DEV design verbatim and hash-listed (MANIFEST.json): never normalize bytes.
+bench/public/** -text

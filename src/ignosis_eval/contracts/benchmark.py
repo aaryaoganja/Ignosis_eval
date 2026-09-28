@@ -30,7 +30,7 @@ class ItemMeta(Contract):
     (T-gold, T-asr, A, A+T[, A+T-platform]) so that they share its content gold and can never cross splits;
     audio-native items (S-01..S-04) have audio units only."""
 
-    schema_version: Literal["item_meta/1.0.0"] = ITEM_META_SCHEMA
+    schema_version: Literal["item_meta/1.1.0"] = ITEM_META_SCHEMA
     item_id: ItemId
     split: Split
     pack: Pack
@@ -38,6 +38,7 @@ class ItemMeta(Contract):
     unit_modes: list[UnitMode] = Field(min_length=1)
     artifacts: ItemArtifacts
     synthetic: bool = True
+    tuning_only: bool = False  # e.g. G-02-N5: threshold tuning on dev, "never used for scoring claims" (Stage 5 design)
 
     @model_validator(mode="after")
     def _modes(self) -> "ItemMeta":
@@ -65,6 +66,8 @@ class ItemMeta(Contract):
 
     @property
     def scoring_role(self) -> Literal["scored", "component", "never"]:
+        if self.tuning_only:
+            return "never"  # tuning copy; its mode gold is derived from actual ASR output (B-06), never scored
         if self.pack is Pack.SNIPPET:
             return "component"  # SD-22 component tests, not an architecture comparison
         if self.pack is Pack.CALIBRATION:
@@ -102,7 +105,7 @@ class ItemEntry(Contract):
 
 
 class BenchManifest(Contract):
-    schema_version: Literal["bench_manifest/2.0.0"] = BENCH_MANIFEST_SCHEMA
+    schema_version: Literal["bench_manifest/2.1.0"] = BENCH_MANIFEST_SCHEMA
     dataset_name: NonEmptyStr
     dataset_version: NonEmptyStr
     scope: Literal["dev", "private"]

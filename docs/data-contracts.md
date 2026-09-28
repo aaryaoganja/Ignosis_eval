@@ -14,14 +14,14 @@ into `schemas/` (`ignosis-eval schemas export`; `tests/test_contracts.py` keeps 
 
 | Contract | Schema | Module | Purpose |
 |---|---|---|---|
-| NormalizedInput | `normalized_input/2.1.0` | `contracts/canonical_input.py` | What a system sees: input and unit mode, the §2.3 header, the call-level `role_mapping_confidence` (DC-00, AJ-05), 1-based turns (evaluation, supplied and ASR text; reliability; per-turn `diarization_confidence`), audio / ASR refs, and the front-end result (evaluability, pre-checks, step status) |
+| NormalizedInput | `normalized_input/2.2.0` | `contracts/canonical_input.py` | What a system sees: the opaque content-derived `input_alias` (its only identifier; no item id, unit id, file name, path, split or pack), input and unit mode, the §2.3 header, the call-level `role_mapping_confidence` (DC-00, AJ-05), 1-based turns (evaluation, supplied and ASR text; reliability; per-turn `diarization_confidence`), content-addressed audio ref (sha256 + format, no file name) and ASR ref, and the front-end result (evaluability, pre-checks, step status) |
 | EvaluationRecord | `evaluation_record/2.1.0` | `contracts/evaluation_record.py` | Output of K0 / A / A+ / B: record status, `confidence_source` (SELF_REPORTED for A, COMPUTED otherwise; AJ-06), verdict + critical status + `within_scope_complete`, evaluability (PARTIAL derived, AJ-04), all G1–G9 gate results, findings (TRT-06 carries `measurement_basis`, AJ-02), explicit check statuses, outcome, tags, routing tier, the always-OOS list, unverified agent commitments |
 | ExtractionOutput | `extraction/1.0.0` | `contracts/extraction.py` | Evaluator B's extraction (LLM call #1) per `rubric.yaml › extraction_schema` (AJ-07): events with typed per-type fields (`responds_to`, `kind`, `items`, `claims_human`, `offer_type`, `value`/`basis_stated`, `category`/`negated`, `route`, `corrects`/`new_value_id`), identity checks, agent stated values, commitments. JSON Schema in `schemas/extraction.schema.json`; a drift test holds the literals equal to the rubric |
 | GoldLabel | `gold_label/2.1.0` | `contracts/gold_label.py` | Content-level gold per item (SD-01). Mode gold is derived by `golddrv/`, never stored. No gold critical status (AJ-12) |
 | CaseCard | `case_card/2.1.0` | `contracts/case_card.py` | Author intent (B-01) |
-| ItemMeta | `item_meta/1.0.0` | `contracts/benchmark.py` | `item.json`: split, pack, language, unit modes, artifacts, synthetic flag |
+| ItemMeta | `item_meta/1.1.0` | `contracts/benchmark.py` | `item.json`: split, pack, language, unit modes, artifacts, synthetic flag, `tuning_only` (e.g. G-02-N5: never scored) |
 | Registries | `registries/1.0.0` | `contracts/registries.py` | Controls, pairs, twins (SD-01) |
-| BenchManifest / GoldManifest | `bench_manifest/2.0.0`, `gold_manifest/2.0.0` | `contracts/benchmark.py` | Hash lists of a scope (dev or private) |
+| BenchManifest / GoldManifest | `bench_manifest/2.1.0`, `gold_manifest/2.0.0` | `contracts/benchmark.py` | Hash lists of a scope (dev or private) |
 | RunManifest / RunCompletion | `run_manifest/2.0.0` | `contracts/run_manifest.py` | §17 run artifacts, lock rules, system configs (P-3) |
 | BlindViewManifest | `blind_view/1.0.0` | `contracts/run_manifest.py` | P-10 aliased scoring view |
 | ScoringManifest | `scoring_manifest/2.0.0` | `contracts/run_manifest.py` | Scorer inputs and output hashes |
@@ -37,6 +37,12 @@ into `schemas/` (`ignosis-eval schemas export`; `tests/test_contracts.py` keeps 
   - Semantic rules that a raw LLM output can break (H6 capability, H1 external truth) are *measured* by the scorer, not rejected by the schema.
   - `contracts/record_checks.py` rejects unknown codes, gate ids used as findings and NOT_EVALUATED codes.
   - An `OK` record states its `confidence_source`; `measurement_basis` appears only on TRT-06 findings.
+- **NormalizedInput.**
+  - `input_alias` is `in-` + 16 hex of the sha256 of the input's own content. A supplied alias that differs (an item
+    id, a file name, a forged hash) is a schema error.
+  - `AudioRef` carries `sha256` and `format` only; the front end resolves the file privately.
+  - The front end fails closed (`NormalizationError`) if the evaluated text contains the item id, the item directory
+    name, a non-generic artifact file stem or a pair id.
 - **ExtractionOutput.**
   - A type-specific field on the wrong event type, or a missing required one, is a schema error.
   - Ids are unique; `component_of` and `correction` references must name existing stated values.
