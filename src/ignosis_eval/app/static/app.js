@@ -273,6 +273,8 @@ function evaluatorPanel(r) {
       h("div", {}, "System"), h("div", {}, e.system + " " + e.system_version),
       h("div", {}, "Provider"), h("div", {}, e.provider),
       h("div", {}, "Model"), h("div", { class: "mono" }, e.model),
+      (e.served_model_versions && e.served_model_versions.length) ? [h("div", {}, "Served version"),
+        h("div", { class: "mono" }, e.served_model_versions.join(", "))] : null,
       h("div", {}, "Prompt"), h("div", { class: "mono" }, e.prompt_version),
       h("div", {}, "Engine"), h("div", { class: "mono" }, e.engine_version),
       h("div", {}, "Temperature"), h("div", {}, String(e.temperature)),

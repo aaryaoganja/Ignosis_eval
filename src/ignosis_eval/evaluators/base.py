@@ -59,5 +59,6 @@ class Evaluator(ABC):
 
     def system_info(self) -> SystemInfo:
         c = self.config()
-        return SystemInfo(system=c.system.value, version=c.version, model_snapshot_id=c.model_snapshot_id,
-                          prompt_hashes=dict(c.prompt_hashes))
+        return SystemInfo(system=c.system.value, version=c.version,
+                          llm_backend=None if c.llm_backend == "none" else c.llm_backend,
+                          model_snapshot_id=c.model_snapshot_id, prompt_hashes=dict(c.prompt_hashes))

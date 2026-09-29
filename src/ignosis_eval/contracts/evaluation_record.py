@@ -192,6 +192,7 @@ class RecordBody(Contract):
 class SystemInfo(Contract):
     system: NonEmptyStr  # K0 | A | A+ | B, or a blind alias SYS-n in the blinded scoring view
     version: NonEmptyStr
+    llm_backend: str | None = None  # the provider of the LLM calls (e.g. gemini); null without one (3.1.0)
     model_snapshot_id: str | None = None
     prompt_hashes: dict[str, str] = Field(default_factory=dict)
 
@@ -214,7 +215,7 @@ class ExperimentMeta(Contract):
 
 
 class EvaluationRecord(RecordBody):
-    schema_version: Literal["evaluation_record/3.0.0"] = EVALUATION_RECORD_SCHEMA
+    schema_version: Literal["evaluation_record/3.1.0"] = EVALUATION_RECORD_SCHEMA
     record_status: RecordStatus
     confidence_source: ConfidenceSource | None = None  # AJ-06: A = SELF_REPORTED; A+, B, K0 = COMPUTED
     system: SystemInfo

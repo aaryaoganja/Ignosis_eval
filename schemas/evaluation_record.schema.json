@@ -802,6 +802,18 @@
     "SystemInfo": {
       "additionalProperties": false,
       "properties": {
+        "llm_backend": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Llm Backend"
+        },
         "model_snapshot_id": {
           "anyOf": [
             {
@@ -1041,8 +1053,8 @@
       "type": "string"
     },
     "schema_version": {
-      "const": "evaluation_record/3.0.0",
-      "default": "evaluation_record/3.0.0",
+      "const": "evaluation_record/3.1.0",
+      "default": "evaluation_record/3.1.0",
       "title": "Schema Version",
       "type": "string"
     },

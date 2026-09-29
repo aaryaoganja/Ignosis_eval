@@ -16,6 +16,7 @@
                                                    GEMINI_API_KEY at runtime for A / B)
     dev report --run-id ID [--out DIR] [--price-in USD --price-out USD]           intent-referenced baseline report
     dev consistency [--items ...] [--reps 3] [--systems K0]                        reproducibility smoke run
+    dev smoke                                        live Gemini check (A, A+, B on one synthetic demo call)
 """
 
 from __future__ import annotations
@@ -190,6 +191,24 @@ def cmd_dev_report(args) -> int:
         print(" | ".join(f"{k}: {v}" for k, v in row.items()))
     print(f"wrote {out / 'dev-baseline.json'} and {out / 'dev-baseline.md'}")
     return 0
+
+
+def cmd_dev_smoke(args) -> int:
+    import json
+
+    from ignosis_eval.app.smoke import run_smoke
+    from ignosis_eval.evaluators.llm import ProviderConfigError
+
+    try:
+        out = run_smoke(_spec(args))
+    except ProviderConfigError as exc:
+        print(f"NOT RUN: {exc}")
+        return 2
+    for c in out["checks"]:
+        print(f"{c['status']:4}  {c['check']}  ({c['detail']})")
+    print(json.dumps({k: out[k] for k in ("provider", "model", "served_model_versions", "record_system", "records",
+                                          "note")}, indent=1))
+    return 0 if out["ok"] else 1
 
 
 def cmd_dev_consistency(args) -> int:
@@ -453,6 +472,9 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--max-tokens", type=int, default=None)
         p.add_argument("--items", nargs="+", default=None)
         p.set_defaults(func=fn)
+    p = g.add_parser("smoke", help="live provider smoke test: one synthetic demo call through A, A+ and B")
+    common(p)
+    p.set_defaults(func=cmd_dev_smoke)
     p = g.add_parser("report")
     common(p)
     p.add_argument("--run-id", required=True)

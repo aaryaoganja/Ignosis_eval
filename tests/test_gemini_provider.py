@@ -184,6 +184,9 @@ def test_http_error_mapping(server, code, exc):
         _client(server).complete(_req(), 1)
     if isinstance(info.value, ProviderRequestError):
         assert info.value.status == code and info.value.is_config_error is (code in (401, 403, 404))
+    if code == 404:  # an unavailable model fails clearly and is never swapped for another
+        assert "'gemini-3.8-flash' is unavailable" in str(info.value) and "GEMINI_MODEL" in str(info.value)
+        assert [x["path"] for x in _Fake.seen] == ["/v1beta/models/gemini-3.8-flash:generateContent"]
 
 
 def test_invalid_key_is_a_config_error_and_the_key_is_redacted(server):
@@ -243,6 +246,8 @@ def test_a_and_b_through_gemini_with_env_config(gemini_env):
             "gemini", "gemini-3.8-flash", 0.0, 0, 1)
     assert all(x["body"]["generationConfig"]["seed"] == 0 for x in _Fake.seen)
     assert all(x["key"] == FAKE_KEY for x in _Fake.seen)
+    for rec in (rec_a, rec_b):  # the record states the provider and the exact model
+        assert (rec.system.llm_backend, rec.system.model_snapshot_id) == ("gemini", "gemini-3.8-flash")
     blob = json.dumps([trace_a.requests, trace_a.responses, trace_b.requests, trace_b.responses,
                        rec_a.model_dump(mode="json"), rec_b.model_dump(mode="json")])
     assert FAKE_KEY not in blob  # the key never reaches a trace or a record
@@ -277,3 +282,56 @@ def test_provider_config_error_mid_run_stops_the_run_with_failed_records(gemini_
     assert len(recs) == 1
     rec = json.loads(recs[0].read_text(encoding="utf-8"))
     assert rec["record_status"] == "EVALUATION_FAILED" and rec.get("verdict") is None
+
+
+def test_model_override_is_used_exactly(gemini_env, monkeypatch):
+    monkeypatch.setenv(PC.MODEL_ENV, "gemini-9.9-test")
+    _Fake.auto = True
+    rec = build_systems([System.A], SP, llm_backend="gemini", sleep=lambda s: None)[System.A].evaluate(  # type: ignore[attr-defined]
+        F.make_ni(SP), EvaluationContext(1, SP, TraceSink()))
+    assert {x["path"] for x in _Fake.seen} == {"/v1beta/models/gemini-9.9-test:generateContent"}
+    assert rec.system.model_snapshot_id == "gemini-9.9-test"
+
+
+def test_live_smoke_check(gemini_env):
+    """`ignosis-eval dev smoke` on a fake server that answers with the demo call's scripted output."""
+    from ignosis_eval.app.service import load_demo_calls
+    from ignosis_eval.app.smoke import SMOKE_DEMO, run_smoke
+
+    script = next(d for d in load_demo_calls() if d["id"] == SMOKE_DEMO)["script"]
+
+    def scripted(body: dict) -> tuple[int, dict]:
+        prompt = "".join(p["text"] for c in body["contents"] for p in c["parts"])
+        if '"title":"RecordBody"' in prompt:
+            return _ok(F.body_json(F.record(system="A")))
+        if '"title":"ExtractionOutput"' in prompt:
+            return _ok(json.dumps(script["extraction"]))
+        return _ok(json.dumps({"answers": script["answers"]}))
+
+    global _auto_reply
+    original = _auto_reply
+    _auto_reply = scripted
+    _Fake.auto = True
+    try:
+        out = run_smoke(SP, sleep=lambda s: None)
+    finally:
+        _auto_reply = original
+    assert out["ok"] and {c["status"] for c in out["checks"]} == {"PASS"}, out["checks"]
+    assert any(c["check"].startswith("judgment") and c["detail"] == "judgments accepted" for c in out["checks"])
+    assert out["record_system"]["B"] == {"llm_backend": "gemini", "model": "gemini-3.8-flash"}
+    assert out["served_model_versions"] == ["gemini-3.8-flash-001"] and FAKE_KEY not in json.dumps(out)
+
+
+def test_live_smoke_check_fails_safely(gemini_env, monkeypatch):
+    from ignosis_eval.app.smoke import run_smoke
+
+    _Fake.auto = False
+    _Fake.replies = [(200, {"promptFeedback": {"blockReason": "SAFETY"}})] * 4
+    out = run_smoke(SP, sleep=lambda s: None)
+    status = {c["check"]: c["status"] for c in out["checks"]}
+    assert out["ok"] is False and status["no failure became a verdict"] == "PASS"
+    assert out["records"]["A"] == {"status": "EVALUATION_FAILED", "verdict": None}
+    assert out["records"]["B"]["verdict"] is None and out["records"]["A+"]["verdict"] is None
+    monkeypatch.delenv(PC.API_KEY_ENV)
+    with pytest.raises(ProviderConfigError):
+        run_smoke(SP)

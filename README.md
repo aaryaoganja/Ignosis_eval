@@ -50,7 +50,8 @@ ignosis-eval spec check && ignosis-eval spec pending
 ignosis-eval bench check --scope dev --require-gold
 ignosis-eval bench transcript-qc <dir>          # draft DEV transcripts (<ITEM_ID>.txt) before the hash freeze
 ignosis-eval dev run --systems K0 && ignosis-eval dev report --run-id <id>   # DEV draft baseline (docs/dev-baseline.md)
-ignosis-eval dev run --systems K0,A,A+,B      # needs GEMINI_API_KEY in the runtime environment
+ignosis-eval dev smoke                         # live Gemini check (needs GEMINI_API_KEY in the environment)
+scripts/dev_gemini_baseline.sh                 # K0, A, A+, B on the 18 scored DEV calls + DEV report
 python -m ignosis_eval.app                    # review app on http://localhost:8000 (needs the [web] extra; PORT honoured)
 ```
 
@@ -93,28 +94,23 @@ python -m ignosis_eval.app       # http://localhost:8000
 
 ## Deploy on Railway
 
-The repository root has a `Dockerfile`, which Railway detects and builds. The image holds only the package, the
-frozen spec pack and the committed DEV report: no benchmark items, drafts, gold or runs. Railway's `railway.json` /
-`railway.toml` (Config as Code) is deprecated, and new services cannot use it, so this repository does not ship
-one. Use the service settings below.
+Exact steps: [`docs/railway-deploy.md`](docs/railway-deploy.md). Railway builds the repository `Dockerfile`; the
+image runs `python -m ignosis_eval.app` on `0.0.0.0:$PORT`. Set the healthcheck path to `/api/health`.
 
-1. **Create the service.** In Railway choose **New Project → Deploy from GitHub repo**, pick this repository and the
-   branch to deploy. Railway builds the `Dockerfile`; there is no build command to set.
-2. **Add the secret.** Open the service's **Variables** tab and add `GEMINI_API_KEY` with your key. You can seal it
-   so its value can never be viewed again. It is used at runtime only: the Dockerfile declares no `ARG`, so Railway
-   never passes it into the build, and it is never written to the image, the repository, logs or responses.
-3. **Optional non-secret variables:**
-   - `GEMINI_MODEL`: a pinned Gemini model code. The default is `gemini-3.8-flash`; `latest` / `preview` / `exp`
-     aliases are refused.
-   - `GEMINI_BASE_URL`: an API root, for a proxy only.
-   - `PORT` is injected by Railway and honoured. Nothing else is required.
-4. **Start command:** none needed. The image runs `python -m ignosis_eval.app`, which listens on `0.0.0.0:$PORT`.
-5. **Health check.** In the service **Settings**, set the healthcheck path to `/api/health`.
-6. **Access the app.** Under **Settings → Networking**, choose **Generate Domain**, then open the URL.
-   - The badge at the top right reads **LIVE EVALUATION: gemini-3.8-flash** when the key is set.
-   - Otherwise it reads **DEMO / REPLAY only**.
+### Railway Variables
 
-There is no authentication. Do not upload real customer calls to a public deployment.
+| Variable | Value | Secret |
+|---|---|---|
+| `GEMINI_API_KEY` | your Gemini API key | yes (seal it in Railway; never put it in a file) |
+| `GEMINI_MODEL` | the exact Gemini model to use (default if unset: `gemini-3.8-flash`) | no |
+
+- **Runtime only.** Both are read from the environment at runtime, never at build time.
+- **Key stays on the server.** Gemini calls are made only by the server. The key never reaches the browser, API
+  responses, logs, records or reports.
+- **Exact model, no fallback.** An unavailable model fails clearly (the error names `GEMINI_MODEL`), and the app
+  never switches models.
+- **No key.** Without a key the app runs in DEMO / REPLAY mode.
+- **No authentication.** Do not upload real customer calls to a public deployment.
 
 ## Repository layout
 
@@ -143,4 +139,5 @@ tests/              synthetic-stub tests only (P-1 rule 3)
   [`docs/experiment-protocol.md`](docs/experiment-protocol.md), [`docs/reliability.md`](docs/reliability.md):
   implementation maps to the spec.
 - [`docs/dev-baseline.md`](docs/dev-baseline.md): DEV draft runs, the intent reference, how to run A / A+ / B.
+- [`docs/railway-deploy.md`](docs/railway-deploy.md): Railway deployment and variables.
 - [`docs/gap-analysis.md`](docs/gap-analysis.md): history of the infrastructure phase and its reconciliation.

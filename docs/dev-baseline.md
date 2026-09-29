@@ -53,8 +53,15 @@ written once under `dev_draft_runs/<run_id>/`, which is git-ignored like `runs/`
 
 ## To complete the baseline (the only missing input is the key)
 
-1. Set `GEMINI_API_KEY` in the runtime environment. Never write it to a file in the repository.
-2. Run `ignosis-eval dev run --systems K0,A,A+,B`.
+1. Set `GEMINI_API_KEY` (and optionally `GEMINI_MODEL`) in the runtime environment. Never write the key to a file
+   in the repository.
+2. Run `ignosis-eval dev smoke`. It passes one synthetic demo call through A, A+ and B and checks that:
+   - the request succeeds and the response parses;
+   - the extraction and judgment schemas parse;
+   - the records validate;
+   - no failure became a verdict.
+   Then run `ignosis-eval dev run --systems K0,A,A+,B`. `scripts/dev_gemini_baseline.sh` does steps 2 and 3 in one
+   go.
 3. Run `ignosis-eval dev report --run-id <id>`. Add `--price-in/--price-out` (USD per million tokens, from the
    current Gemini price list) for a cost estimate; the price snapshot is B-08.
 4. For LLM run-to-run stability, run `ignosis-eval dev consistency --systems K0,A,A+,B --reps 3` and pass its

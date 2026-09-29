@@ -202,7 +202,7 @@ def result_view(record: EvaluationRecord | None, ni: NormalizedInput, spec: Spec
     cited: set[int] = set()
     view: dict[str, Any] = {
         "source": source, "source_label": SOURCE_LABELS[source], "call": call,
-        "evaluator": _evaluator_info(record, source, bool(trace and trace.usage["llm_calls"])),
+        "evaluator": _evaluator_info(record, source, trace),
         "frontend": {"evaluability": ni.frontend.evaluability_status.value,
                      "reason_codes": [r.value for r in ni.frontend.reason_codes],
                      "reason_text": _reason_text([r.value for r in ni.frontend.reason_codes]),
@@ -355,16 +355,19 @@ def _transcript(ni: NormalizedInput, cited: set[int]) -> list[dict[str, Any]]:
              "unreliable": t.unreliable} for t in ni.turns]
 
 
-def _evaluator_info(record: EvaluationRecord | None, source: str, model_called: bool) -> dict[str, Any]:
+def _evaluator_info(record: EvaluationRecord | None, source: str, trace: TraceSink | None) -> dict[str, Any]:
     pc = provider_config.describe()
+    model_called = bool(trace and trace.usage["llm_calls"])
+    served = sorted({str(r.get("model_id")) for r in (trace.responses if trace else []) if r.get("ok")})
     if record is not None and not model_called and record.record_status.value == "OK":
         provider, model = "none: deterministic front end (no model call was needed)", "-"
-    else:
-        provider = pc["provider"] if source == LIVE else ("scripted replay" if source == REPLAY else pc["provider"])
-        model = (record.system.model_snapshot_id if record and record.system.model_snapshot_id else
-                 (DEMO_MODEL_ID if source == REPLAY else pc["model_id"]))
+    elif source == REPLAY:
+        provider, model = "scripted replay", DEMO_MODEL_ID
+    else:  # the record states the provider and the exact configured model it was evaluated with
+        provider = (record.system.llm_backend if record and record.system.llm_backend else pc["provider"])
+        model = (record.system.model_snapshot_id if record and record.system.model_snapshot_id else pc["model_id"])
     return {"system": "B", "system_version": EvaluatorB.version, "provider": provider, "model": model,
-            "model_called": model_called,
+            "served_model_versions": served if source == LIVE else [], "model_called": model_called,
             "prompt_version": PROMPT_TEMPLATE_VERSION, "engine_version": ENGINE_VERSION,
             "frontend_version": FRONTEND_VERSION, "temperature": pc["temperature"],
             "input_modality": pc["input_modality"]}

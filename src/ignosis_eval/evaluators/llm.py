@@ -343,8 +343,17 @@ class GeminiClient(LLMClient):
         return body
 
     def complete(self, request: LLMRequest, attempt: int) -> LLMResponse:
-        data = _post_json(self._open, f"{self.base_url}/models/{self.model_id}:generateContent",
-                          self.payload(request), {"x-goog-api-key": self._key}, self.timeout_s, secrets=(self._key,))
+        try:
+            data = _post_json(self._open, f"{self.base_url}/models/{self.model_id}:generateContent",
+                              self.payload(request), {"x-goog-api-key": self._key}, self.timeout_s,
+                              secrets=(self._key,))
+        except ProviderRequestError as exc:
+            if exc.status == 404:  # never fall back to another model: the pinned model is the experiment (P-3)
+                raise ProviderRequestError(
+                    f"the configured Gemini model {self.model_id!r} is unavailable to this key (HTTP 404). Set "
+                    f"{provider_config.MODEL_ENV} to a model this key can use; no other model is tried. {exc}",
+                    404) from None
+            raise
         cands = data.get("candidates") or []
         content, stop = "", "STOP"
         if not isinstance(cands, list) or not cands:

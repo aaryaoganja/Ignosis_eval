@@ -18,7 +18,7 @@ SPEC_PROFILE_VERSION = "1.1.1"
 
 # Serialized artifact schemas produced by this implementation (bumped by the reconciliation).
 NORMALIZED_INPUT_SCHEMA: Final = "normalized_input/3.0.0"
-EVALUATION_RECORD_SCHEMA: Final = "evaluation_record/3.0.0"
+EVALUATION_RECORD_SCHEMA: Final = "evaluation_record/3.1.0"
 GOLD_LABEL_SCHEMA: Final = "gold_label/2.1.0"
 CASE_CARD_SCHEMA: Final = "case_card/2.2.0"
 ITEM_META_SCHEMA: Final = "item_meta/1.1.0"

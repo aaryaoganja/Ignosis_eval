@@ -355,6 +355,13 @@ H (a result would be wrong or unsafe), M (a metric or process would be incompara
       `SystemConfig.llm_backend` adds `gemini` (run_manifest 3.2.0).
     - The spec's B-05 item (the pinned snapshot for locked runs) stays PENDING_HUMAN_SIGNOFF in `docs/spec`, which
       is not edited. This decision covers DEV engineering runs and the review app.
+    - Records carry the provider in `system.llm_backend` next to the exact model in `system.model_snapshot_id`
+      (evaluation_record 3.1.0). Both are hidden in the blinded view.
+      - The version the provider actually served is logged with each response.
+      - An unavailable model (HTTP 404) fails with a message naming the model and `GEMINI_MODEL`; no other model
+        is ever tried.
+      - `ignosis-eval dev smoke` checks the live path on one synthetic app demo call: request, parsing, extraction
+        and judgment schemas, record validation, and that no failure becomes a verdict.
     - B lists the agent's `promise_of_action` events as `unverified_agent_commitments` (the EXE-03 `mvp_output`;
       B 0.2.1, engine 0.4.1).
     - The DEV report is labelled "DEV ENGINEERING MEASUREMENT — NOT FINAL RELIABILITY EVIDENCE" and adds Clean

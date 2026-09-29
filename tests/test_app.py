@@ -212,6 +212,9 @@ def test_live_transcript_evaluation_end_to_end(live, caplog):
     assert r["source"] == "LIVE" and r["status"] == "OK" and r["verdict"]["code"] in (
         "MEETS_BAR", "NEEDS_ATTENTION", "CRITICAL_FAIL")
     assert r["evaluator"]["model_called"] is True and r["evaluator"]["model"] == "gemini-3.8-flash"
+    assert r["evaluator"]["provider"] == "gemini" and r["evaluator"]["served_model_versions"] == ["gemini-3.8-flash"]
+    assert (r["record"]["system"]["llm_backend"], r["record"]["system"]["model_snapshot_id"]) == (
+        "gemini", "gemini-3.8-flash")
     assert r["usage"]["llm_calls"] >= 1 and r["usage"]["input_tokens"] >= 30
     assert _Gemini.seen and all(x["key"] == FAKE_KEY for x in _Gemini.seen)
     assert all(x["body"]["generationConfig"]["temperature"] == 0.0 for x in _Gemini.seen)
@@ -261,3 +264,22 @@ def test_static_client_never_handles_provider_secrets():
     text = "".join(p.read_text(encoding="utf-8") for p in static.iterdir())
     assert "generativelanguage" not in text and "x-goog-api-key" not in text and "AIza" not in text
     assert "innerHTML" not in text  # dynamic text goes through textContent only
+
+
+def test_server_listens_on_railway_port(monkeypatch):
+    import uvicorn
+
+    from ignosis_eval.app.__main__ import main
+
+    seen: dict[str, Any] = {}
+    monkeypatch.setattr(uvicorn, "run", lambda app, **kw: seen.update(app=app, **kw))
+    monkeypatch.setenv("PORT", "4321")
+    monkeypatch.delenv("HOST", raising=False)
+    main()
+    assert (seen["host"], seen["port"], seen["factory"]) == ("0.0.0.0", 4321, True)
+    assert seen["app"] == "ignosis_eval.app.server:create_app"
+    monkeypatch.delenv("PORT")
+    main()
+    assert seen["port"] == 8000
+    docker = (Path(__file__).resolve().parents[1] / "Dockerfile").read_text(encoding="utf-8")
+    assert 'CMD ["python", "-m", "ignosis_eval.app"]' in docker

@@ -112,6 +112,7 @@ ignosis-eval bench check --scope dev --require-gold   # includes bench/public (b
 ignosis-eval bench transcript-qc <dir>               # TQ checks on draft DEV transcripts <ITEM_ID>.txt before freeze
 ignosis-eval dev run | report | consistency         # DEV draft baseline vs design intent (docs/dev-baseline.md)
 ignosis-eval dev run --systems K0,A,A+,B             # A / A+ / B need GEMINI_API_KEY at runtime
+ignosis-eval dev smoke                               # live Gemini plumbing check; scripts/dev_gemini_baseline.sh = full DEV run
 python -m ignosis_eval.app                           # review app on $PORT (default 8000); pip install -e ".[web]"
 ignosis-eval bench manifest | gold freeze | run | blind | score | reveal   (see README)
 ```
