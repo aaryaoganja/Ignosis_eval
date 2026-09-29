@@ -165,7 +165,7 @@ stated, and the product already states them.
 
 ## Live test (Railway)
 
-Not verified from the build environment (no key, and the Railway URL is not reachable from it).
+Not verified from the build environment. The Gemini API itself is reachable from it (an unauthenticated request gets Google's own "API key required" 403), but no key is configured there: a key pasted into chat is not used, so rotate any key that was pasted. The Railway URL is not reachable from it. To let a future cloud session run the real checks, add `GEMINI_API_KEY` as an environment variable in the cloud environment's settings (a new session picks it up); otherwise run the steps below yourself.
 
 1. Open `https://ignosiseval-production.up.railway.app/api/health`.
    Expect: `{"status":"ok","version":"0.4.0","live_evaluation":true,"models":{"evaluator":"gemini-3.8-flash","transcription":"gemini-3.5-transcribe"}}`.
