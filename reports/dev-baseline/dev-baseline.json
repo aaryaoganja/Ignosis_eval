@@ -1,6 +1,6 @@
 {
   "report": "dev-baseline",
-  "report_version": "dev-baseline/1.1.0",
+  "report_version": "dev-baseline/1.2.0",
   "label": "DEV ENGINEERING MEASUREMENT — NOT FINAL RELIABILITY EVIDENCE",
   "notice": "DEV DRAFT RUN - not an experiment-protocol run. Transcripts are drafts pending native human review; there is no gold. Any comparison uses the frozen design intent (bench/public), not gold, and is not reliability evidence.",
   "reference": "frozen DEV design intent (bench/public blueprint and case cards), NOT gold",
@@ -15,11 +15,11 @@
     "provenance_sha256": "2743ebba98379e1c398079a8e073d36f8948aaa96a62271e45218fa423706ffb"
   },
   "run": {
-    "run_id": "devdraft-20260929T125153699660Z",
-    "created_at": "2026-09-29T12:51:53.699660+00:00",
+    "run_id": "devdraft-20260929T134347200882Z",
+    "created_at": "2026-09-29T13:43:47.200882+00:00",
     "repetitions": 1,
     "consistency_mode": false,
-    "git_commit": "d19892cd78f34d89c5712159f54f4caa56180b8e",
+    "git_commit": "fd469eb9cc2dbb44d2e98f7fc45fa6ab8df96d26",
     "git_dirty": false,
     "items_executed": [
       "C-01",
@@ -351,8 +351,8 @@
         "why": "one repetition"
       },
       "latency_s": {
-        "p50": 0.001108,
-        "p95": 0.001557,
+        "p50": 0.0011,
+        "p95": 0.00146,
         "n": 18
       },
       "tokens": {
@@ -390,7 +390,7 @@
       "must_not_fire_precision": "100% (4/4)",
       "pair_accuracy": "0% (0/3)",
       "abstention": "EF 0/18 · NE 0 · PARTIAL 0",
-      "latency": "p50 1.1 ms · p95 1.6 ms",
+      "latency": "p50 1.1 ms · p95 1.5 ms",
       "cost": "$0.0"
     },
     {
@@ -468,7 +468,7 @@
       }
     },
     "repetitions": 3,
-    "run_id": "devdraft-20260929T125154446278Z",
+    "run_id": "devdraft-20260929T134347892784Z",
     "spec": {
       "contract_version": "1.2.0-frozen",
       "profile_id": "collections_default_v1",
@@ -1229,5 +1229,22 @@
         }
       }
     }
+  },
+  "measured_vs_pending": {
+    "measured": [
+      "Deterministic front end: evaluability agreement 18/18, G7 agreement 18/18",
+      "K0: verdict accuracy 28% (5/18), critical recall 0% (0/13), must-not-fire precision 100% (4/4), pair accuracy 0% (0/3)",
+      "Reproducibility smoke run: 3 repetitions, stable: True"
+    ],
+    "pending": [
+      "A: PROVIDER KEY MISSING: GEMINI_API_KEY is not set in the runtime environment, so the gemini evaluator (gemini-3.8-flash) could not run",
+      "A+: PROVIDER KEY MISSING: GEMINI_API_KEY is not set in the runtime environment, so the gemini evaluator (gemini-3.8-flash) could not run",
+      "B: PROVIDER KEY MISSING: GEMINI_API_KEY is not set in the runtime environment, so the gemini evaluator (gemini-3.8-flash) could not run",
+      "native human review of the DEV transcripts (human_review_pending: true)",
+      "final gold labels (B-02): nothing here is scored against gold",
+      "holdout evaluation: not started",
+      "red-team evaluation: not started",
+      "final reliability validation"
+    ]
   }
 }

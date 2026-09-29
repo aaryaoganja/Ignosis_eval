@@ -6,7 +6,24 @@ DEV draft baseline · **FINAL RELIABILITY VALIDATION: PENDING** (no gold, no hol
 >
 > Reference: frozen DEV design intent (bench/public blueprint and case cards), NOT gold. Transcripts: **DRAFT**, human review pending: **True**. This is the first DEV baseline, not a validation of the evaluator.
 
-Run `devdraft-20260929T125153699660Z` · commit `d19892cd78f3` · repetitions 1 · unit mode TRANSCRIPT · ASR: none (transcript units only; ASR is B-06) · P-17 strings checked: 1474
+Run `devdraft-20260929T134347200882Z` · commit `fd469eb9cc2d` · repetitions 1 · unit mode TRANSCRIPT · ASR: none (transcript units only; ASR is B-06) · P-17 strings checked: 1474
+
+## Measured (this DEV run)
+
+- Deterministic front end: evaluability agreement 18/18, G7 agreement 18/18
+- K0: verdict accuracy 28% (5/18), critical recall 0% (0/13), must-not-fire precision 100% (4/4), pair accuracy 0% (0/3)
+- Reproducibility smoke run: 3 repetitions, stable: True
+
+## Pending (not measured; never shown as a result)
+
+- A: PROVIDER KEY MISSING: GEMINI_API_KEY is not set in the runtime environment, so the gemini evaluator (gemini-3.8-flash) could not run
+- A+: PROVIDER KEY MISSING: GEMINI_API_KEY is not set in the runtime environment, so the gemini evaluator (gemini-3.8-flash) could not run
+- B: PROVIDER KEY MISSING: GEMINI_API_KEY is not set in the runtime environment, so the gemini evaluator (gemini-3.8-flash) could not run
+- native human review of the DEV transcripts (human_review_pending: true)
+- final gold labels (B-02): nothing here is scored against gold
+- holdout evaluation: not started
+- red-team evaluation: not started
+- final reliability validation
 
 ## Evaluator configuration
 
@@ -27,7 +44,7 @@ Run `devdraft-20260929T125153699660Z` · commit `d19892cd78f3` · repetitions 1 
 
 | Evaluator | Verdict accuracy | Critical recall | Must-not-fire precision | Pair accuracy | Abstention | Latency | Cost |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| K0 | 28% (5/18) | 0% (0/13) | 100% (4/4) | 0% (0/3) | EF 0/18 · NE 0 · PARTIAL 0 | p50 1.1 ms · p95 1.6 ms | $0.0 |
+| K0 | 28% (5/18) | 0% (0/13) | 100% (4/4) | 0% (0/3) | EF 0/18 · NE 0 · PARTIAL 0 | p50 1.1 ms · p95 1.5 ms | $0.0 |
 | A | NOT EXECUTED: PROVIDER KEY MISSING: GEMINI_API_KEY is not set in the runtime environment, so the gemini evaluator (gemini-3.8-flash) could not run | | | | | | |
 | A+ | NOT EXECUTED: PROVIDER KEY MISSING: GEMINI_API_KEY is not set in the runtime environment, so the gemini evaluator (gemini-3.8-flash) could not run | | | | | | |
 | B | NOT EXECUTED: PROVIDER KEY MISSING: GEMINI_API_KEY is not set in the runtime environment, so the gemini evaluator (gemini-3.8-flash) could not run | | | | | | |
@@ -50,7 +67,7 @@ Excluded from the call-level baseline: G-02-N5 (tuning-only audio copy: its audi
 
 ## Reproducibility smoke run
 
-Run `devdraft-20260929T125154446278Z`, 3 repetitions under the same settings: front-end input hash stable on 18/18 items; record content hash stable per system: {'K0': '18/18'}; overall stable: **True**. System configurations, prompt hashes and component versions are captured in the run's `draft_run.json`.
+Run `devdraft-20260929T134347892784Z`, 3 repetitions under the same settings: front-end input hash stable on 18/18 items; record content hash stable per system: {'K0': '18/18'}; overall stable: **True**. System configurations, prompt hashes and component versions are captured in the run's `draft_run.json`.
 
 ## A vs A+ vs B
 
