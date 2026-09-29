@@ -641,7 +641,8 @@ async function renderReliability() {
   const notRun = names.filter(n => r.systems[n].status !== "EXECUTED");
   const measuredLines = executed.map(n => {
     const m = r.systems[n].metrics || {};
-    return h("li", {}, h("strong", {}, SYSTEM_NAMES[n] + " (" + n + "): "), "verdict matched on " + pct(m.verdict_accuracy) + " of calls; caught " + pct(m.critical_recall) + " of intended hard-rule failures.");
+    return h("li", {}, h("strong", {}, SYSTEM_NAMES[n] + " (" + n + "): "), "verdict matched on " + pct(m.verdict_accuracy) + " of calls; caught " + pct(m.critical_recall) + " of intended hard-rule failures.",
+      n === "K0" ? h("span", { class: "muted" }, " K0 is a deliberately minimal comparison floor, not the evaluator used in this app: its keyword lists stay empty until native review, so it detects almost nothing by design.") : null);
   });
   const summary = h("div", { class: "rel-grid" },
     h("section", { class: "panel rel-card", "aria-labelledby": "dev-title" },
@@ -651,7 +652,7 @@ async function renderReliability() {
       h("h3", {}, "Measured so far"),
       h("ul", { class: "plain-list small" }, measuredLines,
         notRun.length ? h("li", {}, h("strong", {}, notRun.map(n => SYSTEM_NAMES[n] ? n : n).join(", ") + ": "), "not measured yet. The development run with the live model has not been executed; the model-based numbers stay empty until it is (see Technical details).") : null,
-        r.reproducibility ? h("li", {}, h("strong", {}, "Repeatability: "), r.reproducibility.repetitions + " identical runs, results " + (r.reproducibility.stable ? "stable." : "not stable.")) : null)),
+        r.reproducibility ? h("li", {}, h("strong", {}, "Repeatability (pre-checks and K0, both deterministic): "), r.reproducibility.repetitions + " identical runs, results " + (r.reproducibility.stable ? "stable." : "not stable.") + " The model evaluator's repeatability is not measured yet.") : null)),
     h("section", { class: "panel rel-card pending-card", "aria-labelledby": "final-title" },
       h("div", { class: "section-head" }, h("h2", { id: "final-title" }, "Final reliability validation"), chip("PENDING", "crit")),
       h("p", { class: "small" }, "Final validation proves the evaluator works on calls it has never seen. It needs:"),
@@ -669,7 +670,7 @@ async function renderReliability() {
     h("p", { class: "small muted" }, "Pending before audio can be measured: " + xp.pending)) : null;
   const table = h("section", { class: "panel", "aria-labelledby": "cmp-title" },
     h("h2", { id: "cmp-title" }, "Evaluators compared on the development calls"),
-    h("p", { class: "small muted" }, "The app uses B. The others are comparison points. UNMEASURED means the run gives the number no support; it is never filled in."),
+    h("p", { class: "small muted" }, "The app uses B. The others are comparison points; K0 is a deliberately minimal floor (empty keyword lists until native review), so its low numbers are expected and say nothing about B. UNMEASURED means the run gives the number no support; it is never filled in."),
     h("div", { class: "table-wrap" }, h("table", { class: "metrics" },
       h("thead", {}, h("tr", {}, h("th", { scope: "col" }, "Measure"), names.map(n => h("th", { scope: "col" }, n, h("div", { class: "small muted th-sub" }, SYSTEM_NAMES[n] || ""))))),
       h("tbody", {},

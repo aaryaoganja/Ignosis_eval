@@ -67,6 +67,8 @@ ignosis-eval score --run-id <run_id>     # -> scoring/<run_id>/{item_scores.csv,
 
 ## Review app (clickable MVP)
 
+Assignment coverage, evidence and limitations, requirement by requirement: [`docs/assignment-readiness.md`](docs/assignment-readiness.md).
+
 For the AI Quality Reviewer / Operations QA Reviewer: *Ignosis already listens to every call. This layer judges
 whether the AI agent behaved correctly.*
 
