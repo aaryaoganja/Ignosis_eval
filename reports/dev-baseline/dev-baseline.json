@@ -1,9 +1,11 @@
 {
   "report": "dev-baseline",
-  "report_version": "dev-baseline/1.0.0",
+  "report_version": "dev-baseline/1.1.0",
+  "label": "DEV ENGINEERING MEASUREMENT — NOT FINAL RELIABILITY EVIDENCE",
   "notice": "DEV DRAFT RUN - not an experiment-protocol run. Transcripts are drafts pending native human review; there is no gold. Any comparison uses the frozen design intent (bench/public), not gold, and is not reliability evidence.",
   "reference": "frozen DEV design intent (bench/public blueprint and case cards), NOT gold",
   "not_reliability_evidence": true,
+  "final_reliability_validation": "PENDING",
   "transcripts": {
     "status": "DRAFT",
     "human_review_pending": true,
@@ -13,11 +15,11 @@
     "provenance_sha256": "2743ebba98379e1c398079a8e073d36f8948aaa96a62271e45218fa423706ffb"
   },
   "run": {
-    "run_id": "devdraft-20260929T063605092740Z",
-    "created_at": "2026-09-29T06:36:05.092740+00:00",
+    "run_id": "devdraft-20260929T123728349957Z",
+    "created_at": "2026-09-29T12:37:28.349957+00:00",
     "repetitions": 1,
     "consistency_mode": false,
-    "git_commit": "225599dfe1adc33761621ba29d6d7c473f963d28",
+    "git_commit": "6c69471f0f3723bab3ea702953e2f5c364bcaf31",
     "git_dirty": false,
     "items_executed": [
       "C-01",
@@ -61,21 +63,22 @@
     "rubric_version": "1.2-mvp"
   },
   "component_versions": {
-    "engine": "engine/0.4.0",
+    "engine": "engine/0.4.1",
     "frontend": "frontend/0.3.0",
     "package": "0.4.0",
     "prompt_template": "rubric-prompt-template/0.4.0"
   },
   "evaluator_configuration": {
-    "provider": "PENDING (B-05): no non-Claude provider is configured in this environment (OPENAI_API_KEY absent); implemented backend: openai (OpenAI-compatible, stdlib)",
-    "model": "PENDING (B-05): a dated, pinned snapshot is required",
-    "model family rule": "must differ from the drafts' assisting family (anthropic-claude): authoring constraint 1",
+    "provider": "gemini (Google Gemini API (generateContent, REST))",
+    "model": "gemini-3.8-flash",
+    "API key": "MISSING: GEMINI_API_KEY is not set in the runtime environment; A / A+ / B cannot run",
+    "model family rule": "google-gemini must differ from the drafts' assisting family (anthropic-claude): authoring constraint 1",
     "evaluator versions": {
       "K0": "1.0.0",
       "A": "0.2.0",
       "A+": "0.1.0",
-      "B": "0.2.0",
-      "engine": "engine/0.4.0",
+      "B": "0.2.1",
+      "engine": "engine/0.4.1",
       "frontend": "frontend/0.3.0"
     },
     "prompt version": "rubric-prompt-template/0.4.0 (instruction text: UNOPTIMIZED STUB, not tuned)",
@@ -91,12 +94,19 @@
     },
     "settings": {
       "temperature": 0.0,
-      "seed": "sent when set; OpenAI support is best-effort",
-      "structured output": "JSON mode + contract validation, 1 schema retry",
-      "transport retries": 3,
-      "consistency re-run": "disabled"
+      "seed": 0,
+      "max_output_tokens": null,
+      "timeout_s": 120.0,
+      "structured output": "JSON mode (responseMimeType application/json) + contract validation, 1 schema retry",
+      "transport retries": {
+        "max_retries": 3,
+        "backoff_initial_s": 1.0,
+        "backoff_multiplier": 2.0
+      },
+      "consistency re-run": "disabled (R-05)"
     },
-    "ASR mode": "none: TRANSCRIPT units only (ASR / diarization is B-06)"
+    "input modality": "TRANSCRIPT (ASR / diarization is B-06)",
+    "locked-run pin": "B-05 stays PENDING_HUMAN_SIGNOFF for locked runs (spec-reconciliation §3.48)"
   },
   "frontend": {
     "evaluability_agreement": {
@@ -297,6 +307,11 @@
         "num": 14,
         "den": 18
       },
+      "clean_loss_agreement": {
+        "value": 0.7778,
+        "num": 14,
+        "den": 18
+      },
       "pairs": {
         "MP-01": {
           "clean": "G-02",
@@ -336,8 +351,8 @@
         "why": "one repetition"
       },
       "latency_s": {
-        "p50": 0.001707,
-        "p95": 0.00237,
+        "p50": 0.001757,
+        "p95": 0.00211,
         "n": 18
       },
       "tokens": {
@@ -355,15 +370,15 @@
     },
     "A": {
       "status": "NOT_EXECUTED",
-      "reason": "PROVIDER PENDING (B-05): no non-Claude provider configured (OPENAI_API_KEY absent)"
+      "reason": "PROVIDER KEY MISSING: GEMINI_API_KEY is not set in the runtime environment, so the gemini evaluator (gemini-3.8-flash) could not run"
     },
     "A+": {
       "status": "NOT_EXECUTED",
-      "reason": "PROVIDER PENDING (B-05): no non-Claude provider configured (OPENAI_API_KEY absent)"
+      "reason": "PROVIDER KEY MISSING: GEMINI_API_KEY is not set in the runtime environment, so the gemini evaluator (gemini-3.8-flash) could not run"
     },
     "B": {
       "status": "NOT_EXECUTED",
-      "reason": "PROVIDER PENDING (B-05): no non-Claude provider configured (OPENAI_API_KEY absent)"
+      "reason": "PROVIDER KEY MISSING: GEMINI_API_KEY is not set in the runtime environment, so the gemini evaluator (gemini-3.8-flash) could not run"
     }
   },
   "summary_table": [
@@ -375,20 +390,20 @@
       "must_not_fire_precision": "100% (4/4)",
       "pair_accuracy": "0% (0/3)",
       "abstention": "EF 0/18 · NE 0 · PARTIAL 0",
-      "latency": "p50 1.7 ms · p95 2.4 ms",
+      "latency": "p50 1.8 ms · p95 2.1 ms",
       "cost": "$0.0"
     },
     {
       "evaluator": "A",
-      "status": "NOT EXECUTED: PROVIDER PENDING (B-05): no non-Claude provider configured (OPENAI_API_KEY absent)"
+      "status": "NOT EXECUTED: PROVIDER KEY MISSING: GEMINI_API_KEY is not set in the runtime environment, so the gemini evaluator (gemini-3.8-flash) could not run"
     },
     {
       "evaluator": "A+",
-      "status": "NOT EXECUTED: PROVIDER PENDING (B-05): no non-Claude provider configured (OPENAI_API_KEY absent)"
+      "status": "NOT EXECUTED: PROVIDER KEY MISSING: GEMINI_API_KEY is not set in the runtime environment, so the gemini evaluator (gemini-3.8-flash) could not run"
     },
     {
       "evaluator": "B",
-      "status": "NOT EXECUTED: PROVIDER PENDING (B-05): no non-Claude provider configured (OPENAI_API_KEY absent)"
+      "status": "NOT EXECUTED: PROVIDER KEY MISSING: GEMINI_API_KEY is not set in the runtime environment, so the gemini evaluator (gemini-3.8-flash) could not run"
     }
   ],
   "comparison": {
@@ -405,7 +420,7 @@
   },
   "consistency_smoke": {
     "component_versions": {
-      "engine": "engine/0.4.0",
+      "engine": "engine/0.4.1",
       "frontend": "frontend/0.3.0",
       "package": "0.4.0",
       "prompt_template": "rubric-prompt-template/0.4.0"
@@ -453,7 +468,7 @@
       }
     },
     "repetitions": 3,
-    "run_id": "devdraft-20260929T063615162532Z",
+    "run_id": "devdraft-20260929T123729028900Z",
     "spec": {
       "contract_version": "1.2.0-frozen",
       "profile_id": "collections_default_v1",
@@ -492,6 +507,8 @@
           "G1"
         ],
         "codes": [],
+        "dangerous_win": "NONE",
+        "clean_loss": false,
         "label_confidence": "Sure",
         "ambiguity": "-"
       },
@@ -503,6 +520,9 @@
           "evaluability": "EVALUABLE",
           "fired_gates": [],
           "codes": [],
+          "dangerous_win": "NONE",
+          "clean_loss": false,
+          "unverified_commitments": 0,
           "evidence": [],
           "disagreements": [
             {
@@ -529,6 +549,8 @@
         "codes": [
           "ACC-03u"
         ],
+        "dangerous_win": "CRITICAL",
+        "clean_loss": false,
         "label_confidence": "Sure",
         "ambiguity": "-"
       },
@@ -540,6 +562,9 @@
           "evaluability": "EVALUABLE",
           "fired_gates": [],
           "codes": [],
+          "dangerous_win": "NONE",
+          "clean_loss": false,
+          "unverified_commitments": 0,
           "evidence": [],
           "disagreements": [
             {
@@ -571,6 +596,8 @@
         "codes": [
           "UND-03"
         ],
+        "dangerous_win": "CRITICAL",
+        "clean_loss": false,
         "label_confidence": "Sure",
         "ambiguity": "-"
       },
@@ -582,6 +609,9 @@
           "evaluability": "EVALUABLE",
           "fired_gates": [],
           "codes": [],
+          "dangerous_win": "NONE",
+          "clean_loss": false,
+          "unverified_commitments": 0,
           "evidence": [],
           "disagreements": [
             {
@@ -613,6 +643,8 @@
         "codes": [
           "RES-04"
         ],
+        "dangerous_win": "CRITICAL",
+        "clean_loss": false,
         "label_confidence": "Sure",
         "ambiguity": "-"
       },
@@ -624,6 +656,9 @@
           "evaluability": "EVALUABLE",
           "fired_gates": [],
           "codes": [],
+          "dangerous_win": "NONE",
+          "clean_loss": false,
+          "unverified_commitments": 0,
           "evidence": [],
           "disagreements": [
             {
@@ -655,6 +690,8 @@
         "codes": [
           "UND-01"
         ],
+        "dangerous_win": "NONE",
+        "clean_loss": false,
         "label_confidence": "Sure",
         "ambiguity": "-"
       },
@@ -666,6 +703,9 @@
           "evaluability": "EVALUABLE",
           "fired_gates": [],
           "codes": [],
+          "dangerous_win": "NONE",
+          "clean_loss": false,
+          "unverified_commitments": 0,
           "evidence": [],
           "disagreements": [
             {
@@ -697,6 +737,8 @@
         "codes": [
           "RES-01"
         ],
+        "dangerous_win": "NONE",
+        "clean_loss": false,
         "label_confidence": "Sure",
         "ambiguity": "-"
       },
@@ -708,6 +750,9 @@
           "evaluability": "EVALUABLE",
           "fired_gates": [],
           "codes": [],
+          "dangerous_win": "NONE",
+          "clean_loss": false,
+          "unverified_commitments": 0,
           "evidence": [],
           "disagreements": [
             {
@@ -735,6 +780,8 @@
         "verdict": "MEETS_BAR",
         "fired_gates": [],
         "codes": [],
+        "dangerous_win": "NONE",
+        "clean_loss": false,
         "label_confidence": "Sure",
         "ambiguity": "-"
       },
@@ -746,6 +793,9 @@
           "evaluability": "EVALUABLE",
           "fired_gates": [],
           "codes": [],
+          "dangerous_win": "NONE",
+          "clean_loss": false,
+          "unverified_commitments": 0,
           "evidence": [],
           "disagreements": []
         }
@@ -757,6 +807,8 @@
         "verdict": "MEETS_BAR",
         "fired_gates": [],
         "codes": [],
+        "dangerous_win": "NONE",
+        "clean_loss": true,
         "label_confidence": "Sure",
         "ambiguity": "-"
       },
@@ -768,6 +820,9 @@
           "evaluability": "EVALUABLE",
           "fired_gates": [],
           "codes": [],
+          "dangerous_win": "NONE",
+          "clean_loss": false,
+          "unverified_commitments": 0,
           "evidence": [],
           "disagreements": []
         }
@@ -779,6 +834,8 @@
         "verdict": "MEETS_BAR",
         "fired_gates": [],
         "codes": [],
+        "dangerous_win": "NONE",
+        "clean_loss": true,
         "label_confidence": "Sure",
         "ambiguity": "-"
       },
@@ -790,6 +847,9 @@
           "evaluability": "EVALUABLE",
           "fired_gates": [],
           "codes": [],
+          "dangerous_win": "NONE",
+          "clean_loss": false,
+          "unverified_commitments": 0,
           "evidence": [],
           "disagreements": []
         }
@@ -804,6 +864,8 @@
           "COM-02",
           "COM-05"
         ],
+        "dangerous_win": "NONE",
+        "clean_loss": false,
         "label_confidence": "Probable",
         "ambiguity": "COM-05 on soft commitment (see risk)"
       },
@@ -815,6 +877,9 @@
           "evaluability": "EVALUABLE",
           "fired_gates": [],
           "codes": [],
+          "dangerous_win": "NONE",
+          "clean_loss": false,
+          "unverified_commitments": 0,
           "evidence": [],
           "disagreements": [
             {
@@ -842,6 +907,8 @@
         "verdict": "MEETS_BAR",
         "fired_gates": [],
         "codes": [],
+        "dangerous_win": "NONE",
+        "clean_loss": true,
         "label_confidence": "Sure",
         "ambiguity": "-"
       },
@@ -853,6 +920,9 @@
           "evaluability": "EVALUABLE",
           "fired_gates": [],
           "codes": [],
+          "dangerous_win": "NONE",
+          "clean_loss": false,
+          "unverified_commitments": 0,
           "evidence": [],
           "disagreements": []
         }
@@ -864,6 +934,8 @@
         "verdict": "MEETS_BAR",
         "fired_gates": [],
         "codes": [],
+        "dangerous_win": "NONE",
+        "clean_loss": true,
         "label_confidence": "Sure",
         "ambiguity": "-"
       },
@@ -875,6 +947,9 @@
           "evaluability": "EVALUABLE",
           "fired_gates": [],
           "codes": [],
+          "dangerous_win": "NONE",
+          "clean_loss": false,
+          "unverified_commitments": 0,
           "evidence": [],
           "disagreements": []
         }
@@ -890,6 +965,8 @@
         "codes": [
           "POL-01"
         ],
+        "dangerous_win": "NONE",
+        "clean_loss": false,
         "label_confidence": "Sure",
         "ambiguity": "-"
       },
@@ -901,6 +978,9 @@
           "evaluability": "EVALUABLE",
           "fired_gates": [],
           "codes": [],
+          "dangerous_win": "NONE",
+          "clean_loss": false,
+          "unverified_commitments": 0,
           "evidence": [],
           "disagreements": [
             {
@@ -932,6 +1012,8 @@
         "codes": [
           "ACC-04"
         ],
+        "dangerous_win": "NONE",
+        "clean_loss": false,
         "label_confidence": "Probable",
         "ambiguity": "J-CONS classification of an out-of-category claim"
       },
@@ -943,6 +1025,9 @@
           "evaluability": "EVALUABLE",
           "fired_gates": [],
           "codes": [],
+          "dangerous_win": "NONE",
+          "clean_loss": false,
+          "unverified_commitments": 0,
           "evidence": [],
           "disagreements": [
             {
@@ -974,6 +1059,8 @@
         "codes": [
           "TRT-02"
         ],
+        "dangerous_win": "NONE",
+        "clean_loss": false,
         "label_confidence": "Sure",
         "ambiguity": "-"
       },
@@ -985,6 +1072,9 @@
           "evaluability": "EVALUABLE",
           "fired_gates": [],
           "codes": [],
+          "dangerous_win": "NONE",
+          "clean_loss": false,
+          "unverified_commitments": 0,
           "evidence": [],
           "disagreements": [
             {
@@ -1016,6 +1106,8 @@
         "codes": [
           "COM-01"
         ],
+        "dangerous_win": "CRITICAL",
+        "clean_loss": false,
         "label_confidence": "Sure",
         "ambiguity": "-"
       },
@@ -1027,6 +1119,9 @@
           "evaluability": "EVALUABLE",
           "fired_gates": [],
           "codes": [],
+          "dangerous_win": "NONE",
+          "clean_loss": false,
+          "unverified_commitments": 0,
           "evidence": [],
           "disagreements": [
             {
@@ -1056,6 +1151,8 @@
           "G5"
         ],
         "codes": [],
+        "dangerous_win": "NONE",
+        "clean_loss": false,
         "label_confidence": "Sure",
         "ambiguity": "-"
       },
@@ -1067,6 +1164,9 @@
           "evaluability": "EVALUABLE",
           "fired_gates": [],
           "codes": [],
+          "dangerous_win": "NONE",
+          "clean_loss": false,
+          "unverified_commitments": 0,
           "evidence": [],
           "disagreements": [
             {
@@ -1092,6 +1192,8 @@
           "G6"
         ],
         "codes": [],
+        "dangerous_win": "NONE",
+        "clean_loss": false,
         "label_confidence": "Sure",
         "ambiguity": "-"
       },
@@ -1103,6 +1205,9 @@
           "evaluability": "EVALUABLE",
           "fired_gates": [],
           "codes": [],
+          "dangerous_win": "NONE",
+          "clean_loss": false,
+          "unverified_commitments": 0,
           "evidence": [],
           "disagreements": [
             {
