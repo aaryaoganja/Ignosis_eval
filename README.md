@@ -42,6 +42,7 @@ python -m pytest                         # the whole suite
 ruff check src tests scripts && mypy     # lint + types
 ignosis-eval spec check && ignosis-eval spec pending
 ignosis-eval bench check --scope dev --require-gold
+ignosis-eval bench transcript-qc <dir>          # draft DEV transcripts (<ITEM_ID>.txt) before the hash freeze
 ```
 
 A full dev run once items, cards and gold exist (plumbing only while the backend is a mock):

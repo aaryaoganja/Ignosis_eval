@@ -28,6 +28,9 @@ $BENCH_PRIVATE_DIR/{holdout,redteam}/items/<item_id>/…, case_cards/, gold/    
 ## Workflow
 
 1. **Write items and cards.** Validate with `ignosis-eval casecard validate <card>` and `ignosis-eval bench check --scope dev`.
+   Before a DEV transcript batch enters `bench/dev`, run `ignosis-eval bench transcript-qc <dir>` on the drafts
+   (files named `<ITEM_ID>.txt` or `.json`). It applies the deterministic transcript checks against the frozen DEV
+   design (TQ001–TQ015, below); the beats, gate behavior, verdict consistency and naturalness stay with the reviewer.
 2. **Hash-list everything** before any evaluator prompt exists (authoring constraint 8):
    `ignosis-eval bench manifest --scope dev|private --dataset-version <v> --created-by <id>`.
 3. **Label gold blind** (B-02/B-10), then run `ignosis-eval bench check --require-gold` and
@@ -115,6 +118,33 @@ The two PD016 warnings of the previous design are resolved by SC-04.
   - a gold G7 positive (B019, BD-02).
   - B016 (the TRT-06 30 s / 80 words check) is removed: it enforced a reconstructed 1.1 constraint that the frozen
     1.2 authoring constraints do not contain.
+
+## Transcript QC (`bench transcript-qc`, `benchmark/transcript_qc.py`)
+
+Deterministic checks on draft DEV transcripts, each with a frozen basis (convention 44 in
+[`spec-reconciliation.md`](spec-reconciliation.md) §3). Errors must be fixed before the transcript hash freeze.
+
+| Check | Severity | What | Basis |
+|---|---|---|---|
+| TQ001 | error | File name is not a DEV design item id; several files for one item (left unchecked) | §12 item ids |
+| TQ002 | error | Transcript does not parse | §2.3 |
+| TQ003 | error | OTHER / UNKNOWN turn, or no AGENT / BORROWER turn, in an item expected EVALUABLE | DC-00, DC-02, SC-03 |
+| TQ004 | error | P-17 identity in turn text or header: item / pair / check ids, benchmark labels, own id or file name | SC-05 |
+| TQ005 | error | `call_start_ts` present / absent against the design | constraint 7, BD-04 |
+| TQ006 | error | The header's G7 (front-end `precheck_g7`) differs from the design's G7 | profile calling window, BD-02 |
+| TQ007 | warning | Reliability marker in a turn (span unreliable) | §2.3, DC-01 |
+| TQ008 | warning | `truncated_start: true` | DC-TRUNC, constraint 6 |
+| TQ009 | error | Agent turn over the TRT-06 threshold where the design expects no TRT-06 | TRT-06, AJ-02, profile |
+| TQ010 | error | A term the item's card bans, in the banned speaker's turns | frozen case card |
+| TQ011 | error | Prohibited-consequence lexicon phrase in an item whose card forbids the seeds | frozen card, profile lexicon |
+| TQ012 | warning | Pair lengths differ by more than 10% (words) | constraint 4 (as B013) |
+| TQ013 | error | Pair: agent turns that differ between the members are not 1–3 | constraint 4 |
+| TQ014 | warning | Pair: a changed customer-side turn not reacting to a changed agent turn, beyond BD-03 incidentals | constraint 4, BD-03 |
+| TQ015 | warning | Pair: only one member in the batch; pair checks skipped | — |
+
+Not checked, because no frozen notation or value exists: interruptions (constraint 2; §2.3 has no marker for them),
+DC-02 non-conversation (threshold `PENDING_HUMAN_SIGNOFF`), beat coverage and the mapping of beats to turns (the
+labeler maps beats after the freeze).
 
 ## Authoring constraints (frozen, `implementation-blockers.md` 1–8)
 

@@ -4,6 +4,7 @@
     casecard validate <cards...>                   CCxxx rules
     bench check [--scope dev|private|all] [--require-gold]   (dev includes the frozen DEV design in bench/public)
     bench public-check                              validate bench/public only (PDxxx rules; no private data)
+    bench transcript-qc DIR [--items ID ...]        QC draft DEV transcripts <ITEM_ID>.txt|.json (TQxxx rules)
     bench manifest --scope ... --dataset-version V  hash list (P-1 rule 5)
     gold freeze --scope ... --gold-version V        |  bench verify / gold verify --scope ...
     run --split dev --systems K0,A,A+,B [...]       P-5/P-6 run (locked kinds need --confirm-holdout)
@@ -103,6 +104,20 @@ def cmd_bench_public_check(args) -> int:
         print(f"frozen DEV design: {len(rep.design.items)} items {dict(sorted(packs.items()))}; pairs "
               f"{[p.pair_id for p in reg.pairs]}; controls {[c.item_id for c in reg.controls]}; "
               f"verified against docs/freeze (FREEZE-public {rep.design.freeze_public_sha256[:16]})")
+    return _print_issues(rep.issues)
+
+
+def cmd_bench_transcript_qc(args) -> int:
+    from ignosis_eval.benchmark.transcript_qc import check_transcripts
+
+    rep = check_transcripts(args.directory, _spec(args), _layout(args).public_dir, items=args.items)
+    for iid in sorted(rep.checked):
+        found = rep.item_issues(iid)
+        n_err = sum(1 for i in found if i.severity == "error")
+        state = f"{n_err} error(s), {len(found) - n_err} warning(s)" if found else "no deterministic issue"
+        print(f"{iid:<8} {rep.checked[iid].name:<14} {state}")
+    print(f"pairs checked: {rep.pairs_checked or 'none'}; semantic QC (beats, gate behavior, verdict, "
+          "naturalness) is the reviewer's")
     return _print_issues(rep.issues)
 
 
@@ -249,6 +264,11 @@ def build_parser() -> argparse.ArgumentParser:
     p = g.add_parser("public-check")
     common(p)
     p.set_defaults(func=cmd_bench_public_check)
+    p = g.add_parser("transcript-qc")
+    common(p)
+    p.add_argument("directory", help="draft transcripts named <ITEM_ID>.txt or .json")
+    p.add_argument("--items", nargs="+", default=None, help="check only these item ids")
+    p.set_defaults(func=cmd_bench_transcript_qc)
     p = g.add_parser("manifest")
     common(p)
     p.add_argument("--scope", choices=["dev", "private"], required=True)

@@ -88,6 +88,7 @@ ruff check src tests scripts && mypy # lint + types
 ignosis-eval schemas export          # after any contract change (a test enforces sync)
 ignosis-eval spec pending            # PENDING_HUMAN_SIGNOFF inventory
 ignosis-eval bench check --scope dev --require-gold   # includes bench/public (bench public-check alone)
+ignosis-eval bench transcript-qc <dir>               # TQ checks on draft DEV transcripts <ITEM_ID>.txt before freeze
 ignosis-eval bench manifest | gold freeze | run | blind | score | reveal   (see README)
 ```
 

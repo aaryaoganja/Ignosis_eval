@@ -278,6 +278,16 @@ H (a result would be wrong or unsafe), M (a metric or process would be incompara
 43. **Post-freeze clarifications live in `docs/bd-changelog.md`.** Writing BD-03..BD-05 into `frozen-contract.md`
     §0/§12 was not done (the frozen files stay byte-identical and every freeze hash verifies); the validator reads the
     BD ids from the changelog and accepts them as `rule_basis` / pair-metadata bases.
+44. **Transcript QC before the hash freeze** (`benchmark/transcript_qc.py`, `bench transcript-qc`, TQ001–TQ015).
+    Deterministic checks only, each with a frozen basis. Constraint 4 on transcripts: turns are aligned by exact
+    role + text equality (difflib); the edited agent turns are the larger count over the two members and must be 1–3;
+    a changed customer-side turn "directly reacts" when the turn before it is a changed agent turn; the pair's declared
+    borrower-context incidentals (BD-03) allow that many other changed customer-side turns. Length ±10% is measured in
+    words, as B013. Card word bans are the quoted terms of "must not let the agent say", "Borrower never says" and
+    "no rubric words (...)", matched ignoring case. "No words from the prohibited lexicon seeds" uses the profile's
+    prohibited-consequence `terms` and `seed_candidates_unreviewed` (authoring QC, not a benchmark run); all-caps seeds
+    match their case only (FIR vs the Hinglish "fir"). A surplus header is reported by TQ005 alone. Interruptions
+    (realism constraint 2) are not checked: §2.3 defines no notation for them. Tests: `test_transcript_qc.py`.
 
 ## 4. Open questions / inconsistencies found in the spec (for the spec owner)
 
