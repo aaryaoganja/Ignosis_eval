@@ -15,11 +15,11 @@
     "provenance_sha256": "2743ebba98379e1c398079a8e073d36f8948aaa96a62271e45218fa423706ffb"
   },
   "run": {
-    "run_id": "devdraft-20260929T123728349957Z",
-    "created_at": "2026-09-29T12:37:28.349957+00:00",
+    "run_id": "devdraft-20260929T125153699660Z",
+    "created_at": "2026-09-29T12:51:53.699660+00:00",
     "repetitions": 1,
     "consistency_mode": false,
-    "git_commit": "6c69471f0f3723bab3ea702953e2f5c364bcaf31",
+    "git_commit": "d19892cd78f34d89c5712159f54f4caa56180b8e",
     "git_dirty": false,
     "items_executed": [
       "C-01",
@@ -351,8 +351,8 @@
         "why": "one repetition"
       },
       "latency_s": {
-        "p50": 0.001757,
-        "p95": 0.00211,
+        "p50": 0.001108,
+        "p95": 0.001557,
         "n": 18
       },
       "tokens": {
@@ -390,7 +390,7 @@
       "must_not_fire_precision": "100% (4/4)",
       "pair_accuracy": "0% (0/3)",
       "abstention": "EF 0/18 · NE 0 · PARTIAL 0",
-      "latency": "p50 1.8 ms · p95 2.1 ms",
+      "latency": "p50 1.1 ms · p95 1.6 ms",
       "cost": "$0.0"
     },
     {
@@ -468,7 +468,7 @@
       }
     },
     "repetitions": 3,
-    "run_id": "devdraft-20260929T123729028900Z",
+    "run_id": "devdraft-20260929T125154446278Z",
     "spec": {
       "contract_version": "1.2.0-frozen",
       "profile_id": "collections_default_v1",
