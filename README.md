@@ -99,17 +99,19 @@ image runs `python -m ignosis_eval.app` on `0.0.0.0:$PORT`. Set the healthcheck 
 
 ### Railway Variables
 
-| Variable | Value | Secret |
-|---|---|---|
-| `GEMINI_API_KEY` | your Gemini API key | yes (seal it in Railway; never put it in a file) |
-| `GEMINI_MODEL` | the exact Gemini model to use (default if unset: `gemini-3.8-flash`) | no |
+| Variable | Required | Secret? | Value |
+|---|---|---|---|
+| `GEMINI_API_KEY` | yes | yes (seal it in Railway; never put it in any file) | your Gemini API key |
+| `GEMINI_MODEL` | yes | no | `gemini-3.8-flash` (also the code default) |
+| `PORT` | no | no | Railway provides it; do not set it |
 
-- **Runtime only.** Both are read from the environment at runtime, never at build time.
-- **Key stays on the server.** Gemini calls are made only by the server. The key never reaches the browser, API
+- **Runtime only.** Both variables are read from the environment at runtime, never at build time. The
+  Dockerfile has no `ARG`.
+- **Key stays on the server.** Gemini is called only from the server. The key never reaches the browser, API
   responses, logs, records or reports.
-- **Exact model, no fallback.** An unavailable model fails clearly (the error names `GEMINI_MODEL`), and the app
-  never switches models.
-- **No key.** Without a key the app runs in DEMO / REPLAY mode.
+- **Exact model, no fallback.** An unavailable model fails clearly, with an error naming `GEMINI_MODEL`, and the
+  app never switches models.
+- **No key.** Without a key the app runs in DEMO / REPLAY mode, and custom calls show EVALUATOR UNAVAILABLE.
 - **No authentication.** Do not upload real customer calls to a public deployment.
 
 ## Repository layout
