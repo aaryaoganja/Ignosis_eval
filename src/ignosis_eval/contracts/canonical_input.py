@@ -11,7 +11,6 @@ from typing import Literal
 
 from pydantic import AwareDatetime, Field, model_validator
 
-from ignosis_eval.canonical import canonical_json_bytes, sha256_bytes
 from ignosis_eval.contracts._base import Contract, NonEmptyStr, Probability, Sha256Hex
 from ignosis_eval.contracts.enums import (
     UNIT_MODE_INPUT,
@@ -23,6 +22,7 @@ from ignosis_eval.contracts.enums import (
     UnitMode,
 )
 from ignosis_eval.contracts.evaluation_record import Finding, GateResult
+from ignosis_eval.contracts.unit_alias import UNIT_ALIAS_PATTERN, new_unit_alias
 from ignosis_eval.versions import NORMALIZED_INPUT_SCHEMA
 
 
@@ -85,22 +85,13 @@ class FrontendResult(Contract):
     steps: list[FrontendCheck] = Field(default_factory=list)
 
 
-INPUT_ALIAS_PATTERN = r"^in-[0-9a-f]{16}$"
-
-
-def input_alias_for(ni_json: dict) -> str:
-    """Opaque alias of an input: a hash of its own content (the alias field excluded). It carries no item id, file
-    name, split, pack or other benchmark metadata, and is stable across runs (replay fixtures key on the input)."""
-    body = {k: v for k, v in ni_json.items() if k != "input_alias"}
-    return "in-" + sha256_bytes(canonical_json_bytes(body))[:16]
-
-
 class NormalizedInput(Contract):
     """Everything a system (K0 / A / A+ / B) sees. It has no item id, unit id, file name, path, split, pack or
-    case-card field; `input_alias` is the only identifier, and it is derived from the content (checked)."""
+    case-card field. `unit_alias` is the only identifier: a random opaque alias assigned per run (P-17, SC-05); the
+    alias -> item mapping never reaches a system (runner/aliases.py)."""
 
-    schema_version: Literal["normalized_input/2.2.0"] = NORMALIZED_INPUT_SCHEMA
-    input_alias: str | None = Field(default=None, pattern=INPUT_ALIAS_PATTERN)  # set on validation
+    schema_version: Literal["normalized_input/3.0.0"] = NORMALIZED_INPUT_SCHEMA
+    unit_alias: str = Field(default_factory=new_unit_alias, pattern=UNIT_ALIAS_PATTERN)
     input_mode: InputMode
     unit_mode: UnitMode
     header: TranscriptHeader = Field(default_factory=TranscriptHeader)
@@ -134,11 +125,6 @@ class NormalizedInput(Contract):
         if self.unit_mode is UnitMode.A_T_PLATFORM and \
                 self.header.transcript_provenance is not TranscriptProvenance.PLATFORM_LIVE_ASR:
             errs.append("A+T-platform units require transcript_provenance=platform_live_asr")
-        alias = input_alias_for(self.model_dump(mode="json"))
-        if self.input_alias is None:
-            self.input_alias = alias
-        elif self.input_alias != alias:
-            errs.append("input_alias must be the opaque content alias (never an item id or a file name)")
         if errs:
             raise ValueError("; ".join(errs))
         return self

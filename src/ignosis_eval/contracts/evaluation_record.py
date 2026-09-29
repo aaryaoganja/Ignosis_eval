@@ -214,7 +214,7 @@ class ExperimentMeta(Contract):
 
 
 class EvaluationRecord(RecordBody):
-    schema_version: Literal["evaluation_record/2.1.0"] = EVALUATION_RECORD_SCHEMA
+    schema_version: Literal["evaluation_record/3.0.0"] = EVALUATION_RECORD_SCHEMA
     record_status: RecordStatus
     confidence_source: ConfidenceSource | None = None  # AJ-06: A = SELF_REPORTED; A+, B, K0 = COMPUTED
     system: SystemInfo

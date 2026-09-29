@@ -40,7 +40,10 @@ class EvaluationContext:
 
 
 def input_sha256(ni: NormalizedInput) -> str:
-    return hashlib.sha256(canonical_json_bytes(ni.to_json_dict())).hexdigest()
+    """Hash of the evaluated content. The per-run random `unit_alias` (P-17) is excluded, so a replayed LLM response
+    and the P-6 audit key on what was evaluated, not on the run."""
+    body = {k: v for k, v in ni.to_json_dict().items() if k != "unit_alias"}
+    return hashlib.sha256(canonical_json_bytes(body)).hexdigest()
 
 
 class Evaluator(ABC):

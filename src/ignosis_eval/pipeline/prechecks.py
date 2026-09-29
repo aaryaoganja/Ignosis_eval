@@ -113,13 +113,33 @@ def run_frontend(turns: list[Turn], header: TranscriptHeader, input_mode: InputM
     reasons: list[ReasonCode] = []
     status = EvaluabilityStatus.EVALUABLE
 
-    # DC-00 (AJ-05): call-level role mapping only; no agent or no borrower turn -> NOT_EVALUABLE
+    # rubric.yaml › evaluability_order (SC-03), applied in order; the first call-level check that applies gives the
+    # NOT_EVALUABLE reason (convention, docs/spec-reconciliation.md §3). Pre-checks run on every call (below).
+    #   1. DC-00: call-level role-mapping confidence < role_confidence_min, or no AGENT turn (AJ-05);
+    #   2. DC-02: "no borrower turn with >= non_conversation_min_borrower_words words, or voicemail cue present". A
+    #      call with no BORROWER turn at all meets the first clause whatever the (PENDING) threshold; with BORROWER
+    #      turns present DC-02 needs the threshold and the voicemail cue terms (B-11 / B-04);
+    #   3. DC-00 no-BORROWER-turn clause, only if DC-02 did not apply (so, as specified, it cannot fire on its own);
+    #   4. DC-LANG, DC-01, DC-TRUNC, DC-DIV.
     role_min = float(spec.threshold("role_confidence_min"))
     roles = {t.role for t in turns}
-    if role_mapping_confidence < role_min or Role.AGENT not in roles or Role.BORROWER not in roles:
+    if role_mapping_confidence < role_min or Role.AGENT not in roles:
         status = EvaluabilityStatus.NOT_EVALUABLE
         reasons.append(ReasonCode.ROLE_UNCERTAIN)
-    steps.append(FrontendCheck(check="DC-00", status="done"))
+    steps.append(FrontendCheck(check="DC-00-mapping-and-agent", status="done"))
+    if status is EvaluabilityStatus.NOT_EVALUABLE:
+        steps.append(FrontendCheck(check="DC-02", status="not_applicable", note="DC-00 already applied (SC-03 order)"))
+    elif Role.BORROWER not in roles:
+        status = EvaluabilityStatus.NOT_EVALUABLE
+        reasons.append(ReasonCode.NON_CONVERSATIONAL)
+        steps.append(FrontendCheck(check="DC-02", status="done", note="no BORROWER turn: NON_CONVERSATIONAL (SC-03)"))
+    else:
+        steps.append(FrontendCheck(check="DC-02", status="pending_signoff", blocker="B-11/B-04",
+                                   note="non_conversation_min_borrower_words PENDING; voicemail_cues terms empty"))
+    if status is not EvaluabilityStatus.NOT_EVALUABLE and Role.BORROWER not in roles:  # unreachable after DC-02
+        status = EvaluabilityStatus.NOT_EVALUABLE
+        reasons.append(ReasonCode.ROLE_UNCERTAIN)
+    steps.append(FrontendCheck(check="DC-00-borrower", status="done"))
 
     steps.append(FrontendCheck(check="DC-01-transcript-markers", status="done"))
     steps.append(FrontendCheck(check="DC-01-unknown-role-turns", status="done",
@@ -130,8 +150,6 @@ def run_frontend(turns: list[Turn], header: TranscriptHeader, input_mode: InputM
     if input_mode in (InputMode.AUDIO, InputMode.AUDIO_TRANSCRIPT):
         steps.append(FrontendCheck(check="DC-01-audio", status="pending_signoff", blocker="B-06/B-11",
                                    note="asr_low_confidence_word / asr_unreliable_call_share are PENDING"))
-    steps.append(FrontendCheck(check="DC-02", status="pending_signoff", blocker="B-11/B-04",
-                               note="non_conversation_min_borrower_words PENDING; voicemail_cues terms empty"))
     steps.append(FrontendCheck(check="DC-03/G1c", status="pending_signoff", blocker="B-11/B-04",
                                note="depends on DC-02"))
     steps.append(FrontendCheck(check="DC-LANG", status="pending_signoff", blocker="B-04/B-11"))

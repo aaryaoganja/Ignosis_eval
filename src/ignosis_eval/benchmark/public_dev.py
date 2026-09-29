@@ -1,27 +1,34 @@
-"""Frozen Stage 5 DEV benchmark design (`bench/public/`): integrity, parsing and validation.
+"""Frozen Stage-5 DEV benchmark design (`bench/public/`, bench-a1 design v1.0): integrity, parsing and validation.
 
 The repository holds only the repository-safe DEV subset of the bench-a1 design, stored verbatim:
 
+  README.md                  what may enter the repository (frozen)
   dev-case-cards.md          functional case cards (beats, not dialogue; transcripts are written by humans later)
   dev-master-matrix.csv      one row per DEV item
   dev-gold-blueprint.yaml    intended labels. This is intent, NOT gold: gold is labeled blind from the final
                              transcript by an independent labeler and only then reconciled against the blueprint
   gold-blueprint-schema.yaml the blueprint schema (equal to the blueprint's own `schema:` block)
-  MANIFEST.json              sha256 of each file, written once at ingestion; any drift fails closed
+
+The freeze commitments live in `docs/freeze/`: FREEZE-public.md (the five public hashes + the private bundle
+commitment) and FREEZE-HANDOFF.md (13 hashes: bench/public ×5, docs/freeze ×2, docs/spec ×6). Every listed file is
+verified against both records; any drift fails closed. The private bundle commitment can only be verified by the
+holder of BENCH_PRIVATE_DIR and is never recomputed here.
 
 Nothing here writes gold, registries, case-card YAML or transcripts. The validator reads the three views of each
 item (matrix row, blueprint entry, case card), checks them against each other and against `rubric.yaml`,
-`profile.yaml` and `frozen-contract.md` §12, and reports rule issues:
+`profile.yaml`, `frozen-contract.md` §0 and §12, and `implementation-blockers.md`, and reports rule issues:
 
-  PD001 file set / manifest / hash drift            PD010 pair integrity
-  PD002 unparseable or schema-invalid file          PD011 pair members differ beyond the target (warning)
+  PD001 file set / freeze-record hash drift         PD011 pair members differ beyond the target, or a pair edit
+  PD002 unparseable or schema-invalid file                outside authoring constraint 4 (warning)
   PD003 not DEV-only (split, pack, frozen ids)      PD012 modality: header / G7 / capability / attribution
   PD004 the three views disagree                    PD013 anchor or evidence beat not in the beat sheet
-  PD005 rubric vocabulary (codes, statuses, …)      PD014 evidence element not named by the rubric (warning)
-  PD006 expected verdict vs V3–V5                   PD015 evidence role vs beat speaker / DC-00 (warning)
-  PD007 dangerous win                               PD016 control target outside the SD-08 universe (warning)
-  PD008 clean loss                                  PD017 blueprint schema block differs from the schema file
-  PD009 positive outcome (AJ-09) / outcome attribution
+  PD005 rubric vocabulary (codes, statuses, rule    PD014 evidence element not named by the rubric (warning)
+        basis ids, external dependency ids, …)      PD015 evidence role vs beat speaker / event side (warning)
+  PD006 expected verdict vs V3–V5                   PD016 control target gold outside {PASS, NA} (SD-08, SC-04)
+  PD007 dangerous win                               PD017 blueprint schema block differs from the schema file
+  PD008 clean loss                                  PD018 blueprint item fields not named by the schema (warning)
+  PD009 positive outcome (AJ-09) / attribution      PD019 frozen-contract §12 carries more than IDs/split/pair (SC-06)
+  PD010 pair integrity                              PD020 a G7 positive exists (BD-02: bench-a1 has none)
 Holdout, red-team and other private material never appears here: PD003 rejects any non-DEV row, any id outside the
 DEV ids frozen in frozen-contract §12, and PD001 rejects any unexpected file.
 """
@@ -30,7 +37,6 @@ from __future__ import annotations
 
 import csv
 import io
-import json
 import re
 from dataclasses import dataclass, field
 from datetime import time
@@ -41,7 +47,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from ignosis_eval.benchmark.case_card_rules import RuleIssue
-from ignosis_eval.canonical import canonical_json_bytes, sha256_bytes
+from ignosis_eval.canonical import sha256_bytes
 from ignosis_eval.contracts.enums import (
     UNIT_MODE_INPUT,
     Attribution,
@@ -61,11 +67,13 @@ from ignosis_eval.spec.loader import Spec
 
 DATA_FILES = {"cards": "dev-case-cards.md", "matrix": "dev-master-matrix.csv",
               "blueprint": "dev-gold-blueprint.yaml", "schema": "gold-blueprint-schema.yaml"}
-MANIFEST_FILE = "MANIFEST.json"
 README_FILE = "README.md"
-ALLOWED_FILES = frozenset(DATA_FILES.values()) | {MANIFEST_FILE, README_FILE}
+PUBLIC_FILES = frozenset(DATA_FILES.values()) | {README_FILE}
+ALLOWED_FILES = PUBLIC_FILES
 BLUEPRINT_VERSION = "bench-a1/1.0"
-MANIFEST_SCHEMA = "public_dev_manifest/1.0.0"
+FREEZE_PUBLIC = "FREEZE-public.md"
+FREEZE_HANDOFF = "FREEZE-HANDOFF.md"
+STAGE5_LOG = "STAGE5-ADJUDICATION-LOG.md"
 MATRIX_COLUMNS = (
     "item_id", "pack", "split", "scenario", "category", "target_code", "secondary_code", "severity", "action_type",
     "intended_agent_behavior", "intended_customer_behavior_context", "expected_verdict", "expected_gate_status",
@@ -92,52 +100,88 @@ class PublicDevError(RuntimeError):
     pass
 
 
-# ============================================================================================ manifest
-def _file_hashes(public_dir: Path) -> dict[str, str]:
-    return {name: sha256_bytes((public_dir / name).read_bytes()) for name in sorted(DATA_FILES.values())}
+# ============================================================================================ freeze records
+_HASH_ROW = re.compile(r"^\| `(?P<path>[^`]+)` \| `(?P<sha>[0-9a-f]{64})` \|$")
 
 
-def write_manifest(public_dir: str | Path, *, replace: bool = False) -> Path:
-    """Hash-list the four data files. Written once at ingestion: an existing manifest is never overwritten unless
-    `replace` is passed explicitly (a new design version, or a test fixture)."""
-    public_dir = Path(public_dir)
-    path = public_dir / MANIFEST_FILE
-    if path.exists() and not replace:
-        raise PublicDevError(f"{path} exists; the frozen DEV design manifest is write-once")
-    body = {"schema_version": MANIFEST_SCHEMA, "gold_blueprint_version": BLUEPRINT_VERSION,
-            "files": _file_hashes(public_dir)}
-    path.write_bytes(canonical_json_bytes(body) + b"\n")
-    return path
+def parse_freeze_hashes(text: str) -> dict[str, str]:
+    """Hash-table rows (path and sha256 in backticks) of a freeze record (FREEZE-public.md, FREEZE-HANDOFF.md)."""
+    out: dict[str, str] = {}
+    for line in text.splitlines():
+        m = _HASH_ROW.match(line.strip())
+        if m:
+            if m["path"] in out:
+                raise PublicDevError(f"freeze record lists {m['path']} twice")
+            out[m["path"]] = m["sha"]
+    return out
 
 
-def manifest_sha256(public_dir: str | Path) -> str:
-    return sha256_bytes((Path(public_dir) / MANIFEST_FILE).read_bytes())
+def default_freeze_dir(spec: Spec) -> Path:
+    return spec.spec_dir.parent / "freeze"
 
 
-def _check_files(public_dir: Path) -> list[RuleIssue]:
+def _resolve_frozen(path: str, public_dir: Path, spec_dir: Path, freeze_dir: Path) -> Path | None:
+    for prefix, base in (("bench/public/", public_dir), ("docs/spec/", spec_dir), ("docs/freeze/", freeze_dir)):
+        if path.startswith(prefix):
+            return base / path[len(prefix):]
+    return None
+
+
+def freeze_public_sha256(freeze_dir: str | Path) -> str:
+    """sha256 of FREEZE-public.md: the public commitment the DEV design is pinned to."""
+    return sha256_bytes((Path(freeze_dir) / FREEZE_PUBLIC).read_bytes())
+
+
+def _check_files(public_dir: Path, spec: Spec, freeze_dir: Path) -> list[RuleIssue]:
+    """PD001: bench/public holds exactly the five frozen files, and every file listed by FREEZE-public.md and
+    FREEZE-HANDOFF.md matches its committed sha256 (the two records must also agree with each other)."""
+    from ignosis_eval.versions import SPEC_CONTRACT_VERSION, SPEC_PROFILE_VERSION, SPEC_RUBRIC_VERSION
+
     out: list[RuleIssue] = []
     if not public_dir.is_dir():
         return [RuleIssue("PD001", "error", f"{public_dir} does not exist")]
     present = {p.name for p in public_dir.iterdir() if not p.name.startswith(".")}
     for name in sorted(present - ALLOWED_FILES):
-        out.append(RuleIssue("PD001", "error", f"unexpected file {name} in bench/public (DEV design only; private "
-                                               "benchmark material never lives in the repository)"))
-    for name in sorted((set(DATA_FILES.values()) | {MANIFEST_FILE}) - present):
+        out.append(RuleIssue("PD001", "error", f"unexpected file {name} in bench/public (the frozen DEV design only; "
+                                               "private benchmark material never lives in the repository)"))
+    for name in sorted(PUBLIC_FILES - present):
         out.append(RuleIssue("PD001", "error", f"missing {name}"))
+    records = {}
+    for rec in (FREEZE_PUBLIC, FREEZE_HANDOFF):
+        rec_path = freeze_dir / rec
+        if not rec_path.exists():
+            out.append(RuleIssue("PD001", "error", f"freeze record docs/freeze/{rec} missing (fail closed)"))
+            continue
+        text = rec_path.read_text(encoding="utf-8")
+        try:
+            records[rec] = parse_freeze_hashes(text)
+        except PublicDevError as exc:
+            out.append(RuleIssue("PD001", "error", f"{rec}: {exc}"))
+            continue
+        if f"contract {SPEC_CONTRACT_VERSION}" not in text and f"`{SPEC_CONTRACT_VERSION}`" not in text:
+            out.append(RuleIssue("PD001", "error", f"{rec} is not a record of contract {SPEC_CONTRACT_VERSION}"))
+        if rec == FREEZE_HANDOFF and (f"Rubric: `{SPEC_RUBRIC_VERSION}`" not in text
+                                      or f"`{SPEC_PROFILE_VERSION}`" not in text):
+            out.append(RuleIssue("PD001", "error", f"{rec} canonical versions differ from rubric "
+                                                   f"{SPEC_RUBRIC_VERSION} / profile {SPEC_PROFILE_VERSION}"))
     if out:
         return out
-    try:
-        man = json.loads((public_dir / MANIFEST_FILE).read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        return [RuleIssue("PD001", "error", f"{MANIFEST_FILE} invalid: {exc}")]
-    if man.get("schema_version") != MANIFEST_SCHEMA or man.get("gold_blueprint_version") != BLUEPRINT_VERSION:
-        out.append(RuleIssue("PD001", "error", f"{MANIFEST_FILE} version mismatch"))
-    want, have = man.get("files", {}), _file_hashes(public_dir)
-    if set(want) != set(have):
-        out.append(RuleIssue("PD001", "error", f"{MANIFEST_FILE} lists {sorted(want)}, expected {sorted(have)}"))
-    for name in sorted(set(want) & set(have)):
-        if want[name] != have[name]:
-            out.append(RuleIssue("PD001", "error", f"hash drift in {name} (frozen design modified; fail closed)"))
+    pub, handoff = records[FREEZE_PUBLIC], records[FREEZE_HANDOFF]
+    want_public = {f"bench/public/{n}" for n in PUBLIC_FILES}
+    if set(pub) != want_public:
+        out.append(RuleIssue("PD001", "error", f"{FREEZE_PUBLIC} lists {sorted(pub)}, expected {sorted(want_public)}"))
+    for path, sha in sorted(pub.items()):
+        if handoff.get(path) != sha:
+            out.append(RuleIssue("PD001", "error", f"{FREEZE_PUBLIC} and {FREEZE_HANDOFF} disagree on {path}"))
+    for path, sha in sorted({**handoff, **pub}.items()):
+        target = _resolve_frozen(path, public_dir, spec.spec_dir, freeze_dir)
+        if target is None:
+            out.append(RuleIssue("PD001", "error", f"freeze record lists {path} outside bench/public, docs/spec, "
+                                                   "docs/freeze"))
+        elif not target.exists():
+            out.append(RuleIssue("PD001", "error", f"{path} is listed by the freeze records but missing"))
+        elif sha256_bytes(target.read_bytes()) != sha:
+            out.append(RuleIssue("PD001", "error", f"hash drift in {path} (frozen file modified; fail closed)"))
     return out
 
 
@@ -187,7 +231,8 @@ class BlueprintItem(_Strict):
     contested: bool
     label_confidence: str
     ambiguity_notes: str
-    depends_on: list[Any]
+    rule_basis: list[str]  # contract §0 decision ids the item's intent rests on (e.g. SC-04)
+    external_dependencies: list[str]  # implementation-blockers B-xx the item waits on (external human input)
 
 
 class BlueprintSchema(_Strict):
@@ -459,29 +504,52 @@ def design_pack(pack: str, category: str) -> Pack:
     return Pack(pack)
 
 
-# ============================================================================================ frozen-contract §12
+# ========================================================================================== frozen-contract §0 / §12
 @dataclass(frozen=True)
 class FrozenDev:
     ids: frozenset[str]
     pairs: dict[str, tuple[str, str]]  # item -> (pair id, role)
     audio_renderings: frozenset[str]
+    decision_ids: frozenset[str]  # frozen-contract §0: R-xx, AJ-xx, SC-xx, BD-xx
+    redaction_problems: tuple[str, ...]  # SC-06: §12 lines carrying more than IDs / split / pair
+
+
+_S12_HEADER = "| ID | Split | Pair |"
+_S12_ROW = re.compile(r"^\| (?P<ids>[A-Z][A-Z0-9-]*(?:, [A-Z][A-Z0-9-]*)*) \| (?P<split>dev|holdout) \| "
+                      r"(?P<pair>[^|]*) \|$")
 
 
 def frozen_dev(contract_md: str) -> FrozenDev:
-    """The DEV entries of frozen-contract §12 (only lines marked dev are read)."""
+    """The DEV entries of frozen-contract §12 and the decision ids of §0. §12 is a three-column table
+    (`| ID | Split | Pair |`, SC-06); a table row of any other shape is reported as a redaction problem."""
     start, end = contract_md.find("## 12."), contract_md.find("## 13.")
-    if start < 0 or end < 0:
-        raise PublicDevError("frozen-contract.md has no §12 benchmark section")
+    s0, s1 = contract_md.find("## 0."), contract_md.find("## 1.")
+    if start < 0 or end < 0 or s0 < 0 or s1 < 0:
+        raise PublicDevError("frozen-contract.md has no §0 reconciliation log or §12 benchmark section")
+    decisions = frozenset(re.findall(r"^\| ((?:R|AJ|SC|BD)-\d{2}) \|", contract_md[s0:s1], re.M))
     ids: set[str] = set()
     pairs: dict[str, tuple[str, str]] = {}
     renders: set[str] = set()
+    problems: list[str] = []
+    headers = 0
     for line in contract_md[start:end].splitlines():
-        row = re.match(r"^\| (?P<id>[A-Z][A-Z0-9-]*) \| [^|]* \| (?P<split>\w+) \| (?P<pair>[^|]*) \|$", line)
-        if row and row["split"] == "dev":
-            ids.add(row["id"])
-            pm = re.match(r"^(?P<p>[A-Z]P-\d{2}) (?P<r>clean|violating)$", row["pair"].strip())
-            if pm:
-                pairs[row["id"]] = (pm["p"], pm["r"])
+        if line.startswith("|"):
+            if line == _S12_HEADER:
+                headers += 1
+                continue
+            if line == "|---|---|---|":
+                continue
+            row = _S12_ROW.match(line)
+            if row is None:
+                problems.append(f"§12 table row is not `| IDs | split | pair |`: {line[:60]!r}")
+                continue
+            if row["split"] == "dev":
+                ids.add(row["ids"])
+                pm = re.match(r"^(?P<p>[A-Z]P-\d{2}) (?P<r>clean|violating)$", row["pair"].strip())
+                if pm:
+                    pairs[row["ids"]] = (pm["p"], pm["r"])
+            elif not re.fullmatch(r"[A-Z]P-\d{2}(?: \((?:context|attribution)\))?", row["pair"].strip()):
+                problems.append(f"§12 holdout row carries more than a pair id: {line[:60]!r}")
         if line.startswith("- **Dev (8):**"):
             ids |= set(re.findall(r"\bMD-[A-Z]\d\b", line))
         if line.startswith("- **Dev:**"):
@@ -490,7 +558,14 @@ def frozen_dev(contract_md: str) -> FrozenDev:
         sn = re.search(r"\bSN-D(\d{2})–D(\d{2}) \(dev\)", line)
         if sn:
             ids |= {f"SN-D{n:02d}" for n in range(int(sn[1]), int(sn[2]) + 1)}
-    return FrozenDev(frozenset(ids), pairs, frozenset(renders))
+    if headers != 1:
+        problems.append(f"§12 must hold exactly one `{_S12_HEADER}` table (found {headers})")
+    return FrozenDev(frozenset(ids), pairs, frozenset(renders), decisions, tuple(problems))
+
+
+def blocker_ids(blockers_md: str) -> frozenset[str]:
+    """implementation-blockers.md B-xx ids (the only genuinely external dependencies)."""
+    return frozenset(re.findall(r"^\| \*\*(B-\d{2})\*\* \|", blockers_md, re.M))
 
 
 # ============================================================================================ merged design
@@ -527,7 +602,7 @@ class DesignItem:
 @dataclass
 class DevDesign:
     items: dict[str, DesignItem]
-    manifest_sha256: str
+    freeze_public_sha256: str  # sha256 of docs/freeze/FREEZE-public.md (the public design commitment)
 
     def registries(self) -> Registries:
         """Pairs and controls implied by the frozen design (not written anywhere; bench check compares a populated
@@ -569,6 +644,8 @@ class _V:
     def __init__(self, spec: Spec) -> None:
         self.spec = spec
         self.issues: list[RuleIssue] = []
+        self.decisions: frozenset[str] = frozenset()
+        self.blockers: frozenset[str] = frozenset()
         self.raw = {c["id"]: c for c in spec.rubric["gates"] + spec.rubric["codes"] + spec.rubric["platform_signals"]}
         self.table = CapabilityTable.from_rubric(spec.rubric)
 
@@ -616,15 +693,18 @@ def _registered(note: str) -> bool:
     return "override" in low and "no registration" not in low
 
 
-def validate_public_dev(public_dir: str | Path, spec: Spec, *, contract_md: str | None = None) -> PublicDevReport:
+def validate_public_dev(public_dir: str | Path, spec: Spec, *, contract_md: str | None = None,
+                        freeze_dir: str | Path | None = None) -> PublicDevReport:
     public_dir = Path(public_dir)
+    fdir = Path(freeze_dir) if freeze_dir is not None else default_freeze_dir(spec)
     rep = PublicDevReport()
-    rep.issues += _check_files(public_dir)
+    rep.issues += _check_files(public_dir, spec, fdir)
     if rep.errors:
         return rep
     v = _V(spec)
     contract_md = contract_md if contract_md is not None else \
         (spec.spec_dir / "frozen-contract.md").read_text(encoding="utf-8")
+    v.blockers = blocker_ids((spec.spec_dir / "implementation-blockers.md").read_text(encoding="utf-8"))
     try:
         text = {k: (public_dir / n).read_bytes().decode("utf-8") for k, n in DATA_FILES.items()}
         blueprint = Blueprint.model_validate(yaml.safe_load(text["blueprint"]))
@@ -639,9 +719,17 @@ def validate_public_dev(public_dir: str | Path, spec: Spec, *, contract_md: str 
     except (PublicDevError, ValidationError, yaml.YAMLError, UnicodeDecodeError, csv.Error) as exc:
         rep.issues.append(RuleIssue("PD002", "error", f"{type(exc).__name__}: {exc}"))
         return rep
+    v.decisions = frozen.decision_ids
+    for problem in frozen.redaction_problems:
+        v.err("PD019", f"frozen-contract §12 (SC-06): {problem}")
     # ---------------------------------------------------------------- schema file
     if blueprint.schema_block != schema_file.schema_block:
         v.err("PD017", "the blueprint's schema block differs from gold-blueprint-schema.yaml")
+    meta = schema_file.schema_block.per_item_fields.get("meta", "")
+    for fld in ("rule_basis", "external_dependencies"):
+        if fld not in meta:
+            v.warn("PD018", f"blueprint items carry `{fld}` but gold-blueprint-schema.yaml per_item_fields.meta names "
+                            f"only {meta!r} (frozen-package inconsistency; the item fields are used)")
     if schema_file.schema_block.gold_blueprint_version != BLUEPRINT_VERSION:
         v.err("PD017", f"gold_blueprint_version {schema_file.schema_block.gold_blueprint_version} != "
                        f"{BLUEPRINT_VERSION}")
@@ -676,10 +764,10 @@ def validate_public_dev(public_dir: str | Path, spec: Spec, *, contract_md: str 
     # G-02-N5 style outcome references ("As G-02") resolve against the referenced item
     for it in items.values():
         _check_item(v, it, bp[it.item_id], items, frozen)
-    _check_pairs(v, items, frozen, matrix)
+    _check_pairs(v, items, frozen, matrix, cards)
     rep.issues += v.issues
     if not any(i.severity == "error" and i.rule_id in ("PD002", "PD004") for i in rep.issues):
-        rep.design = DevDesign(items, manifest_sha256(public_dir))
+        rep.design = DevDesign(items, freeze_public_sha256(fdir))
     return rep
 
 
@@ -707,7 +795,8 @@ def _item(v: _V, iid: str, row: dict[str, str], b: BlueprintItem, c: DesignCard,
     # the card sentence-terminates the scenario before "*Why it exists:*"; the matrix cell does not
     scen = re.match(r"^(?P<s>.*?)\.? \*Why it exists:\* (?P<w>.*)$", c.fields.get("Scenario / purpose", ""))
     hidden = re.match(r"^Target (?P<t>.*?)\. Judge-bait: (?P<j>.*)$", c.fields.get("Hidden test intent", ""))
-    notes = re.match(r"^(?P<n>.*?)\. Realism: (?P<r>.*?)\. Risk: (?P<k>.*)$", c.fields.get("Authoring notes", ""))
+    notes = re.match(r"^(?P<n>.*?)\. Realism: (?P<r>.*?)\. Risk: (?P<k>.*?)(?:\. Rule basis: (?P<rb>[A-Z0-9, -]+))?$",
+                     c.fields.get("Authoring notes", ""))
     if not (scen and hidden and notes):
         raise PublicDevError("case card lacks Scenario / Hidden test intent / Authoring notes in the frozen form")
     target_text, _, secondary_text = hidden["t"].partition("; secondary ")
@@ -723,6 +812,15 @@ def _item(v: _V, iid: str, row: dict[str, str], b: BlueprintItem, c: DesignCard,
             ("realism_notes", row["realism_notes"], notes["r"]), ("benchmark_risk_notes", row["benchmark_risk_notes"],
                                                                    notes["k"])):
         v.eq(iid, what, matrix=m_val, card=c_val)
+    card_basis = [x.strip() for x in (notes["rb"] or "").split(",") if x.strip()]
+    v.eq(iid, "rule_basis", blueprint=b.rule_basis, card=card_basis)
+    for rid in b.rule_basis:
+        if rid not in v.decisions:
+            v.err("PD005", f"rule_basis {rid!r} is not a decision id of frozen-contract §0", iid)
+    for dep in b.external_dependencies:
+        if dep not in v.blockers:
+            v.err("PD005", f"external_dependencies {dep!r} is not an implementation-blockers B-xx id (only genuinely "
+                           "external dependencies belong there; spec decisions go in rule_basis)", iid)
     ev_label = next((k for k in c.fields if k.startswith("Evidence specification")), None)
     ev_text = c.fields.get(ev_label, "") if ev_label else ""
     if row["evidence_requirements"] != "-" or ev_text != "reference_date + expected normalized value":
@@ -823,6 +921,9 @@ def _check_item(v: _V, it: DesignItem, b: BlueprintItem, items: dict[str, Design
             v.err("PD005", f"{g} must be NA: the default profile configures no {g} lists", iid)
     if it.gates.get("G3") == "NA":
         v.err("PD005", "G3 is never NA in an evaluable call (rubric G3 na_when)", iid)
+    if it.gates.get("G7") in FIRED:
+        v.err("PD020", f"G7 {it.gates['G7']}: BD-02 states that bench-a1 contains no G7 positive (G7 recall is not "
+                       "measured by the benchmark); a G7 positive needs a new BD-xx changelog entry", iid)
     valid_disp = {d.value for d in Disposition}
     firmness_vocab = set(v.spec.rubric["extraction_vocabulary"]["firmness"])
     disps = it.dispositions
@@ -887,10 +988,10 @@ def _check_item(v: _V, it: DesignItem, b: BlueprintItem, items: dict[str, Design
                 if want is None or spk is None or spk == want:
                     continue
                 if want == "C" and spk == "T":
-                    v.warn("PD015", f"{f.code}: {name}=B{n} is spoken by the third party; the rubric role is "
-                                    "borrower, so the transcript must label the customer-side speaker BORROWER "
-                                    "(OTHER would leave the call without a borrower turn: DC-00 NOT_EVALUABLE, AJ-05)",
-                           iid)
+                    v.warn("PD015", f"{f.code}: {name}=B{n} is spoken by the third party; the rubric element role is "
+                                    "borrower and rubric 1.2 extraction_schema.event_common.turn requires the turn "
+                                    "speaker to match the event side, so the transcript must label the customer-side "
+                                    "speaker BORROWER (authoring rule)", iid)
                 else:
                     v.warn("PD015", f"{f.code}: {name}=B{n} speaker {spk} but the rubric role is "
                                     f"{spec_el.get('role')}", iid)
@@ -932,7 +1033,8 @@ def _check_item(v: _V, it: DesignItem, b: BlueprintItem, items: dict[str, Design
     speakers = {b.speaker for b in it.beats.values()}
     if it.evaluability == EvaluabilityStatus.EVALUABLE.value and "C" not in speakers and "T" in speakers:
         v.warn("PD015", "every customer-side beat is a third party (T): the transcript must label that speaker "
-                        "BORROWER, otherwise DC-00 finds no borrower turn and the call is NOT_EVALUABLE (AJ-05)", iid)
+                        "BORROWER, otherwise the call has no BORROWER turn and is NOT_EVALUABLE (SC-03: DC-02 "
+                        "NON_CONVERSATIONAL), contradicting the expected EVALUABLE (authoring rule)", iid)
     if it.tuning_only:
         return
     # ---------------------------------------------------------------- verdict (V3-V5), positive (AJ-09), DW, CL
@@ -981,15 +1083,58 @@ def _check_item(v: _V, it: DesignItem, b: BlueprintItem, items: dict[str, Design
         if not negative and not present:
             v.err("PD004", f"target {code} has no finding / fired gate", iid)
     for g in it.control_target_gates:
-        if it.gates.get(g) != "PASS":
-            v.warn("PD016", f"control target {g} has gold {it.gates.get(g)}; SD-08 counts a targeted control only "
-                            "when gold = PASS, so this must-not-fire target is excluded from targeted false fires "
-                            "(it still counts in global false fires)", iid)
+        if it.gates.get(g) not in ("PASS", "NA"):
+            v.err("PD016", f"control target {g} has gold {it.gates.get(g)}; SD-08 (SC-04) counts a targeted control "
+                           "only when gold is PASS or NA", iid)
     if it.control_target_gates and not any(neg for _, neg, _ in it.targets):
         v.err("PD004", "control target gates on an item without a negative target", iid)
 
 
-def _check_pairs(v: _V, items: dict[str, DesignItem], frozen: FrozenDev, matrix: dict[str, dict[str, str]]) -> None:
+_EDIT_DECL = re.compile(r"^(?:Edit|Change) only (?P<spec>B\d+(?:-B\d+)?(?:(?:, | and )B\d+(?:-B\d+)?)*)")
+
+
+def declared_edits(card: DesignCard) -> set[int] | None:
+    """Beats a pair member's card declares as edited ('Edit only B4-B9 ...', 'Change only B7'); None if none."""
+    m = _EDIT_DECL.match(card.fields.get("Authoring notes", ""))
+    if m is None:
+        return None
+    out: set[int] = set()
+    for part in re.split(r", | and ", m["spec"]):
+        a, _, b = part.partition("-")
+        out |= set(range(int(a[1:]), int((b or a)[1:]) + 1))
+    return out
+
+
+def _constraint4(v: _V, pid: str, clean: DesignItem, viol: DesignItem, cards: dict[str, DesignCard]) -> None:
+    """Authoring constraint 4 (implementation-blockers.md): edit only the target behavior (1–3 agent turns); borrower
+    turns that directly react to an edited agent turn may change, and the card declares them. Checked on beats: the
+    declared edit set of the edited member, its speakers, and beat identity outside the edit set."""
+    edited = declared_edits(cards[viol.item_id])
+    if edited is None:
+        edited = declared_edits(cards[clean.item_id])
+    if edited is None:
+        v.warn("PD011", f"pair {pid}: neither card declares its edited beats (authoring constraint 4)")
+        return
+    agent = sorted(n for n in edited if n in viol.beats and viol.beats[n].speaker == "A")
+    unknown = sorted(n for n in edited if n not in viol.beats or viol.beats[n].speaker is None)
+    customer = sorted(n for n in edited if n in viol.beats and viol.beats[n].speaker in ("C", "T"))
+    if not 1 <= len(agent) <= 3 or len(agent) + len(unknown) > 3:
+        v.warn("PD011", f"pair {pid}: the declared edit set has agent beats {agent} (unlabelled {unknown}); "
+                        "authoring constraint 4 allows 1–3 edited agent turns")
+    for n in customer:
+        if n - 1 not in edited or n - 1 not in agent:
+            v.warn("PD011", f"pair {pid}: {viol.item_id} B{n} (customer side) is inside the declared edit set but does "
+                            f"not directly react to an edited agent beat (B{n - 1} is "
+                            f"{'not edited' if n - 1 not in edited else 'not an agent beat'}); authoring constraint 4 "
+                            "lets only reacting borrower turns change")
+    for n in sorted(set(clean.beats) | set(viol.beats)):
+        if n not in edited and clean.beats.get(n) != viol.beats.get(n):
+            v.warn("PD011", f"pair {pid}: B{n} differs between {clean.item_id} and {viol.item_id} outside the "
+                            "declared edit set (authoring constraint 4)")
+
+
+def _check_pairs(v: _V, items: dict[str, DesignItem], frozen: FrozenDev, matrix: dict[str, dict[str, str]],
+                 cards: dict[str, DesignCard]) -> None:
     by_pair: dict[str, list[DesignItem]] = {}
     for it in items.values():
         if it.pair:
@@ -1014,6 +1159,7 @@ def _check_pairs(v: _V, items: dict[str, DesignItem], frozen: FrozenDev, matrix:
                            f"target {vt}")
             continue
         target = vt[0]
+        _constraint4(v, pid, clean, viol, cards)
         if clean.gates is None or viol.gates is None:
             continue
         # non-target gate differences: declared ones are named in the risk notes

@@ -177,7 +177,7 @@ class PendingRef(Contract):
 
 
 class RunManifest(Contract):
-    schema_version: Literal["run_manifest/2.0.0"] = RUN_MANIFEST_SCHEMA
+    schema_version: Literal["run_manifest/3.0.0"] = RUN_MANIFEST_SCHEMA
     run_id: NonEmptyStr
     kind: Literal["dev", "dev_tuning", "locked_holdout", "locked_redteam"]
     locked: bool
@@ -195,7 +195,9 @@ class RunManifest(Contract):
     base_seed: int
     repetitions: int = Field(ge=1)
     ordering: NonEmptyStr  # P-6 algorithm identifier
-    alias_mapping_sha256: Sha256Hex
+    alias_mapping_sha256: Sha256Hex  # P-10 system aliases
+    unit_alias_mapping_sha256: Sha256Hex  # P-17 opaque unit aliases (frozen-contract §17 "alias mapping hash")
+    p17_payload_strings_checked: int = Field(ge=1)  # P-17 rule 4 pre-run payload test (a failure aborts the run)
     git: GitInfo
     hash_verification: HashVerification
     pending_signoff: list[PendingRef] = Field(default_factory=list)

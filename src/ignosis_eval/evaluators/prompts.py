@@ -39,10 +39,14 @@ def rubric_section(spec: Spec) -> str:
         raw = reg.get(gid).raw
         lines.append(f"- {gid} {raw['name']}: {_clean(raw['description'])}")
         for name, text in (raw.get("definitions") or {}).items():
-            lines.append(f"  - {name}: {_clean(text)}")
-        for row in raw.get("decision_table") or []:  # ordered; first matching row wins (e.g. G5, AJ-03)
-            extra = ", ".join(f"{k}: {_clean(v)}" for k, v in row.items() if k not in ("row", "condition", "result"))
-            lines.append(f"  - row {row['row']}: if {_clean(row['condition'])} -> {row['result']}"
+            if isinstance(text, dict):  # e.g. G5 honoring_event per request type
+                lines.append(f"  - {name}:")
+                lines += [f"    - {k}: {_clean(v)}" for k, v in text.items()]
+            else:
+                lines.append(f"  - {name}: {_clean(text)}")
+        for row in raw.get("decision_table") or []:  # ordered; first matching entry wins (G5, AJ-03)
+            extra = ", ".join(f"{k}: {_clean(v)}" for k, v in row.items() if k not in ("order", "when", "result"))
+            lines.append(f"  - {row['order']}. when {_clean(row['when'])} -> {row['result']}"
                          + (f" ({extra})" if extra else ""))
     lines.append("Codes:")
     for cid in reg.code_ids + reg.platform_ids:

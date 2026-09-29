@@ -11,8 +11,8 @@
       manifests/private_gold_manifest.json    hash list of private gold       (P-1 rule 5)
       manifests/history/                      write-once archive of every manifest version
       registries.json                         control / pair / twin registries (SD-01)
-      public/                                 frozen Stage 5 DEV design, verbatim + MANIFEST.json (protected;
-                                              benchmark/public_dev.py). DEV only: never holdout / red-team material
+      public/                                 frozen Stage-5 DEV design, verbatim; committed by hash in docs/freeze/
+                                              (protected; benchmark/public_dev.py). DEV only: never holdout / red-team
       asr_cache/                              cached ASR outputs, keyed by audio hash + engine (P-2)
       templates/case_card.template.yaml
     $BENCH_PRIVATE_DIR/                       (outside the repository)
@@ -119,11 +119,11 @@ class BenchLayout:
     # ------------------------------------------------------------------ protection
     def protected_paths(self) -> list[Path]:
         """Paths no evaluator may read or write (integrity/guard.py): gold, case cards, manifests, registries and the
-        public DEV design (case cards + gold blueprint)."""
+        public DEV design (case cards + gold blueprint), and the whole private registry when configured."""
         out = [self.dev_dir / "gold", self.dev_dir / "case_cards", self.manifests_dir, self.registries_path,
                self.public_dir]
-        if self.private_root is not None:
-            out += [self.private_root / "gold", self.private_root / "case_cards"]
+        if self.private_root is not None:  # the whole private registry (items, gold, cards, run alias mappings)
+            out += [self.private_root]
         return out
 
     # ------------------------------------------------------------------ discovery

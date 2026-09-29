@@ -1,5 +1,53 @@
 {
   "$defs": {
+    "CallFrame": {
+      "additionalProperties": false,
+      "description": "extraction_vocabulary.call_frame. `agent_org_statement` has no typed shape in the rubric and no implemented\nrule reads it, so it is carried as opaque JSON.",
+      "properties": {
+        "agent_org_statement": {
+          "default": null,
+          "title": "Agent Org Statement"
+        },
+        "identity_checks": {
+          "items": {
+            "$ref": "#/$defs/IdentityCheck"
+          },
+          "title": "Identity Checks",
+          "type": "array"
+        },
+        "non_conversation": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Non Conversation"
+        },
+        "stage_hint": {
+          "anyOf": [
+            {
+              "enum": [
+                "pre_due",
+                "overdue",
+                "unknown"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stage Hint"
+        }
+      },
+      "title": "CallFrame",
+      "type": "object"
+    },
     "Commitment": {
       "additionalProperties": false,
       "description": "extraction_vocabulary.commitment_fields (typed; firmness decides the positive outcome, AJ-09).",
@@ -181,8 +229,21 @@
     },
     "ExtractedEvent": {
       "additionalProperties": false,
-      "description": "event_common + the type-specific AJ-07 fields.",
+      "description": "event_common + borrower_event_fields + the type-specific AJ-07 fields.",
       "properties": {
+        "accepted_turn": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Accepted Turn"
+        },
         "basis_stated": {
           "anyOf": [
             {
@@ -238,11 +299,8 @@
         "corrects": {
           "anyOf": [
             {
-              "items": {
-                "minLength": 1,
-                "type": "string"
-              },
-              "type": "array"
+              "pattern": "^V[0-9]+$",
+              "type": "string"
             },
             {
               "type": "null"
@@ -251,9 +309,9 @@
           "default": null,
           "title": "Corrects"
         },
-        "id": {
-          "minLength": 1,
-          "title": "Id",
+        "event_id": {
+          "pattern": "^E[0-9]+$",
+          "title": "Event Id",
           "type": "string"
         },
         "items": {
@@ -308,7 +366,7 @@
         "new_value_id": {
           "anyOf": [
             {
-              "minLength": 1,
+              "pattern": "^V[0-9]+$",
               "type": "string"
             },
             {
@@ -352,9 +410,6 @@
           "title": "Responds To",
           "type": "array"
         },
-        "role": {
-          "$ref": "#/$defs/Role"
-        },
         "route": {
           "anyOf": [
             {
@@ -376,6 +431,14 @@
           ],
           "default": null,
           "title": "Route"
+        },
+        "source": {
+          "enum": [
+            "supplied",
+            "asr"
+          ],
+          "title": "Source",
+          "type": "string"
         },
         "strength": {
           "anyOf": [
@@ -424,11 +487,11 @@
         }
       },
       "required": [
-        "id",
+        "event_id",
         "type",
         "turn",
         "quote",
-        "role",
+        "source",
         "confidence"
       ],
       "title": "ExtractedEvent",
@@ -436,12 +499,8 @@
     },
     "IdentityCheck": {
       "additionalProperties": false,
+      "description": "call_frame.identity_checks item. The rubric fixes the result vocabulary (identity_check_result); G1's\ndeterministic confirmation is the turn order of account_disclosure vs identity_checks(result=affirmed), so each\ncheck carries the turn (and quote, for evidence verification) of the borrower's reply.",
       "properties": {
-        "id": {
-          "minLength": 1,
-          "title": "Id",
-          "type": "string"
-        },
         "quote": {
           "title": "Quote",
           "type": "string"
@@ -462,24 +521,12 @@
         }
       },
       "required": [
-        "id",
         "turn",
         "quote",
         "result"
       ],
       "title": "IdentityCheck",
       "type": "object"
-    },
-    "Role": {
-      "description": "frozen-contract.md \u00a72.3 role labels (CUSTOMER is an accepted alias of BORROWER at parse time).",
-      "enum": [
-        "AGENT",
-        "BORROWER",
-        "OTHER",
-        "UNKNOWN"
-      ],
-      "title": "Role",
-      "type": "string"
     },
     "StatedValue": {
       "additionalProperties": false,
@@ -501,7 +548,7 @@
         "component_of": {
           "anyOf": [
             {
-              "minLength": 1,
+              "pattern": "^V[0-9]+$",
               "type": "string"
             },
             {
@@ -524,13 +571,12 @@
           "default": null,
           "title": "Date Norm"
         },
-        "id": {
-          "minLength": 1,
-          "title": "Id",
-          "type": "string"
-        },
         "quote": {
           "title": "Quote",
+          "type": "string"
+        },
+        "raw": {
+          "title": "Raw",
           "type": "string"
         },
         "turn": {
@@ -543,16 +589,22 @@
             "payable_total",
             "emi",
             "late_fee",
-            "due_date",
-            "other_charge"
+            "other_charge",
+            "due_date"
           ],
           "title": "Type",
+          "type": "string"
+        },
+        "value_id": {
+          "pattern": "^V[0-9]+$",
+          "title": "Value Id",
           "type": "string"
         }
       },
       "required": [
-        "id",
+        "value_id",
         "type",
+        "raw",
         "turn",
         "quote"
       ],
@@ -575,9 +627,7 @@
       "type": "object"
     },
     "call_frame": {
-      "additionalProperties": true,
-      "title": "Call Frame",
-      "type": "object"
+      "$ref": "#/$defs/CallFrame"
     },
     "commitments": {
       "items": {
@@ -593,16 +643,9 @@
       "title": "Events",
       "type": "array"
     },
-    "identity_checks": {
-      "items": {
-        "$ref": "#/$defs/IdentityCheck"
-      },
-      "title": "Identity Checks",
-      "type": "array"
-    },
     "schema_version": {
-      "const": "extraction/1.0.0",
-      "default": "extraction/1.0.0",
+      "const": "extraction/2.0.0",
+      "default": "extraction/2.0.0",
       "title": "Schema Version",
       "type": "string"
     },

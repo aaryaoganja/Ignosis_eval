@@ -11,12 +11,15 @@ One implementation shared by every system (experiment-protocol P-2). Unit modes 
 from __future__ import annotations
 
 import re
+import shutil
+import tempfile
 from pathlib import Path
 
 from ignosis_eval.canonical import sha256_bytes
 from ignosis_eval.contracts.benchmark import ItemMeta, UnitFacts
 from ignosis_eval.contracts.canonical_input import ASRRef, AudioRef, NormalizedInput, TranscriptHeader, Turn
 from ignosis_eval.contracts.enums import UNIT_MODE_INPUT, Role, TranscriptProvenance, UnitMode
+from ignosis_eval.contracts.unit_alias import new_unit_alias
 from ignosis_eval.pipeline.asr import ASRAdapter, ASRUnavailableError
 from ignosis_eval.pipeline.intake import ParsedTranscript, parse_transcript
 from ignosis_eval.pipeline.prechecks import run_frontend
@@ -82,10 +85,21 @@ def assert_no_identifiers(meta: ItemMeta, item_dir: Path, turns: list[Turn]) -> 
                                      "item ids, file names or pair ids (fix the transcript)")
 
 
+def _transcribe_as_alias(asr: ASRAdapter, audio_path: Path, sha: str, alias: str):
+    """P-17 rule 3: the rendered audio is renamed to its alias before any ASR step, so no item id or source file
+    name reaches the ASR adapter."""
+    with tempfile.TemporaryDirectory(prefix="p17-") as tmp:
+        aliased = Path(tmp) / f"{alias}{audio_path.suffix.lower()}"
+        shutil.copyfile(audio_path, aliased)
+        return asr.transcribe(aliased, sha)
+
+
 def build_normalized_input(meta: ItemMeta, item_dir: Path, mode: UnitMode, spec: Spec,
-                           asr: ASRAdapter | None = None) -> NormalizedInput:
+                           asr: ASRAdapter | None = None, *, unit_alias: str | None = None) -> NormalizedInput:
+    """`unit_alias` is the run's opaque alias for this unit (P-17); a fresh random one when omitted."""
     if mode not in meta.unit_modes:
         raise NormalizationError(f"{meta.item_id} has no {mode} unit")
+    alias = unit_alias or new_unit_alias()
     input_mode = UNIT_MODE_INPUT[mode]
     tp = _transcript_path(meta, item_dir, mode)
     parsed = parse_transcript(tp) if tp else None
@@ -105,7 +119,7 @@ def build_normalized_input(meta: ItemMeta, item_dir: Path, mode: UnitMode, spec:
         if asr is None:
             raise ASRUnavailableError("audio unit but no ASR adapter configured (B-06 pending)")
         audio_ref, audio_path = _audio_ref(meta, item_dir)
-        res = asr.transcribe(audio_path, audio_ref.sha256)
+        res = _transcribe_as_alias(asr, audio_path, audio_ref.sha256, alias)
         asr_ref = ASRRef(engine=res.engine, model=res.model, version=res.version, params_sha256=res.params_sha256)
         mapping_confidence = res.mapping_confidence
         for i, at in enumerate(res.turns, start=1):
@@ -130,6 +144,6 @@ def build_normalized_input(meta: ItemMeta, item_dir: Path, mode: UnitMode, spec:
     assert_no_identifiers(meta, item_dir, turns)
     frontend = run_frontend(turns, header, input_mode, spec, role_mapping_confidence=mapping_confidence,
                             diarized=mode in (UnitMode.T_ASR, UnitMode.A))
-    return NormalizedInput(input_mode=input_mode, unit_mode=mode, header=header, has_timestamps=has_ts,
-                           role_mapping_confidence=mapping_confidence, turns=turns, audio=audio_ref, asr=asr_ref,
-                           frontend=frontend)
+    return NormalizedInput(unit_alias=alias, input_mode=input_mode, unit_mode=mode, header=header,
+                           has_timestamps=has_ts, role_mapping_confidence=mapping_confidence, turns=turns,
+                           audio=audio_ref, asr=asr_ref, frontend=frontend)

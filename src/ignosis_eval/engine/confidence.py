@@ -4,8 +4,9 @@ HIGH requires ALL of: verified quote from the correct speaker, all cited spans r
 deterministic confirmation or a prohibited-lexicon hit without negation (codes whose `high_requires` is
 `lexicon_hit_without_negation` — G2a, G3 — accept only the lexicon path). MEDIUM is the ceiling for
 LLM-judged and absence-based codes (encoded as their rubric `confidence_ceiling`). LOW when any cited
-span is unreliable or sources conflict (AJ-05: role confidence is call-level only; an UNKNOWN or low-diarization
-turn is an unreliable span). The model's own label can lower the result, never raise it. Used by A+, B and K0
+span is unreliable, sources conflict, or a citation's role does not match its turn (architecture_application.A_plus
+step 4, shared by B; AJ-05: role confidence is call-level only; an UNKNOWN or low-diarization turn is an unreliable
+span). The model's own label can lower the result, never raise it. Used by A+, B and K0
 (confidence_source COMPUTED); A reports SELF_REPORTED labels untouched (AJ-06).
 """
 
@@ -54,7 +55,7 @@ def compute(cd: CheckDef, *, sub_rule: str | None, quote_ok: bool, role_ok: bool
         high_basis = lexicon_hit_without_negation
     else:
         high_basis = det_confirmed or lexicon_hit_without_negation
-    if not spans_reliable or contradictory:
+    if not spans_reliable or contradictory or not role_ok:  # A_plus.4_confidence_cap (B: same module)
         level = Confidence.LOW
     elif quote_ok and role_ok and high_basis:
         level = Confidence.HIGH

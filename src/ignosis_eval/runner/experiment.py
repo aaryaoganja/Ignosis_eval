@@ -4,7 +4,9 @@ Fail-closed sequence:
    1. load the spec pack (+ optional test profile), inventory PENDING_HUMAN_SIGNOFF items;
    2. verify the bench hash list and gold of the split's scope; run bench checks (gold required);
    3. locked runs: P-8 / H7 preflight (tag, clean tree, hashes, pending, confirm-holdout, registry);
-   4. alias mapping (P-10) -> run manifest written once (locked: true for holdout / red team);
+   4. opaque unit aliases (P-17): a random alias per unit per run, the shared front end builds every
+      NormalizedInput under its alias, the pre-run payload test fails the run on any identifier; alias mappings
+      (P-10 systems, P-17 units) -> run manifest written once (locked: true for holdout / red team);
    5. K0 once per unit; then for r in 1..k: seeded shuffle of units (BASE_SEED + r), architecture order
       rotate([A, B], r − 1), A+ derived from A's stored raw output right after A (P-6);
    6. every (system, unit, rep) persists normalized input, raw LLM traffic, record, timing, usage, errors;
@@ -69,6 +71,7 @@ from ignosis_eval.integrity.guard import ProtectedPathGuard, ProtectedPathViolat
 from ignosis_eval.integrity.hashing import file_canonical_sha256
 from ignosis_eval.pipeline.asr import ASRAdapter
 from ignosis_eval.pipeline.normalize import build_normalized_input
+from ignosis_eval.runner.aliases import assign_unit_aliases, prerun_payload_check, write_unit_alias_mapping
 from ignosis_eval.runner.blind import create_alias_mapping
 from ignosis_eval.runner.gitinfo import git_info
 from ignosis_eval.runner.lock import LOCKED_KINDS, preflight, verify_hashes
@@ -200,17 +203,27 @@ def run_experiment(cfg: RunConfig, *, asr: ASRAdapter | None = None, rule_engine
                               private_hash_list=True if scope == "private" else None, gold=True, rubric=True,
                               profile=True, lexicons=True)
 
-    # ------------------------------------------------------------------ shared front end, once per unit (P-2)
+    # ------------------------------------------------------------------ shared front end, once per unit (P-2, P-17)
+    run_id = new_run_id(cfg.kind, cfg.tuning_round)
+    unit_aliases = assign_unit_aliases(f.unit_id for _, f in units)
     nis: dict[str, NormalizedInput] = {}
+    own_tokens: dict[str, list[str]] = {}
     for e, f in units:
         ip = layout.item_paths(e.meta.split, e.meta.item_id)
-        nis[f.unit_id] = build_normalized_input(e.meta, ip.item_dir, f.unit_mode, spec, asr)
+        nis[f.unit_id] = build_normalized_input(e.meta, ip.item_dir, f.unit_mode, spec, asr,
+                                                unit_alias=unit_aliases[f.unit_id])
+        arts = e.meta.artifacts
+        own_tokens[f.unit_id] = [e.meta.item_id, ip.item_dir.name] + \
+            [Path(a).name for a in (arts.transcript, arts.audio, arts.platform_transcript) if a]
+    p17_checked = prerun_payload_check(nis, own_tokens)  # P-17 rule 4: fails the run before any system call
     steps = sorted({f"{s.check}:{s.status}" for ni in nis.values() for s in ni.frontend.steps
                     if s.status in ("not_implemented", "pending_signoff")})
     facts = {f.unit_id: f for _, f in units}
 
-    run_id = new_run_id(cfg.kind, cfg.tuning_round)
     mapping_sha = create_alias_mapping(results, run_id, cfg.systems)
+    unit_mapping_sha = write_unit_alias_mapping(
+        results, run_id, unit_aliases, {f.unit_id: (f.item_id, f.unit_mode.value) for _, f in units},
+        cfg.private_root)
     needs_audio = any(f.unit_mode not in (UnitMode.TRANSCRIPT, UnitMode.T_GOLD) for _, f in units)
     manifest = RunManifest(
         run_id=run_id, kind=cfg.kind, locked=cfg.kind in LOCKED_KINDS, tuning_round=cfg.tuning_round,  # type: ignore[arg-type]
@@ -234,7 +247,8 @@ def run_experiment(cfg: RunConfig, *, asr: ASRAdapter | None = None, rule_engine
                                           blocker="B-09" if needs_audio else None),
         price_snapshot=ComponentRef(status="pending_signoff", blocker="B-08"),
         base_seed=cfg.base_seed, repetitions=cfg.repetitions, ordering=ORDERING_ID,
-        alias_mapping_sha256=mapping_sha, git=git, hash_verification=hv, pending_signoff=pending,
+        alias_mapping_sha256=mapping_sha, unit_alias_mapping_sha256=unit_mapping_sha,
+        p17_payload_strings_checked=p17_checked, git=git, hash_verification=hv, pending_signoff=pending,
         frontend_steps_not_implemented=steps,
         component_versions={"package": PACKAGE_VERSION, "frontend": FRONTEND_VERSION, "engine": ENGINE_VERSION,
                             "scorer": SCORER_VERSION, "metric_definitions": METRIC_DEFINITIONS_VERSION,
@@ -258,7 +272,7 @@ def run_experiment(cfg: RunConfig, *, asr: ASRAdapter | None = None, rule_engine
     counters = {"records": 0, "failed": 0, "errors": 0}
     failure: str | None = None
     status = "completed"
-    protected = layout.protected_paths() + [results.blinding]
+    protected = layout.protected_paths() + [results.root]  # systems never read results (records, mappings, views)
 
     def execute(system: System, unit_id: str, rep: int) -> None:
         nonlocal failure

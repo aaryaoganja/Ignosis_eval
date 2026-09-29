@@ -56,7 +56,7 @@ class PairMembership(Contract):
 
 
 class CaseCard(Contract):
-    case_card_version: Literal["case_card/2.1.0"] = CASE_CARD_SCHEMA
+    case_card_version: Literal["case_card/2.2.0"] = CASE_CARD_SCHEMA
     item_id: ItemId
     status: CardStatus
     authoring: Authoring

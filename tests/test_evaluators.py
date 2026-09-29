@@ -119,8 +119,8 @@ class StubRuleEngine(RuleEngine):
 def test_b_interfaces(tmp_path, spec):
     ni = F.make_ni(spec)
     event_type = spec.rubric["extraction_vocabulary"]["borrower_event_types"][0]
-    ex = {"events": [{"id": "e1", "type": event_type, "turn": 2, "quote": "stub borrower line beta",
-                      "role": "BORROWER", "confidence": "MEDIUM", "strength": "explicit"}]}
+    ex = {"events": [{"event_id": "E1", "type": event_type, "turn": 2, "quote": "stub borrower line beta",
+                      "source": "supplied", "confidence": "MEDIUM", "strength": "explicit"}]}
     assert ExtractionOutput.model_validate(ex).check_vocabulary(spec) == []
     F.write_replay(tmp_path / "replay", "b_extract", ni, [json.dumps(ex)])
     client = ReplayLLMClient(tmp_path / "replay")
@@ -223,12 +223,13 @@ def test_a_plus_steps_follow_rubric_order(tmp_path, spec):
             order.append((int(n), name.replace("-", "_")))
     nums = [n for n, _ in order]
     assert nums == sorted(nums), f"A+ steps out of order: {nums}"
-    ordered = spec.rubric["architecture_application"]["A_PLUS"]["ordered_steps"]
+    ordered = list(spec.rubric["architecture_application"]["A_plus"]["ordered_steps"])  # "1_capability_filter", ...
+    assert [k.split("_", 1)[0] for k in ordered] == [str(i) for i in range(1, 9)]
     for n, name in order:
         if n >= 1:
-            assert ordered[n - 1] == name
+            assert ordered[n - 1] == f"{n}_{name}"
     assert {n for n, _ in order} >= {1, 2, 3, 4, 5, 6, 7}
-    assert spec.rubric["architecture_application"]["A_PLUS"]["llm_calls"] == 0
+    assert spec.rubric["architecture_application"]["A_plus"]["llm_calls"] == 0
 
 
 def test_a_short_circuits_not_evaluable_without_llm_call(tmp_path, spec):
@@ -247,5 +248,8 @@ def test_a_merge_applies_precheck_failures(tmp_path, spec):
     F.write_replay(tmp_path / "replay", "a_evaluate", ni, [F.body_json(F.record())])
     ctx = EvaluationContext(repetition=1, spec=spec, trace=TraceSink())
     rec = EvaluatorA(ReplayLLMClient(tmp_path / "replay"), spec, sleep=NO_SLEEP).evaluate(ni, ctx)
-    assert rec.gate("G7").status.value == "FAIL" and rec.verdict.value == "CRITICAL_FAIL"
-    assert rec.critical_status.value == "CONFIRMED"
+    assert rec.gate("G7").status.value == "FAIL" and rec.gate("G7").critical_status.value == "CONFIRMED"
+    # architecture_application.A: merge of the shared front-end results ONLY, "no verdict recomputation"; the
+    # verdict stays the LLM's uncorrected output (frozen-contract §11)
+    assert "no verdict recomputation" in spec.rubric["architecture_application"]["A"]["post_llm_processing"]
+    assert rec.verdict.value == F.record().verdict.value == "MEETS_BAR" and rec.critical_status is None

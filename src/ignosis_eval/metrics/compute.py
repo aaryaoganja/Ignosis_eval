@@ -140,8 +140,10 @@ def sd07(ctx: ScoreCtx, units: list[UnitCtx], sv: SystemView) -> dict[str, Any]:
 
 # =========================================================================================== SD-08
 def sd08(ctx: ScoreCtx, units: list[UnitCtx], sv: SystemView) -> dict[str, Any]:
+    """SD-08 (SC-04): targeted controls have gold PASS or NA on their target gates (the trigger is often absent
+    by design); a fire on either is a false fire."""
     C = [(u, g.value) for u in units for g in ctx.registries.control_targets(u.item_id)
-         if u.gold.gates[g.value].status == "PASS" and not u.gold.gates[g.value].contested]
+         if u.gold.gates[g.value].status in ("PASS", "NA") and not u.gold.gates[g.value].contested]
     fired = {_uid_g(u, g): sv.aggs[u.unit_id].gate(g) for u, g in C}
     targeted = sorted(x for x, m in fired.items() if m.fired)
     confirmed = sorted(x for x, m in fired.items() if m.fired and m.critical_status == "CONFIRMED")
@@ -164,15 +166,18 @@ def sd09(ctx: ScoreCtx, units: list[UnitCtx], sv: SystemView) -> dict[str, Any]:
     overclaim: list[str] = []
     unsup_defect: list[str] = []
     eligible_up: dict[str, bool] = {}
+    per_rep_up = per_rep_n = 0
     for u in units:
         agg = sv.aggs[u.unit_id]
         for g in ctx.gates:
             gg, m = u.gold.gates[g], agg.gate(g)
             if gg.status in ("INCONCLUSIVE", "OUT_OF_SCOPE"):
-                bad = agg.gate_in(g, ("PASS", "NA"))  # status-set indicator in >= 3 reps (SD-04)
+                bad = agg.gate_in(g, ("PASS", "NA"))  # majority `passed` (SD-04 indicator PASS or NA)
                 eligible_up[_uid_g(u, g)] = not bad
                 if bad:
                     unsupported.append(_uid_g(u, g))
+                per_rep_n += agg.k  # SD-09: per-rep unsupported passes, pooled (an EF rep is not a pass)
+                per_rep_up += sum(1 for r in agg.reps if not r.failed and r.gates[g].status in ("PASS", "NA"))
             if gg.status == "INCONCLUSIVE" and m.fired and m.critical_status == "CONFIRMED":
                 (overclaim if gg.trigger else unsup_defect).append(_uid_g(u, g))
         for c in ctx.codes:
@@ -200,6 +205,7 @@ def sd09(ctx: ScoreCtx, units: list[UnitCtx], sv: SystemView) -> dict[str, Any]:
     return {
         "unsupported_passes": len(unsupported), "unsupported_pass_ids": sorted(unsupported),
         "unsupported_pass_eligible": len(eligible_up),
+        "unsupported_passes_pooled_per_rep": rate(per_rep_up, per_rep_n, clustered=True),
         "overclaims": len(overclaim), "overclaim_ids": sorted(overclaim),
         "unsupported_defects": len(unsup_defect), "unsupported_defect_ids": sorted(unsup_defect),
         "unit_over_abstention": rate(len(unit_over), len(unit_elig)), "unit_over_abstention_ids": sorted(unit_over),
@@ -419,21 +425,21 @@ def sd17(ctx: ScoreCtx, units: list[UnitCtx], sv: SystemView) -> dict[str, Any]:
 
 
 def critical_status_split(ctx: ScoreCtx, units: list[UnitCtx], sv: SystemView) -> dict[str, Any]:
-    """SD-17 (AJ-12): descriptive CONFIRMED/SUSPECTED split of fired gates, per rep and on majority output. There is
-    no gold critical status and no mismatch metric; overclaim (SD-09) is the only critical-status error."""
-    per_rep: Counter[str] = Counter()
+    """SD-17 (AJ-12), descriptive only: for fired gold-FAIL units (gold FAIL and majority fired), the share whose
+    majority critical status is CONFIRMED vs SUSPECTED. There is no gold critical status and no mismatch metric;
+    overclaim (SD-09) is the only critical-status error."""
     majority: Counter[str] = Counter()
     for u in units:
         agg = sv.aggs[u.unit_id]
         for g in ctx.gates:
-            for r in agg.reps:
-                if g in r.fired:
-                    per_rep[r.gates[g].critical_status or "SUSPECTED"] += 1
+            if u.gold.gates[g].status != "FAIL":
+                continue
             m = agg.gate(g)
             if m.fired and m.critical_status:
                 majority[m.critical_status] += 1
-    return {"per_rep": {k: per_rep[k] for k in ("CONFIRMED", "SUSPECTED")},
-            "majority": {k: majority[k] for k in ("CONFIRMED", "SUSPECTED")},
+    n = sum(majority.values())
+    return {"fired_gold_fail": n,
+            "majority": {k: rate(majority[k], n) for k in ("CONFIRMED", "SUSPECTED")},
             "note": "descriptive only (AJ-12)"}
 
 

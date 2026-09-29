@@ -1,8 +1,9 @@
-"""Evaluator isolation from benchmark identity (dev ingestion, Stage 5).
+"""Evaluator isolation from benchmark identity (SC-05 / experiment-protocol P-17).
 
 What a system (K0 / A / A+ / B) receives is the NormalizedInput and an EvaluationContext. Neither may expose a
-semantic item id (C-08 says "critical", K-07 says "control"), a file name, a split / pack or any case-card or gold
-content. Items here are temporary directories named after real DEV ids, holding obviously synthetic stub turns.
+semantic item id (C-08 says "critical", K-07 says "control"), a pair id, a file name, a split / pack or any case-card
+or gold content. The only identifier is a random opaque unit alias (`u_` + 8 hex) assigned per run. Items here are
+temporary directories named after real DEV ids, holding obviously synthetic stub turns.
 """
 
 from __future__ import annotations
@@ -22,6 +23,8 @@ from ignosis_eval.benchmark.layout import BenchLayout
 from ignosis_eval.benchmark.public_dev import validate_public_dev
 from ignosis_eval.contracts.benchmark import ItemMeta
 from ignosis_eval.contracts.canonical_input import AudioRef, NormalizedInput
+from ignosis_eval.contracts.unit_alias import payload_violations, strings_of
+from ignosis_eval.evaluators.base import input_sha256
 from ignosis_eval.contracts.enums import UnitMode
 from ignosis_eval.contracts.gold_label import GoldProvenance
 from ignosis_eval.evaluators.base import EvaluationContext, TraceSink
@@ -72,24 +75,34 @@ def _leaks(blob: str, tokens: list[str]) -> list[str]:
     return out
 
 
-# ================================================================================ opaque aliases
-def test_evaluator_inputs_receive_opaque_aliases(tmp_path):
+# ================================================================================ opaque aliases (P-17)
+def test_evaluator_inputs_receive_opaque_unit_aliases(tmp_path):
     ni_c, ni_k = (build_normalized_input(*_item(tmp_path, iid), UnitMode.TRANSCRIPT, SP) for iid in ("C-08", "K-07"))
     for ni in (ni_c, ni_k):
-        assert ni.input_alias is not None and re.fullmatch(r"in-[0-9a-f]{16}", ni.input_alias)
-    # the alias is a function of the content only: two items with identical stub content are indistinguishable
-    assert ni_c.input_alias == ni_k.input_alias and ni_c.to_json_dict() == ni_k.to_json_dict()
-    blob = json.dumps(ni_c.to_json_dict())
-    assert _leaks(blob, _forbidden(tmp_path)) == []
+        assert re.fullmatch(r"u_[0-9a-f]{8}", ni.unit_alias)
+    # the alias is random per unit (per run); apart from it, two items with identical stub content are identical
+    assert ni_c.unit_alias != ni_k.unit_alias and input_sha256(ni_c) == input_sha256(ni_k)
+    strip = lambda d: {k: v for k, v in d.items() if k != "unit_alias"}  # noqa: E731
+    assert strip(ni_c.to_json_dict()) == strip(ni_k.to_json_dict())
+    for ni in (ni_c, ni_k):
+        blob = json.dumps(ni.to_json_dict())
+        assert _leaks(blob, _forbidden(tmp_path)) == []
+        assert [v for s in strings_of(ni.to_json_dict()) for v in payload_violations(s)] == []  # P-17 rule 4
+
+
+def test_runner_assigned_alias_is_used(tmp_path):
+    ni = build_normalized_input(*_item(tmp_path, "C-08"), UnitMode.TRANSCRIPT, SP, unit_alias="u_7f3a91c2")
+    assert ni.unit_alias == "u_7f3a91c2"
 
 
 def test_alias_cannot_carry_an_identifier():
     ni = F.make_ni(SP)
     body = ni.to_json_dict()
-    for forged in ("C-08", "in-" + "0" * 16, "in-" + hashlib.sha256(b"C-08").hexdigest()[:16]):
+    for forged in ("C-08", "u_C-08", "u_c08", "in-" + "0" * 16, "u_" + hashlib.sha256(b"C-08").hexdigest()[:16],
+                   "u_7F3A91C2", "C-08_u_7f3a91c2"):
         with pytest.raises(ValidationError):
-            NormalizedInput.model_validate({**body, "input_alias": forged})
-    assert NormalizedInput.model_validate(body).input_alias == ni.input_alias
+            NormalizedInput.model_validate({**body, "unit_alias": forged})
+    assert NormalizedInput.model_validate(body).unit_alias == ni.unit_alias
 
 
 def test_normalized_input_schema_has_no_identifier_fields():
@@ -107,7 +120,7 @@ def test_normalized_input_schema_has_no_identifier_fields():
 
     walk(schema)
     banned = {"path", "file", "filename", "item_id", "unit_id", "item", "split", "pack", "case_card", "card",
-              "gold", "target_check", "pair", "pair_id", "category", "scenario"}
+              "gold", "target_check", "pair", "pair_id", "category", "scenario", "input_alias"}
     assert not names & banned, names & banned
     assert set(AudioRef.model_fields) == {"sha256", "format"}
     assert [f.name for f in dataclasses.fields(EvaluationContext)] == ["repetition", "spec", "trace"]

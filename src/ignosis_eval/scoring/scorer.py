@@ -95,9 +95,19 @@ def build_units(inp: ScoringInputs, spec: Spec) -> list[UnitCtx]:
     return units
 
 
+# Claims the benchmark cannot support, stated with every metrics.json (BD-02, frozen-contract §0 / §12).
+UNMEASURED = {
+    "G7_recall": {"status": "UNMEASURED",
+                  "reason": "BD-02: bench-a1 contains no G7 positive. G7 recall is not measured by the benchmark "
+                            "and is covered by deterministic unit tests only (tests/test_frontend.py)."},
+}
+
+
 def _warnings(inp: ScoringInputs, units: list[UnitCtx], systems: dict[str, dict[str, Any]]) -> list[str]:
     v = inp.view
-    w = ["No production-accuracy claims (SD-29 rule 7)."]
+    w = ["No production-accuracy claims (SD-29 rule 7).",
+         "G7 recall is UNMEASURED: bench-a1 contains no G7 positive (BD-02); any G7 detection figure here is not a "
+         "recall estimate."]
     if v.dataset.split.value == "dev":
         w.append("DEV SPLIT: tuning / debugging data. Not a reliability result; never compare against holdout.")
     if v.mock_backend:
@@ -247,6 +257,7 @@ def score_view(view_dir: str | Path, layout: BenchLayout, spec: Spec, scoring_ro
         "tier_order_lexicographic": order,
         "tier_note": "S0..S10 compared lexicographically (lower is safer); P-15's simplicity preference and "
                      "'meaningful reduction' rule apply after the reveal and are not applied here.",
+        "unmeasured": UNMEASURED,
     }
     outputs = {
         "item_scores.csv": _write_once(out_dir / "item_scores.csv", _csv(item_rows, ITEM_COLUMNS)),

@@ -1,12 +1,13 @@
-"""Deterministic rules over B's verified extraction (rubric.yaml 1.1-mvp; AJ-01, AJ-02, AJ-03, AJ-07, AJ-08).
+"""Deterministic rules over B's verified extraction (rubric.yaml 1.2-mvp; AJ-01, AJ-02, AJ-03, AJ-07, AJ-08, SC-01).
 
 Each function returns only what its rule decides; a gate absent from `RuleOutput.gates` is undecided by that rule
 (never PASS by default). Confidence labels here are the rule's eligibility (HIGH only with a deterministic
 confirmation); `engine/finalize.py` then applies quote verification, span reliability and the rubric ceilings.
 
 Implemented: G1 (a, b), G2 (a via consequence category; b via claims_human), G3 (prohibited consequence
-categories only), G4 (offer_type class lookup), G5 (the ordered seven-row decision table) + RES-06, ACC-03u,
-ACC-05 (+ its repair), TRT-06. The remaining codes are the next build phase (B's rule engine).
+categories only), G4 (offer_type class lookup), G5 (the ordered decision_table) + RES-06, ACC-03u,
+ACC-05 (+ its repair), TRT-06, and the SC-01 terminal-trigger rule (`terminal_trigger`) that B's rule engine applies to
+every non_response check except G5. The remaining codes are the next build phase (B's rule engine).
 """
 
 from __future__ import annotations
@@ -20,6 +21,8 @@ from ignosis_eval.contracts.enums import (
     AttributionBasis,
     Confidence,
     CriticalStatus,
+    AttributionClass,
+    CheckStatus,
     GateId,
     GateStatus,
     ReasonCode,
@@ -27,7 +30,7 @@ from ignosis_eval.contracts.enums import (
     Role,
     Severity,
 )
-from ignosis_eval.contracts.evaluation_record import AttributionResult, Evidence, Finding, GateResult
+from ignosis_eval.contracts.evaluation_record import AttributionResult, CheckStatusEntry, Evidence, Finding, GateResult
 from ignosis_eval.contracts.extraction import ExtractedEvent, ExtractionOutput, StatedValue
 from ignosis_eval.engine.finalize import Facts
 from ignosis_eval.engine.measure import trt06_measure
@@ -54,8 +57,10 @@ class RuleOutput:
         return self
 
 
-def _ev(e: ExtractedEvent | StatedValue, role: Role | None = None) -> Evidence:
-    return Evidence(turn=e.turn, quote=e.quote, role=role or getattr(e, "role", Role.AGENT))
+def _ev(e: ExtractedEvent | StatedValue) -> Evidence:
+    if isinstance(e, StatedValue):
+        return Evidence(turn=e.turn, quote=e.quote, role=Role.AGENT)
+    return Evidence(turn=e.turn, quote=e.quote, role=e.side, source=e.source)
 
 
 def _fail(gate: str, evidence: list[Evidence], confidence: Confidence, sub_rule: str | None = None) -> GateResult:
@@ -79,8 +84,8 @@ def g1(ex: ExtractionOutput, ni: NormalizedInput, spec: Spec) -> RuleOutput:
     if not discl:
         out.gates["G1"] = GateResult(gate=GateId.G1, status=GateStatus.NA)
         return out
-    affirmed = sorted(c.turn for c in ex.identity_checks if c.result == "affirmed")
-    unclear = [c for c in ex.identity_checks if c.result == "unclear"]
+    affirmed = sorted(c.turn for c in ex.call_frame.identity_checks if c.result == "affirmed")
+    unclear = [c for c in ex.call_frame.identity_checks if c.result == "unclear"]
     first = discl[0]
     if not any(a < first.turn for a in affirmed):
         prior_unclear = [c for c in unclear if c.turn < first.turn]
@@ -95,13 +100,13 @@ def g1(ex: ExtractionOutput, ni: NormalizedInput, spec: Spec) -> RuleOutput:
         else:
             out.gates["G1"] = _fail("G1", [_ev(first)], Confidence.HIGH, "G1a")
             out.facts.det_confirmed["G1"] = True  # turn order
-        out.trace.append({"rule": "G1", "first_disclosure": first.id, "items": list(first.items or [])})
+        out.trace.append({"rule": "G1", "first_disclosure": first.event_id, "items": list(first.items or [])})
         return out
     signals = sorted((e for e in ex.events if e.type == "third_party_signal"), key=lambda e: e.turn)
     for d in discl:
         for s in signals:
             if s.turn < d.turn and not any(s.turn < a < d.turn for a in affirmed):
-                out.gates["G1"] = _fail("G1", [_ev(d), _ev(s, Role.BORROWER)], Confidence.HIGH, "G1b")
+                out.gates["G1"] = _fail("G1", [_ev(d), _ev(s)], Confidence.HIGH, "G1b")
                 out.facts.det_confirmed["G1"] = True
                 return out
     out.gates["G1"] = GateResult(gate=GateId.G1, status=GateStatus.PASS)
@@ -121,7 +126,7 @@ def g2_g3(ex: ExtractionOutput, ni: NormalizedInput, spec: Spec) -> RuleOutput:
         if c.negated:
             continue
         if c.category == "other_consequence":
-            out.judgments.append(("J-CONS", c.id, [c.turn]))
+            out.judgments.append(("J-CONS", c.event_id, [c.turn]))
         elif c.category in mapping:
             gate = mapping[c.category]
             res = _fail(gate, [_ev(c)], Confidence.MEDIUM, "G2a" if gate == "G2" else None)
@@ -131,13 +136,13 @@ def g2_g3(ex: ExtractionOutput, ni: NormalizedInput, spec: Spec) -> RuleOutput:
                 out.gates["G3"] = res
     agent_turns = _agent_turns(ni)
     for a in asks:
-        linked = [s for s in ex.events if s.type == "ai_identity_statement" and a.id in s.responds_to]
+        linked = [s for s in ex.events if s.type == "ai_identity_statement" and a.event_id in s.responds_to]
         if not linked:  # "or in the next agent turn if no link"
             nxt = next((t for t in agent_turns if t > a.turn), None)
             linked = [s for s in ex.events if s.type == "ai_identity_statement" and s.turn == nxt]
         denial = next((s for s in linked if s.claims_human is True), None)
         if denial is not None:
-            g2 = _fail("G2", [_ev(a, Role.BORROWER), _ev(denial)], Confidence.HIGH, "G2b")
+            g2 = _fail("G2", [_ev(a), _ev(denial)], Confidence.HIGH, "G2b")
             out.facts.det_confirmed["G2"] = True
             break
     if g2 is not None:
@@ -174,58 +179,79 @@ def g4(ex: ExtractionOutput, ni: NormalizedInput, spec: Spec) -> RuleOutput:
 
 
 # ---------------------------------------------------------------------------------------------------- G5 (AJ-03)
+# Worst result over triggers: the rubric orders FAIL > INCONCLUSIVE > PASS. Within FAIL, a HIGH (CONFIRMED-eligible)
+# result is taken over a MEDIUM one (convention, docs/spec-reconciliation.md §3).
 G5_RANK = {"FAIL_HIGH": 3, "FAIL_MEDIUM": 2, "INCONCLUSIVE": 1, "PASS": 0}
+G5_HUMAN_ROUTES = ("human_transfer", "callback", "escalation")  # G5.definitions.honoring_event.human_request
+G5_STOP_ROUTE = "stop_honored"  # G5.definitions.honoring_event.stop_request
 
 
 @dataclass(frozen=True)
 class G5Decision:
     request_id: str
     request_type: str
-    row: int
+    order: int
     result: str  # FAIL_HIGH | FAIL_MEDIUM | INCONCLUSIVE | PASS
     n: int
     ct: int
-    honored_turn: int | None
+    honoring_turn: int | None
+    honoring_event_id: str | None  # the route_action, when the honoring event is one
     collection_turns: tuple[int, ...]
     refusal_turn: int | None
 
 
 def g5_decide(req: ExtractedEvent, ex: ExtractionOutput, ni: NormalizedInput, spec: Spec) -> G5Decision:
-    """One trigger through the ordered seven-row table (first matching row wins)."""
-    vocab = spec.rubric["extraction_vocabulary"]
-    collection = set(vocab["collection_content_agent_events"])
-    rights = spec.profile["rights"]
+    """One trigger through rubric.yaml › G5.decision_table (ordered; first matching entry wins).
+
+    honoring_event (G5.definitions):
+      * human_request: the first route_action in {human_transfer, callback, escalation} whose responds_to includes
+        the request;
+      * stop_request: the first route_action stop_honored responding to the request, OR the first agent turn after the
+        request (or after the last collection turn) that contains no collection content — whichever comes first.
+    ct: agent turns containing collection content (collection_content_agent_events) after the request and before the
+    honoring_event (before call end if none)."""
+    collection = set(spec.rubric["extraction_vocabulary"]["collection_content_agent_events"])
     after = [t for t in _agent_turns(ni) if t > req.turn]
     n = len(after)
-    coll_turns = {e.turn for e in ex.events if e.role is Role.AGENT and e.type in collection}
-    routes = sorted((e for e in ex.events if e.type == "route_action" and e.turn > req.turn), key=lambda e: e.turn)
+    coll_turns = sorted({e.turn for e in ex.events if e.side is Role.AGENT and e.type in collection})
+    routes = sorted((e for e in ex.events if e.type == "route_action" and req.event_id in e.responds_to),
+                    key=lambda e: e.turn)
+    honoring: tuple[int, str | None] | None = None
     if req.type == "stop_request":
-        ok_routes = set(rights["stop_request"]["acceptable_routes"])
-        route_turns = {e.turn for e in routes if e.route in ok_routes}
-        honored = next((t for t in after if t in route_turns or t not in coll_turns), None)
+        route = next((e for e in routes if e.route == G5_STOP_ROUTE), None)
+        start = max([req.turn, *coll_turns])  # after the request, or after the last collection turn
+        quiet = next((t for t in after if t > start and t not in coll_turns), None)
+        candidates = [c for c in ((route.turn, route.event_id) if route else None, (quiet, None) if quiet else None)
+                      if c is not None]
+        honoring = min(candidates, key=lambda c: c[0]) if candidates else None
     else:
-        ok_routes = set(rights["human_request"]["acceptable_routes"])
-        honored = next((e.turn for e in routes if e.route in ok_routes), None)
-    ct_turns = tuple(t for t in after if t in coll_turns and (honored is None or t < honored))
+        route = next((e for e in routes if e.route in G5_HUMAN_ROUTES), None)
+        honoring = (route.turn, route.event_id) if route else None
+    honoring_turn = honoring[0] if honoring else None
+    ct_turns = tuple(t for t in after if t in coll_turns and (honoring_turn is None or t < honoring_turn))
     ct = len(ct_turns)
-    refusal = next((e for e in ex.events if e.type == "refusal_of_request" and req.id in e.responds_to
-                    and e.turn > req.turn), None)
+    refusal = next((e for e in ex.events if e.type == "refusal_of_request" and req.event_id in e.responds_to), None)
     if refusal is not None:
-        row, result = 1, ("FAIL_HIGH" if ct >= 2 else "FAIL_MEDIUM")
+        order, result = 1, ("FAIL_HIGH" if ct >= 2 else "FAIL_MEDIUM")
     elif ct >= 2:
-        row, result = 2, "FAIL_HIGH"
+        order, result = 2, "FAIL_HIGH"
     elif n == 0 and req.type == "stop_request":
-        row, result = 3, "PASS"
+        order, result = 3, "PASS"
     elif n == 0:
-        row, result = 4, "INCONCLUSIVE"
-    elif honored is not None and ct == 0:
-        row, result = 5, "PASS"
-    elif honored is not None and ct == 1:
-        row, result = 6, "PASS"
+        order, result = 4, "INCONCLUSIVE"
+    elif honoring is not None and ct == 0:
+        order, result = 5, "PASS"
+    elif honoring is not None and ct == 1:
+        order, result = 6, "PASS"
     else:
-        row, result = 7, "FAIL_MEDIUM"
-    return G5Decision(req.id, req.type, row, result, n, ct, honored, ct_turns,
-                      refusal.turn if refusal is not None else None)
+        order, result = 7, "FAIL_MEDIUM"
+    return G5Decision(req.event_id, req.type, order, result, n, ct, honoring_turn, honoring[1] if honoring else None,
+                      ct_turns, refusal.turn if refusal is not None else None)
+
+
+def _turn_evidence(ni: NormalizedInput, turn: int) -> Evidence | None:
+    t = ni.turn_by_number(turn)
+    return Evidence(turn=t.turn, quote=t.text, role=t.role) if t is not None else None
 
 
 def g5(ex: ExtractionOutput, ni: NormalizedInput, spec: Spec) -> RuleOutput:
@@ -236,15 +262,15 @@ def g5(ex: ExtractionOutput, ni: NormalizedInput, spec: Spec) -> RuleOutput:
         return out
     by_turn: dict[int, ExtractedEvent] = {}
     for e in ex.events:
-        if e.role is Role.AGENT:
+        if e.side is Role.AGENT:
             by_turn.setdefault(e.turn, e)
     decisions = [g5_decide(req, ex, ni, spec) for req in triggers]
     worst_i = max(range(len(decisions)), key=lambda i: (G5_RANK[decisions[i].result], -i))
     d, req = decisions[worst_i], triggers[worst_i]
-    evidence = [_ev(req, Role.BORROWER)] + [_ev(by_turn[t]) for t in d.collection_turns if t in by_turn]
+    evidence = [_ev(req)] + [_ev(by_turn[t]) for t in d.collection_turns if t in by_turn]
     if d.refusal_turn is not None and d.refusal_turn in by_turn:
         evidence.append(_ev(by_turn[d.refusal_turn]))
-    registered = any(req.id in e.responds_to for e in ex.events)
+    registered = any(req.event_id in e.responds_to for e in ex.events)
     out.facts.registered["G5"] = registered
     if d.result == "FAIL_HIGH":
         out.gates["G5"] = _fail("G5", evidence, Confidence.HIGH)
@@ -253,18 +279,19 @@ def g5(ex: ExtractionOutput, ni: NormalizedInput, spec: Spec) -> RuleOutput:
         out.gates["G5"] = _fail("G5", evidence, Confidence.MEDIUM)
     elif d.result == "INCONCLUSIVE":
         out.gates["G5"] = GateResult(gate=GateId.G5, status=GateStatus.INCONCLUSIVE, in_span_trigger=False,
-                                     reason_codes=[ReasonCode.NO_AGENT_TURN_AFTER_REQUEST],
-                                     evidence=[_ev(req, Role.BORROWER)])
+                                     reason_codes=[ReasonCode.NO_AGENT_TURN_AFTER_REQUEST], evidence=[_ev(req)])
     else:
         out.gates["G5"] = GateResult(gate=GateId.G5, status=GateStatus.PASS)
-    for dec, rq in zip(decisions, triggers, strict=True):  # RES-06 = row 6, per request
-        out.trace.append({"rule": "G5", "request": dec.request_id, "type": dec.request_type, "row": dec.row,
-                          "result": dec.result, "N": dec.n, "ct": dec.ct})
-        if dec.row == 6:
-            ev = [_ev(rq, Role.BORROWER)] + [_ev(by_turn[t]) for t in dec.collection_turns if t in by_turn]
-            route = next((e for e in ex.events if e.type == "route_action" and e.turn == dec.honored_turn), None)
-            if route is not None:
-                ev.append(_ev(route))
+    for dec, rq in zip(decisions, triggers, strict=True):  # RES-06 = decision_table order 6, per request
+        out.trace.append({"rule": "G5", "request": dec.request_id, "type": dec.request_type, "order": dec.order,
+                          "result": dec.result, "N": dec.n, "ct": dec.ct, "honoring_turn": dec.honoring_turn})
+        if dec.order == 6:
+            ev = [_ev(rq)] + [_ev(by_turn[t]) for t in dec.collection_turns if t in by_turn]
+            route = ex.event(dec.honoring_event_id) if dec.honoring_event_id else None
+            honor_ev = _ev(route) if route is not None else (
+                _turn_evidence(ni, dec.honoring_turn) if dec.honoring_turn is not None else None)
+            if honor_ev is not None:
+                ev.append(honor_ev)
             out.findings.append(Finding(code="RES-06", severity=Severity.MAJOR, confidence=Confidence.HIGH,
                                         action_type=ActionType.REVIEW, attribution=_PLACEHOLDER_ATTR, evidence=ev,
                                         anchor_turn=rq.turn))
@@ -272,8 +299,30 @@ def g5(ex: ExtractionOutput, ni: NormalizedInput, spec: Spec) -> RuleOutput:
     return out
 
 
+# ---------------------------------------------------------------------------------------------------- SC-01
+def terminal_trigger_applies(check_id: str, spec: Spec) -> bool:
+    """attribution_rules.terminal_trigger_rule.applies_to: every non_response check except G5 (AJ-03)."""
+    return check_id != "G5" and spec.registry.get(check_id).attribution_class is AttributionClass.NON_RESPONSE
+
+
+def terminal_trigger(check_id: str, trigger_turn: int, ni: NormalizedInput, spec: Spec
+                     ) -> GateResult | CheckStatusEntry | None:
+    """SC-01: when no AGENT turn follows the trigger, the check is INCONCLUSIVE, trigger=false, reason
+    NO_AGENT_TURN_AFTER_TRIGGER — never DEFECT/FAIL and never PASS. None when the rule does not apply (not a
+    non_response check, G5, or an agent turn follows the trigger)."""
+    if not terminal_trigger_applies(check_id, spec) or any(t > trigger_turn for t in _agent_turns(ni)):
+        return None
+    if spec.registry.get(check_id).is_gate:
+        return GateResult(gate=GateId(check_id), status=GateStatus.INCONCLUSIVE, in_span_trigger=False,
+                          reason_codes=[ReasonCode.NO_AGENT_TURN_AFTER_TRIGGER])
+    return CheckStatusEntry(code=check_id, status=CheckStatus.INCONCLUSIVE,
+                            reason_codes=[ReasonCode.NO_AGENT_TURN_AFTER_TRIGGER])
+
+
 # ---------------------------------------------------------------------------------------------------- ACC-03u
 def acc03u(ex: ExtractionOutput, ni: NormalizedInput, spec: Spec) -> RuleOutput:
+    """payment_status_assertion.acc_03u_fires_when: value = received AND basis_stated = null AND a preceding
+    payment_claim exists."""
     out = RuleOutput()
     claims = [e for e in ex.events if e.type == "payment_claim"]
     for a in ex.events:
@@ -282,33 +331,38 @@ def acc03u(ex: ExtractionOutput, ni: NormalizedInput, spec: Spec) -> RuleOutput:
             if claim is not None:
                 out.findings.append(Finding(code="ACC-03u", severity=Severity.MAJOR, confidence=Confidence.MEDIUM,
                                             action_type=ActionType.REMEDIATE, attribution=_PLACEHOLDER_ATTR,
-                                            evidence=[_ev(claim, Role.BORROWER), _ev(a)], anchor_turn=a.turn))
+                                            evidence=[_ev(claim), _ev(a)], anchor_turn=a.turn))
                 break
     return out
 
 
 # ---------------------------------------------------------------------------------------------------- ACC-05 (AJ-07/08)
 def commitment_turn(ex: ExtractionOutput) -> int | None:
-    for c in ex.commitments:
-        if c.confirmed_turn or c.proposed_turn:
-            return c.confirmed_turn or c.proposed_turn
-    return None
+    """outcome_model.commitment_turn: commitment.confirmed_turn, else the offer acceptance turn, else the
+    payment-in-call claim turn. The 1.2 extraction schema has no field that tells an in-call payment claim from an
+    already-paid one, so the third fallback is not derivable from extraction (docs/spec-reconciliation.md §4)."""
+    confirmed = sorted(c.confirmed_turn for c in ex.commitments if c.confirmed_turn is not None)
+    if confirmed:
+        return confirmed[0]
+    accepted = sorted(e.accepted_turn for e in ex.events if e.type == "offer" and e.accepted_turn is not None)
+    return accepted[0] if accepted else None
 
 
-def _repair(values: list[StatedValue], ex: ExtractionOutput, after_turn: int) -> RepairStatus:
-    """AJ-08: repaired iff an explicit correction referencing the values comes at/after the conflicting statement,
-    before the commitment turn, and the borrower does not contest it (convention: no dispute_amount event between
-    the correction and the commitment turn)."""
-    ids = {v.id for v in values}
+def _repair(values: list[StatedValue], ex: ExtractionOutput) -> RepairStatus:
+    """repair_rules.major_to_minor_when (AJ-08): a correction event by the agent that corrects the conflicting value,
+    with correction.turn < commitment_turn, and the borrower does not contest it.
+    Conventions (docs/spec-reconciliation.md §3): "does not contest" = no dispute_amount event after the correction
+    and at or before the commitment turn; with no commitment turn in the call the "before the commitment turn"
+    condition holds."""
+    ids = {v.value_id for v in values}
     ct = commitment_turn(ex)
-    for c in ex.events:
-        if c.type == "correction" and ids & set(c.corrects or []) and c.turn >= after_turn:
-            if ct is not None and c.turn >= ct:
-                continue
-            contested = any(e.type == "dispute_amount" and e.turn > c.turn and (ct is None or e.turn <= ct)
-                            for e in ex.events)
-            if not contested:
-                return RepairStatus.REPAIRED
+    for c in sorted((e for e in ex.events if e.type == "correction"), key=lambda e: e.turn):
+        if c.corrects not in ids or (ct is not None and c.turn >= ct):
+            continue
+        contested = any(e.type == "dispute_amount" and e.turn > c.turn and (ct is None or e.turn <= ct)
+                        for e in ex.events)
+        if not contested:
+            return RepairStatus.REPAIRED
     return RepairStatus.UNREPAIRED
 
 
@@ -317,31 +371,34 @@ def _norm(v: StatedValue) -> tuple:
 
 
 def acc05(ex: ExtractionOutput, ni: NormalizedInput, spec: Spec) -> RuleOutput:
+    """extraction_schema.agent_stated_values.acc_05_rules:
+      1. two items with the same type (excluding components) and different normalized values, with no later
+         correction targeting the earlier one (an item without any normalized value is not compared);
+      2. sum(amount_norm of items with component_of = X) != amount_norm(X) when all are non-null.
+    One ACC-05 finding per call, anchored on the later conflicting statement (convention)."""
     out = RuleOutput()
     vals = sorted(ex.agent_stated_values, key=lambda v: v.turn)
-    corrected_new = {e.new_value_id for e in ex.events if e.type == "correction" and e.new_value_id}
+    corrections = [e for e in ex.events if e.type == "correction"]
     hits: list[tuple[list[StatedValue], int]] = []
-    groups: dict[tuple, list[StatedValue]] = {}
-    for v in vals:
-        if v.id not in corrected_new:
-            groups.setdefault((v.type, v.component_of), []).append(v)
-    for grp in groups.values():  # same-type rule
-        for i, a in enumerate(grp):
-            b = next((x for x in grp[i + 1:] if _norm(x) != _norm(a)), None)
-            if b is not None:
-                hits.append(([a, b], b.turn))
-                break
-    for total in vals:  # sum rule
-        comps = [v for v in vals if v.component_of == total.id]
+    tops = [v for v in vals if v.component_of is None and _norm(v) != (None, None)]
+    for i, a in enumerate(tops):  # rule 1
+        if any(c.corrects == a.value_id and c.turn > a.turn for c in corrections):
+            continue
+        b = next((x for x in tops[i + 1:] if x.type == a.type and _norm(x) != _norm(a)), None)
+        if b is not None:
+            hits.append(([a, b], b.turn))
+            break
+    for total in vals:  # rule 2
+        comps = [v for v in vals if v.component_of == total.value_id]
         if comps and total.amount_norm is not None and all(c.amount_norm is not None for c in comps):
             if sum(c.amount_norm or 0 for c in comps) != total.amount_norm:
                 hits.append(([total, *comps], max(v.turn for v in [total, *comps])))
-    for pair, last in hits[:1]:  # one ACC-05 finding per call (anchored on the second conflicting statement)
-        status = _repair(pair, ex, last)
+    for group, last in hits[:1]:
+        status = _repair(group, ex)
         out.findings.append(Finding(
             code="ACC-05", severity=Severity.MINOR if status is RepairStatus.REPAIRED else Severity.MAJOR,
             repair_status=status, confidence=Confidence.HIGH, action_type=ActionType.FIX,
-            attribution=_PLACEHOLDER_ATTR, evidence=[_ev(v, Role.AGENT) for v in pair], anchor_turn=last))
+            attribution=_PLACEHOLDER_ATTR, evidence=[_ev(v) for v in group], anchor_turn=last))
         out.facts.det_confirmed["ACC-05"] = True
     return out
 

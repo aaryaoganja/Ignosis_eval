@@ -39,7 +39,7 @@ EXPECTED_PENDING = {
 def test_spec_pack_complete_and_versions(spec):
     assert all((F.SPEC_DIR / f).exists() for f in SPEC_FILES)
     assert (spec.contract_version, spec.rubric_version, spec.profile_id, spec.profile_version) == (
-        "1.1.0-frozen", "1.1-mvp", "collections_default_v1", "1.1.0")  # FP-01
+        "1.2.0-frozen", "1.2-mvp", "collections_default_v1", "1.1.1")  # frozen Stage-5 package
     assert spec.is_canonical_profile
     for name, sha in spec.file_sha256.items():
         assert sha == hashlib.sha256((F.SPEC_DIR / name).read_bytes()).hexdigest()

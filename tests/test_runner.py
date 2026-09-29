@@ -4,6 +4,7 @@ with the replay LLM mock. These runs measure plumbing only."""
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -19,6 +20,13 @@ from ignosis_eval.evaluators.mock_llm import ReplayLLMClient
 from ignosis_eval.evaluators.pipelines import APlusDeriver, EvaluatorA, EvaluatorB
 from ignosis_eval.integrity.freeze import IntegrityError
 from ignosis_eval.pipeline.normalize import build_normalized_input
+from ignosis_eval.contracts.unit_alias import payload_violations
+from ignosis_eval.runner.aliases import (
+    ITEM_ID_PATTERN,
+    OpaqueAliasViolation,
+    load_unit_alias_mapping,
+    prerun_payload_check,
+)
 from ignosis_eval.runner.blind import BlindingError, build_view, reveal
 from ignosis_eval.runner.experiment import RunConfig, arch_order, run_experiment, seeded_order
 from ignosis_eval.runner.lock import LockError
@@ -125,6 +133,14 @@ def test_dev_run_blind_score_reveal(layout, spec, tmp_path):
 
     results = ResultsLayout(tmp_path / "results")
     assert not (run_dir / "alias_mapping.json").exists() and (results.blinding / res.run_id / "alias_mapping.json").exists()
+    # P-17: the unit alias mapping is private (blinding dir + BENCH_PRIVATE_DIR), hashed into the manifest
+    mapping = load_unit_alias_mapping(results, res.run_id, man["unit_alias_mapping_sha256"])
+    assert {v["item_id"] for v in mapping.values()} == {"ZZ-R01", "ZZ-R02"}
+    assert all(re.fullmatch(r"u_[0-9a-f]{8}", a) for a in mapping) and man["p17_payload_strings_checked"] > 0
+    assert read_json(layout.private_root / "run_aliases" / f"{res.run_id}.json")["mapping"] == mapping
+    ni = read_json(run_dir / "A" / "ZZ-R01__TRANSCRIPT" / "rep_1" / "normalized_input.json")
+    assert mapping[ni["unit_alias"]]["item_id"] == "ZZ-R01"
+    assert "ZZ-R01" not in json.dumps(ni) and not any(a in json.dumps(man) for a in mapping)  # mapping stays private
     view = build_view(results, res.run_id)
     blob = " ".join(p.read_text() for p in view.rglob("*.json"))
     assert '"system": "K0"' not in blob and '"system": "A+"' not in blob and '"system": "A"' not in blob
@@ -133,8 +149,11 @@ def test_dev_run_blind_score_reveal(layout, spec, tmp_path):
     out = score_view(view, layout, spec, results.scoring)
     metrics = read_json(out / "metrics.json")
     assert any("DEV SPLIT" in w for w in metrics["warnings"]) and any("MOCK" in w for w in metrics["warnings"])
-    assert "bench-a1-test-stub, synthetic calls, profile collections_default_v1, rubric 1.1-mvp, model" in \
+    assert "bench-a1-test-stub, synthetic calls, profile collections_default_v1, rubric 1.2-mvp, model" in \
         metrics["scope_line"]
+    assert metrics["unmeasured"]["G7_recall"]["status"] == "UNMEASURED" and "BD-02" in \
+        metrics["unmeasured"]["G7_recall"]["reason"]
+    assert any("G7 recall is UNMEASURED" in w for w in metrics["warnings"])
     assert set(metrics["systems"]) == {"SYS-1", "SYS-2", "SYS-3"}
     for f in ("item_scores.csv", "metrics.json", "discordance_tables.csv", "human_checks.csv", "scoring_manifest.json"):
         assert (out / f).exists()
@@ -205,7 +224,7 @@ def test_guard_violation_fails_run(layout, spec, tmp_path):
 
 def test_reproducible_records(layout, spec, tmp_path):
     replay = _setup(layout, spec, tmp_path)
-    hashes = []
+    hashes, aliases = [], []
     for i in range(2):
         cfg = _cfg(layout, tmp_path, replay, [System.K0, System.A, System.A_PLUS], repetitions=2)
         cfg.results_root = tmp_path / f"results{i}"
@@ -216,7 +235,85 @@ def test_reproducible_records(layout, spec, tmp_path):
 
             h[str(p.relative_to(res.run_dir))] = EvaluationRecord.model_validate(read_json(p)).content_hash()
         hashes.append(h)
+        aliases.append({read_json(p)["unit_alias"] for p in res.run_dir.rglob("normalized_input.json")})
     assert hashes[0] == hashes[1]
+    assert aliases[0].isdisjoint(aliases[1])  # P-17: a fresh random alias per unit per run
+
+
+P17_LINES = ["stub agent line about the E-mail", "stub agent line X-ray", "stub agent line holdout",
+             "stub agent line in any language", "stub agent line for Dev"]
+
+
+@pytest.mark.parametrize("line", P17_LINES)
+def test_p17_words_are_caught_at_authoring_time(layout, spec, line):
+    """Bench check B017 applies the P-17 payload test to transcripts, so such an item cannot even be frozen."""
+    turns = F.STUB_TURNS[:2] + (("AGENT", line),) + F.STUB_TURNS[3:]
+    F.add_item(layout, "ZZ-R01", transcript=F.stub_transcript(turns))
+    with pytest.raises(IntegrityError, match="B017"):
+        F.freeze(layout, spec)
+
+
+@pytest.mark.parametrize("line", P17_LINES)
+def test_p17_prerun_payload_test_fails_the_run(layout, spec, tmp_path, monkeypatch, line):
+    """experiment-protocol P-17 rule 4 in the runner: any evaluator-bound payload matching the item-ID pattern or
+    containing a pack/split word fails the run before any system is called (deliberately broad; see
+    contracts/unit_alias.py). The leaking payload is injected after the bench froze cleanly."""
+    import ignosis_eval.runner.experiment as ex
+
+    replay = _setup(layout, spec, tmp_path)
+    real = ex.build_normalized_input
+
+    def leaky(meta, item_dir, mode, sp, asr=None, *, unit_alias=None):
+        ni = real(meta, item_dir, mode, sp, asr, unit_alias=unit_alias)
+        turns = [t.model_copy(update={"text": line}) if t.turn == 3 else t for t in ni.turns]
+        return ni.model_copy(update={"turns": turns})
+
+    monkeypatch.setattr(ex, "build_normalized_input", leaky)
+    calls: list = []
+    spy = Spy(KeywordFloorK0(), calls, "K0")
+    with pytest.raises(OpaqueAliasViolation, match="P-17"):
+        run_experiment(_cfg(layout, tmp_path, replay, [System.K0]), systems_override={System.K0: spy})
+    assert calls == [] and not (tmp_path / "results" / "runs").exists()
+
+
+def test_p17_payload_check_scope():
+    assert ITEM_ID_PATTERN.pattern == "^(G|M|K|C|R|P|J|X|A|AB|E|S|MI|MC|MD|SN|RT|CAL)-"
+    for ok in ("stub agent line alpha", "POL-01b", "SPAN_UNRELIABLE", "A+T-platform", "T-asr",
+               "2026-09-28T14:05:00+05:30", "DC-02", "B-06/B-11", "SC-03", "u_7f3a91c2", "score", "device", "micron"):
+        assert payload_violations(ok) == [], ok
+    for bad in ("G-02", "see AB-06 now", "(MI-G1-01)", "SN-D01", "RT-11", "CAL-01", "TW-01", "CP-01", "dev", "HOLDOUT",
+                "core", "Micro", "red team", "redteam", "calibration", "abstention", "modality", "snippet"):
+        assert payload_violations(bad), bad
+
+
+def test_p17_prerun_check_includes_the_units_own_source_names(spec):
+    ni = F.make_ni(spec, F.STUB_TURNS[:2] + (("AGENT", "stub agent line zzfile7.txt"),))
+    with pytest.raises(OpaqueAliasViolation, match="source identifier"):
+        prerun_payload_check({"u": ni}, {"u": ["ZZ-Q01", "zzfile7.txt"]})
+    assert prerun_payload_check({"u": F.make_ni(spec)}, {"u": ["ZZ-Q01", "zzfile7.txt"]}) > 0
+
+
+def test_audio_is_renamed_to_the_alias_before_asr(tmp_path, spec):
+    seen: list[str] = []
+
+    class Recorder:
+        engine, model, version, params_sha256 = "stub", None, "0", "0" * 64
+
+        def describe(self):
+            return {"engine": "stub"}
+
+        def transcribe(self, audio_path, sha):
+            seen.append(audio_path.name)
+            raise RuntimeError("stop after recording the path")
+
+    d = tmp_path / "items" / "ZZ-A01"
+    d.mkdir(parents=True)
+    (d / "ZZ-A01.wav").write_bytes(b"RIFF-synthetic-stub")
+    meta = ItemMeta.model_validate({"item_id": "ZZ-A01", "split": "dev", "pack": "core", "language": "hi-en",
+                                    "unit_modes": ["A"], "artifacts": {"audio": "ZZ-A01.wav"}})
+    with pytest.raises(RuntimeError, match="stop after"):
+        build_normalized_input(meta, d, meta.unit_modes[0], spec, Recorder(), unit_alias="u_0123abcd")
+    assert seen == ["u_0123abcd.wav"]
 
 
 def test_append_only_storage(tmp_path):

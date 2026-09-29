@@ -9,6 +9,7 @@ silently mis-resolved.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
@@ -150,10 +151,24 @@ def _build(raw: dict[str, Any], kind: str, default_modes: dict[str, str]) -> Che
 def outcome_positive(dispositions: Iterable[str], firmness: str | None, positive_set: Iterable[str],
                      ptp_firmness: Iterable[str]) -> bool:
     """rubric.yaml › outcome_model (AJ-09): a disposition in positive_set makes the outcome positive, except that
-    PTP_STATED counts only when the commitment firmness is in positive_ptp_requires_firmness ([firm]), for the full
+    PTP_STATED counts only when the commitment firmness is `firm` (outcome_model.positive_ptp_rule), for the full
     or a partial amount. The single implementation used by the engine (tags), gold derivation and card checks."""
     pos, firm = set(positive_set), set(ptp_firmness)
     return any(d in pos and (d != "PTP_STATED" or firmness in firm) for d in dispositions)
+
+
+_PTP_RULE = re.compile(r"^PTP_STATED is positive iff commitment firmness = (?P<f>[a-z_]+)\b")
+
+
+def _positive_ptp_firmness(outcome_model: dict[str, Any], firmness_vocabulary: Iterable[str]) -> tuple[str, ...]:
+    """Rubric 1.2 states AJ-09 as prose only (outcome_model.positive_ptp_rule; the 1.1 list key
+    `positive_ptp_requires_firmness` is gone). Read the firmness value from that sentence and fail closed if the
+    sentence changes shape or names a value outside extraction_vocabulary.firmness."""
+    m = _PTP_RULE.match(str(outcome_model.get("positive_ptp_rule", "")))
+    if not m or m["f"] not in set(firmness_vocabulary):
+        raise RegistryError("outcome_model.positive_ptp_rule no longer states 'PTP_STATED is positive iff commitment "
+                            "firmness = <firmness>' (AJ-09); reconcile the registry (fail closed)")
+    return (m["f"],)
 
 
 @dataclass(frozen=True)
@@ -190,6 +205,7 @@ class Registry:
                     raise RegistryError(f"unrecognised CONDITIONAL applicability {cid}/{mode} (fail closed)")
         ns = rubric["named_sets"]
         om = rubric["outcome_model"]
+        ptp_firmness = _positive_ptp_firmness(om, rubric["extraction_vocabulary"]["firmness"])
         allowlist = tuple(rubric["repair_rules"]["allowlist"])
         flagged = {cid for cid, cd in checks.items() if cd.repairable}
         if set(allowlist) != flagged or any(checks[c].is_gate for c in allowlist):
@@ -206,7 +222,7 @@ class Registry:
             borrower_impact_majors=tuple(ns["borrower_impact_majors"]),
             dw_inducement_set=tuple(ns["dw_inducement_set"]),
             positive_set=tuple(om["positive_set"]),
-            positive_ptp_requires_firmness=tuple(om["positive_ptp_requires_firmness"]),
+            positive_ptp_requires_firmness=ptp_firmness,
             repair_allowlist=allowlist,
         )
 

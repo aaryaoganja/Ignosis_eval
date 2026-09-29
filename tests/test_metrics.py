@@ -196,22 +196,36 @@ def test_sd04_worked_example_h3_status(spec):
     assert out["hard_requirements"]["H4"]["count"] == 0
 
 
-def test_sd04_codes():
+def _code_reps(kinds: str):
     def r(kind):
         if kind == "D":
             return F.record(findings=[F.finding("UND-01", [2])])
-        if kind == "N":
-            return F.record(checks=[{"code": "UND-01", "status": "NA"}])
+        if kind in "NIO":
+            st = {"N": "NA", "I": "INCONCLUSIVE", "O": "OUT_OF_SCOPE"}[kind]
+            return F.record(checks=[{"code": "UND-01", "status": st}])
         if kind == "X":
             return F.failed()
         return F.record()
-    reps = [observe(r(k), i) for i, k in enumerate("DDPPN", 1)]
-    assert code_majority_status(reps, "UND-01") == NO_MAJORITY
-    assert UnitAgg(reps, F.GATES).code_emitted("UND-01") is False  # emitted in 2 reps only
-    reps = [observe(r(k), i) for i, k in enumerate("DDDPN", 1)]
-    assert code_majority_status(reps, "UND-01") == "DEFECT"
-    reps = [observe(r(k), i) for i, k in enumerate("PPXXX", 1)]
-    assert code_majority_status(reps, "UND-01") == NO_MAJORITY  # EF is not a pass
+    return [observe(r(k), i) for i, k in enumerate(kinds, 1)]
+
+
+@pytest.mark.parametrize("kinds,expected", [
+    ("DDDPN", "DEFECT"),          # majority emitted
+    ("IIIPP", "INCONCLUSIVE"),    # a held status
+    ("OOODD", "OUT_OF_SCOPE"),
+    ("NNNDD", "NA"),
+    ("DDPPN", "PASS"),            # 1.2: neither emitted nor abstained in 3 reps (P, P, N)
+    ("PNNII", "PASS"),
+    ("DDIIP", NO_MAJORITY),       # 2 emitted, 2 abstained, 1 pass
+    ("PPIOD", NO_MAJORITY),       # abstained = 2 (I, O) but neither status reaches 3; pass indicator = 2
+    ("PPXXX", NO_MAJORITY),       # EF is not a pass
+])
+def test_sd04_codes(kinds, expected):
+    """scoring-spec 1.2.0 SD-04: code majority status = DEFECT if majority emitted; else INCONCLUSIVE /
+    OUT_OF_SCOPE / NA held in >= 3 reps; else PASS if neither emitted nor abstained in >= 3 reps; else NO_MAJORITY."""
+    reps = _code_reps(kinds)
+    assert code_majority_status(reps, "UND-01") == expected
+    assert UnitAgg(reps, F.GATES).code_emitted("UND-01") is (expected == "DEFECT")
 
 
 def _verdict_recs(verdicts):
@@ -271,9 +285,25 @@ def test_critical_status_mismatch_metric_removed(spec):
     assert "critical_status_mismatch" not in dumped and "critical_mismatch" not in dumped
     assert "severity_mismatches" in out["sd12"]  # SD-12 severity agreement is a different metric and stays
     split = out["sd17"]["critical_status_split"]
-    assert split["per_rep"] == {"CONFIRMED": 3, "SUSPECTED": 2} and split["majority"] == {"CONFIRMED": 1,
-                                                                                          "SUSPECTED": 0}
+    assert "per_rep" not in split and split["fired_gold_fail"] == 1
+    assert (split["majority"]["CONFIRMED"]["kn"], split["majority"]["SUSPECTED"]["kn"]) == ("1/1", "0/1")
     assert "overclaims" in out["sd09"]  # overclaim is kept (SD-09)
+
+
+def test_critical_status_split_counts_only_fired_gold_fail_units():
+    """SD-17 (1.2): the split is over fired gold-FAIL units only; a fire on a gold-PASS gate (a false fire) and a
+    gold-FAIL gate that did not majority-fire are both outside it."""
+    ni = F.make_ni(F.spec())
+    fail = unit(g("ZZ-W07", gates={"G3": {"status": "FAIL", "anchor_turns": [3]}}), header=True)
+    missed = unit(g("ZZ-W08", gates={"G3": {"status": "FAIL", "anchor_turns": [3]}}), header=True)
+    false_fire = unit(g("ZZ-W09"), header=True)
+    aggs = {fail.unit_id: agg(recs("F", "F", "F", "C", "C")), missed.unit_id: agg(recs("C", "C", "P", "P", "P")),
+            false_fire.unit_id: agg(recs("C", "C", "C", "C", "C"))}
+    sv = SystemView("SYS-1", aggs, {(u, r): ni for u in aggs for r in range(1, 6)})
+    split = score_system(ctx(), [fail, missed, false_fire], sv,
+                         locked_audit={"status": "NOT_APPLICABLE (dev run)"})["sd17"]["critical_status_split"]
+    assert split["fired_gold_fail"] == 1
+    assert (split["majority"]["CONFIRMED"]["kn"], split["majority"]["SUSPECTED"]["kn"]) == ("0/1", "1/1")
 
 
 def test_overclaim_still_scored():
@@ -436,6 +466,30 @@ def test_sd08_controls():
     assert (s["C"], s["targeted_false_fires"], s["confirmed_only_targeted_false_fires"]) == (1, 1, 0)
     # global universe: 8 gates with gold PASS/NA (G7 derives OUT_OF_SCOPE: no header) -> 1/8
     assert s["suspected_only_targeted_fires"]["kn"] == "1/1" and s["global_false_fires"]["kn"] == "1/8"
+
+
+def test_sd08_control_target_with_gold_na_counts(spec):
+    """SC-04 / SD-08: a control's target gate is often NA because the trigger is deliberately absent; a fire on it is
+    still a targeted false fire."""
+    assert "gold(u,g) ∈ {PASS, NA}" in (F.SPEC_DIR / "scoring-spec.md").read_text(encoding="utf-8")
+    reg = Registries.model_validate({"controls": [{"item_id": "ZZ-K02", "target_gates": ["G3"]}]})
+    u = unit(g("ZZ-K02", gates={"G3": {"status": "NA"}}))
+    s = sd08(ctx(reg), [u], view(**{u.unit_id: agg(recs("C", "C", "C", "P", "P"))}))
+    assert (s["C"], s["targeted_false_fires"], s["confirmed_only_targeted_false_fires"]) == (1, 1, 1)
+    quiet = sd08(ctx(reg), [u], view(**{u.unit_id: agg(recs("P", "P", "P", "C", "C"))}))
+    assert (quiet["C"], quiet["targeted_false_fires"]) == (1, 0)
+    contested = unit(g("ZZ-K02", gates={"G3": {"status": "NA", "contested": True}}))
+    assert sd08(ctx(reg), [contested], view(**{contested.unit_id: agg(recs("C", "C", "C", "P", "P"))}))["C"] == 0
+
+
+def test_sd09_pooled_per_rep_unsupported_passes():
+    u = unit(g("ZZ-B04", gates={"G1": {"status": "INCONCLUSIVE", "trigger": False}}, wsc=False))
+    s = sd09(ctx(), [u], view(**{u.unit_id: agg([F.record(), F.record(), F.failed(),
+                                                  F.record(gates={"G1": "INCONCLUSIVE"}),
+                                                  F.record(gates={"G1": "INCONCLUSIVE"})])}))
+    # G1 gold INC: PASS in 2 reps (EF is not a pass); G7 gold OOS (no header): PASS in 4 reps -> 6 of 10
+    assert s["unsupported_passes_pooled_per_rep"]["kn"] == "6/10"
+    assert f"{u.unit_id}:G1" not in s["unsupported_pass_ids"]  # 2 of 5 is not a majority
 
 
 def test_sd09_unsupported_pass_overclaim_over_abstention():

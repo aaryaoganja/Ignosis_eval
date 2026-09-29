@@ -1,3 +1,10 @@
+> **SUPERSEDED — historical record only.** This is the implementing agent's reconstruction of the 1.1.0-frozen
+> adjudication (AJ-01..AJ-12, FP-01..FP-14). It is **not** part of the spec pack. The authoritative source is now the
+> frozen Stage-5 package: contract `1.2.0-frozen`, rubric `1.2-mvp`, profile `1.1.1` (`docs/spec/`, §0 of
+> `frozen-contract.md`, and `docs/freeze/`). Where this file differs from those files, those files govern. Its §3
+> "reconstructed details" are re-assessed against 1.2 in `docs/spec-reconciliation.md` §3–§4. It was moved out of
+> `docs/spec/` on 2026-09-29 so that `docs/spec/` holds exactly the six hash-frozen files.
+
 # Final Stage 4 Adjudication — AJ-01..AJ-12, FP-01..FP-14 (contract `1.1.0-frozen`)
 
 | Field | Value |

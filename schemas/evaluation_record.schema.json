@@ -118,7 +118,7 @@
       "type": "string"
     },
     "ConfidenceSource": {
-      "description": "AJ-06: A reports the LLM's own labels (SELF_REPORTED); A+, B and K0 compute them.",
+      "description": "AJ-06: A reports the LLM's own labels (SELF_REPORTED); A+ and B compute them (K0 is deterministic).",
       "enum": [
         "SELF_REPORTED",
         "COMPUTED"
@@ -631,10 +631,10 @@
       "type": "string"
     },
     "MeasurementBasis": {
-      "description": "AJ-02: TRT-06 measures duration when the turn has timestamps, otherwise words.",
+      "description": "AJ-02: TRT-06 measures duration when the turn has timestamps, otherwise word count. Rubric 1.2 no longer\nlists this as an enum; the values come from `TRT-06.finding_field` (\"measurement_basis: duration | words\").",
       "enum": [
         "duration",
-        "word_count"
+        "words"
       ],
       "title": "MeasurementBasis",
       "type": "string"
@@ -756,7 +756,8 @@
         "LANGUAGE_UNSUPPORTED",
         "TRANSCRIPT_TRUNCATED",
         "STAGE_UNKNOWN",
-        "NO_AGENT_TURN_AFTER_REQUEST"
+        "NO_AGENT_TURN_AFTER_REQUEST",
+        "NO_AGENT_TURN_AFTER_TRIGGER"
       ],
       "title": "ReasonCode",
       "type": "string"
@@ -1040,8 +1041,8 @@
       "type": "string"
     },
     "schema_version": {
-      "const": "evaluation_record/2.1.0",
-      "default": "evaluation_record/2.1.0",
+      "const": "evaluation_record/3.0.0",
+      "default": "evaluation_record/3.0.0",
       "title": "Schema Version",
       "type": "string"
     },

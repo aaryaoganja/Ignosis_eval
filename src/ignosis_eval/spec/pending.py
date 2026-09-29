@@ -41,7 +41,7 @@ KNOWN: dict[str, tuple[str, bool, str]] = {
 
 # Run-configuration blockers that are not values inside rubric/profile (implementation-blockers.md).
 RUN_BLOCKERS: dict[str, str] = {
-    "B-01": "benchmark case content",
+    "B-01": "transcripts and audio for every item (case cards frozen 2026-09-29; bench-a1 design v1.0)",
     "B-02": "gold labels",
     "B-03": "red-team cases",
     "B-05": "LLM model snapshot id, API access, max_tokens, seed support",

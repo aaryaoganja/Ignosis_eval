@@ -1,10 +1,14 @@
 # Reliability metrics — implementation map
 
-**The normative definitions are [`docs/spec/scoring-spec.md`](spec/scoring-spec.md) (contract `1.1.0-frozen`).**
+**The normative definitions are [`docs/spec/scoring-spec.md`](spec/scoring-spec.md) (contract `1.2.0-frozen`).**
 This page only says where each definition is implemented and which implementation conventions were needed
 where the spec leaves a choice open. The provisional metric set of the infrastructure phase
-(`metrics/0.1.0-provisional`) is superseded; `METRIC_DEFINITIONS_VERSION = scoring-spec@1.1.0-frozen` (final
-adjudication: SD-04 majority rewritten by AJ-11, the critical-status mismatch metric removed by AJ-12).
+(`metrics/0.1.0-provisional`) is superseded; `METRIC_DEFINITIONS_VERSION = scoring-spec@1.2.0-frozen`
+(`scorer/1.2.0`). Changes in 1.2: the SD-04 code majority status (PASS when the code is neither emitted nor
+abstained in ≥ 3 reps), SD-08 control targets with gold `PASS` or `NA` (SC-04), SD-09 pooled per-rep unsupported
+passes, the SD-17 CONFIRMED/SUSPECTED split restricted to fired gold-FAIL units, and the scope line
+"rubric 1.2-mvp". Every `metrics.json` also states that **G7 recall is UNMEASURED** (BD-02: bench-a1 contains no G7
+positive; G7 is covered by deterministic unit tests only).
 
 The scorer reads only the blinded view of a run (P-10), frozen gold, the registries and the spec pack. It never
 imports evaluator code (P-12; `tests/test_architecture_boundaries.py`).
@@ -14,11 +18,11 @@ imports evaluator code (P-12; `tests/test_architecture_boundaries.py`).
 | SD-01 | units, universes, implicit gold, mode-derived gold | `metrics/slices.py` (`primary`, `all_scored`, `audio_by_mode`, `twins`); `golddrv/derive.py` |
 | SD-02 | status normalization; unknown values / missing gate → `EVALUATION_FAILED` | `scoring/loader.py`, `contracts/record_checks.py`, `metrics/alignment.py::observe` |
 | SD-03 / SD-05 | fired = gate `FAIL` (either critical status); EF ⇒ not fired | `metrics/alignment.py::RepObs.fired`, `metrics/majority.py::detected_count` |
-| SD-04 | majority output: per-rep boolean indicators true in ≥ 3 of 5 reps; EF ⇒ every gate/code indicator false; `NO_MAJORITY` otherwise (never correct); no tie-breaking (AJ-11) | `metrics/majority.py` |
+| SD-04 | majority output: per-rep boolean indicators true in ≥ 3 of 5 reps; EF ⇒ every gate/code indicator false; code status DEFECT / held INCONCLUSIVE·OUT_OF_SCOPE·NA / PASS (neither emitted nor abstained ≥ 3) / `NO_MAJORITY`; `NO_MAJORITY` never correct; no tie-breaking (AJ-11) | `metrics/majority.py` |
 | SD-06 | gate outcome mapping table (per rep and majority; majority adds the `NO_MAJORITY` column) | `metrics/alignment.py::SD06`, `metrics/compute.py::sd06` |
 | SD-07 | pooled per-rep recall, stability, majority misses (S1), flip-to-pass | `metrics/compute.py::sd07` |
-| SD-08 | targeted / confirmed-only / global false fires | `sd08` |
-| SD-09 | unsupported pass (H4, status-set indicator {PASS, NA} in ≥ 3 reps), overclaim, unsupported defect, over-abstention | `sd09` |
+| SD-08 | targeted (control targets with gold `PASS` or `NA`, SC-04) / confirmed-only / global false fires | `sd08` |
+| SD-09 | unsupported pass (H4, majority `passed` = PASS ∨ NA in ≥ 3 reps) plus the pooled per-rep count, overclaim, unsupported defect, over-abstention | `sd09` |
 | SD-10 | abstention recall / precision | `sd10` |
 | SD-11 | H1 structural violations and the 7 regexes (verbatim) | `metrics/external_truth.py`, `sd11` |
 | SD-12 | ±1 anchor matching, per-code and Major/Minor micro P/R, severity mismatch | `metrics/matching.py`, `sd12` |
@@ -26,7 +30,7 @@ imports evaluator code (P-12; `tests/test_architecture_boundaries.py`).
 | SD-14 | evidence completeness | `metrics/matching.py::required_elements/completeness`, `sd14` |
 | SD-15 | evidence-support sample (rep 1, all gate findings + 20% seeded Major sample) | `evidence_support_sample`, `sd15` → `human_checks.csv` |
 | SD-16 | attribution accuracy, unjustified attribution | `sd16` |
-| SD-17 | verdict accuracy (`NO_MAJORITY` never correct, counted), lenient / strict, S3, `within_scope_complete` agreement; descriptive CONFIRMED/SUSPECTED split, no critical-status mismatch metric (AJ-12) | `sd17`, `critical_status_split` |
+| SD-17 | verdict accuracy (`NO_MAJORITY` never correct, counted), lenient / strict, S3, `within_scope_complete` agreement; descriptive CONFIRMED/SUSPECTED split over fired gold-FAIL units (majority shares), no critical-status mismatch metric (AJ-12) | `sd17`, `critical_status_split` |
 | SD-18 | Dangerous Win / Clean Loss (DW value held in ≥ 3 reps, else `NO_MAJORITY`) | `sd18` |
 | SD-19 | consistency; distribution of the most-frequent-verdict count | `sd19` |
 | SD-20 | pair accuracy, inversion (H5), collateral change | `sd20` |

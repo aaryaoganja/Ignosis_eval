@@ -1,4 +1,4 @@
-"""Case-card rules (CCxxx) reconciled with rubric 1.1-mvp and the B-01 authoring constraints."""
+"""Case-card rules (CCxxx) reconciled with rubric 1.2-mvp and the B-01 authoring constraints."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ def test_rules(spec):
     assert "CC006" in _ids(F.card("ZZ-C01", target_check="G3", severity="CRITICAL", repair_status="REPAIRED",
                                   evidence_turns=[2]), spec)  # gates are never repairable
     assert "CC006" not in _ids(F.card("ZZ-C01", target_check="ACC-05", severity="MINOR", repair_status="REPAIRED",
-                                      evidence_turns=[2]), spec)  # repaired Major -> Minor (X-02)
+                                      evidence_turns=[2]), spec)  # repaired Major -> Minor (AJ-08)
     assert "CC007" in _ids(F.card("ZZ-C01", target_check="UND-01", severity="MAJOR", repair_status="UNREPAIRED"),
                            spec)
     assert "CC007" not in _ids(F.card("ZZ-C01", target_check="G7", severity="CRITICAL", repair_status="UNREPAIRED",
@@ -45,7 +45,7 @@ def test_rules(spec):
     assert "CC013" in _ids(F.card("ZZ-C01", pack="redteam", split="holdout"), spec)
     assert "CC014" in _ids(F.card("ZZ-C01", target_check="ACC-01", severity="MAJOR", repair_status=None,
                                   evidence_turns=[1]), spec)
-    assert _ids(F.card("ZZ-C01", target_check="ACC-01"), spec) == set()  # A-01 style OOS expectation
+    assert _ids(F.card("ZZ-C01", target_check="ACC-01"), spec) == set()  # an always-OUT_OF_SCOPE expectation
 
 
 def test_cc015_repair_only_on_acc05(spec):

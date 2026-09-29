@@ -11,9 +11,10 @@
   B012 registry references an unknown item             B014 pair target_check is not a rubric check
   B013 pair transcripts differ in length by more than 10% (warning; authoring constraint 4, measured in words)
   B015 real (non-synthetic) item without the pii_reviewed tag on its card
-  B016 TRT-06 monologue item that does not exceed both 30 s and 80 words (warning; FP-14 / AJ-02)
-  B017 identifier leak: a transcript contains an item id, a pair id or a rubric check id (evaluators would see it)
-  B018 an item expected EVALUABLE has no AGENT or no BORROWER turn (DC-00 would make it NOT_EVALUABLE; AJ-05)
+  B017 identifier leak: a transcript contains an item id, a pair id or a rubric check id, or trips the P-17 pre-run
+       payload test (item-ID pattern, pack/split word) — evaluators would see it and the run would fail (SC-05)
+  B018 an item expected EVALUABLE has no AGENT or no BORROWER turn (DC-00 / DC-02 would make it NOT_EVALUABLE)
+  B019 gold labels a G7 positive (BD-02: bench-a1 contains no G7 positive)
   B040 frozen DEV design (bench/public) problem (PDxxx rules, benchmark/public_dev.py)
   B041 a dev item disagrees with the frozen DEV design (id, pack, language, unit modes, tuning-only, header)
   B043 registries.json disagrees with the pairs / controls of the frozen DEV design
@@ -40,9 +41,11 @@ from ignosis_eval.benchmark.layout import CARD_SUFFIX, GOLD_SUFFIX, SCOPE_SPLITS
 from ignosis_eval.benchmark.public_dev import DevDesign, PublicDevReport, validate_public_dev
 from ignosis_eval.contracts.benchmark import ItemMeta
 from ignosis_eval.contracts.case_card import CaseCard
+from ignosis_eval.contracts.enums import GateId
 from ignosis_eval.contracts.gold_label import GoldLabel
 from ignosis_eval.contracts.io import read_json
 from ignosis_eval.contracts.registries import Registries
+from ignosis_eval.contracts.unit_alias import payload_violations
 from ignosis_eval.golddrv.capability import CapabilityTable
 from ignosis_eval.golddrv.derive import GoldDerivationError, derive_mode_gold
 from ignosis_eval.integrity.freeze import content_fingerprint
@@ -106,25 +109,6 @@ def _from_rule(ri: RuleIssue) -> Issue:
     return Issue("B020", ri.severity, f"{ri.rule_id} {ri.message}", ri.item_id)
 
 
-def _monologue_warnings(turns: list[int], parsed, spec: Spec, item_id: str) -> list[Issue]:
-    """FP-14: monologue items should exceed both monologue_max_seconds and monologue_max_words so that TRT-06 holds
-    in every mode (duration basis when timestamped or in audio, word basis otherwise; AJ-02)."""
-    max_s, max_w = float(spec.threshold("monologue_max_seconds")), int(spec.threshold("monologue_max_words"))
-    out: list[Issue] = []
-    for n in turns:
-        if not 1 <= n <= len(parsed.turns):
-            continue
-        t = parsed.turns[n - 1]
-        if len(t.text.split()) <= max_w:
-            out.append(Issue("B016", "warning", f"TRT-06 turn {n} has <= {max_w} words", item_id))
-        if t.start_s is not None and t.end_s is not None and (t.end_s - t.start_s) <= max_s:
-            out.append(Issue("B016", "warning", f"TRT-06 turn {n} lasts <= {max_s:g} s", item_id))
-        if t.start_s is None:
-            out.append(Issue("B016", "warning", f"TRT-06 turn {n} has no timestamps: its duration (> {max_s:g} s) "
-                                                "cannot be checked from the transcript", item_id))
-    return out
-
-
 _PAIR_ID = re.compile(r"(?<![A-Za-z0-9-])(?:MP|CP|AP)-\d{2}(?![A-Za-z0-9])")
 
 
@@ -137,6 +121,7 @@ def _identifier_leaks(parsed, pattern: re.Pattern[str]) -> list[str]:
     found: set[str] = set()
     for t in parsed.turns:
         found |= set(pattern.findall(t.text)) | set(_PAIR_ID.findall(t.text))
+        found |= {f"P-17 {v}" for v in payload_violations(t.text)}  # experiment-protocol P-17 rule 4
     return sorted(found)
 
 
@@ -211,15 +196,18 @@ def check_bench(layout: BenchLayout, spec: Spec, *, scopes: tuple[str, ...] = ("
                     leaks = _identifier_leaks(parsed, _leak_pattern(leak_tokens | {meta.item_id}))
                     if leaks:
                         add(Issue("B017", "error", f"transcript text contains identifiers {leaks}: evaluators would "
-                                                   "see them (item ids, pair ids and check ids never appear in a "
-                                                   "transcript)", meta.item_id))
+                                                   "see them (item ids, pair ids, check ids, pack/split words never "
+                                                   "appear in a transcript; P-17 fails the run)", meta.item_id))
                     expect_evaluable = design is not None and meta.item_id in design.items and \
                         design.items[meta.item_id].evaluability == "EVALUABLE"
                     roles = {t.role.value for t in parsed.turns}
                     if expect_evaluable and not {"AGENT", "BORROWER"} <= roles:
                         add(Issue("B018", "error", f"expected EVALUABLE but the transcript has roles {sorted(roles)}: "
-                                                   "DC-00 needs an AGENT and a BORROWER turn (a third party on the "
-                                                   "customer side is labeled BORROWER)", meta.item_id))
+                                                   "without an AGENT turn DC-00 gives ROLE_UNCERTAIN, without a "
+                                                   "BORROWER turn DC-02 gives NON_CONVERSATIONAL (SC-03); a third "
+                                                   "party on the customer side is labeled BORROWER (rubric 1.2 "
+                                                   "event_common.turn: speaker matches the event side)",
+                                          meta.item_id))
                 if design is not None and split.value == "dev":
                     rep.issues += _design_issues(li, parsed, design)
                 if not missing:
@@ -236,8 +224,6 @@ def check_bench(layout: BenchLayout, spec: Spec, *, scopes: tuple[str, ...] = ("
                         has_call_start_ts=(parsed.header.call_start_ts is not None) if parsed else None,
                         truncated=parsed.header.truncated_start if parsed else None)]
                     rep.issues += [_from_rule(i) for i in check_card_against_registries(card, registries)]
-                    if card.target_check == "TRT-06" and parsed is not None:
-                        rep.issues += _monologue_warnings(card.evidence_turns, parsed, spec, meta.item_id)
                     if not meta.synthetic and "pii_reviewed" not in card.tags:
                         add(Issue("B015", "error", "real (non-synthetic) items need the pii_reviewed tag", meta.item_id))
                 if ip.gold_path.exists():
@@ -248,6 +234,11 @@ def check_bench(layout: BenchLayout, spec: Spec, *, scopes: tuple[str, ...] = ("
                         gold = None
                     if gold is not None:
                         li.gold = gold
+                        g7 = gold.gates[GateId.G7]
+                        if g7.status.value == "FAIL" or (g7.status.value == "INCONCLUSIVE" and g7.trigger):
+                            add(Issue("B019", "error", "gold labels a G7 positive, but BD-02 states that "
+                                                       "bench-a1 contains no G7 positive (a new BD-xx changelog "
+                                                       "entry is needed)", meta.item_id))
                         if gold.item_id != meta.item_id or gold.split is not meta.split:
                             add(Issue("B031", "error", "gold item id / split disagrees with the item", meta.item_id))
                         elif not missing and (parsed is not None or not a.transcript):

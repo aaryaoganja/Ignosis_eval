@@ -1,4 +1,4 @@
-# Experiment Protocol — FROZEN (contract `1.1.0-frozen`)
+# Experiment Protocol — FROZEN (contract `1.2.0-frozen`)
 
 This protocol governs every benchmark run of K0, A, A+ and B. Metric definitions are in `scoring-spec.md`. Items marked `PENDING_HUMAN_SIGNOFF` must be resolved and recorded in the run manifest before the corresponding step can run.
 
@@ -47,8 +47,8 @@ This protocol governs every benchmark run of K0, A, A+ and B. Metric definitions
 | System | Execution |
 |---|---|
 | K0 | Deterministic. Runs once per unit; the result is replicated as reps 1–5 for metric computation. |
-| A | One LLM call per unit per rep. Only schema validation and the shared front-end merge (not-evaluable short-circuit; pre-checks) are applied; `confidence_source: SELF_REPORTED` (AJ-06). |
-| A+ | **Derived from A's stored raw output of the same rep.** Applies the eight ordered steps of `rubric.yaml › architecture_application.A_PLUS` (capability filter, external-truth filter, evidence verifier, confidence cap, status re-map, attribution, repair allowlist, verdict and tags). No LLM call. |
+| A | One LLM call per unit per rep. Emits self-reported confidence; only the schema validation and the shared front-end merge are applied (`rubric.yaml › architecture_application.A`). |
+| A+ | **Derived from A's stored raw output of the same rep** by the 8 ordered steps in `rubric.yaml › architecture_application.A_plus`. No LLM call. |
 | B | Extraction call, then the rule engine, then a batched judgment call if any judgment was triggered. |
 
 ## P-5. Units and repetitions
@@ -164,3 +164,11 @@ H1–H7 as defined in `frozen-contract.md` §14 and computed per `scoring-spec.m
 ## P-16. Reporting rules
 
 The statistical presentation rules of `scoring-spec.md` SD-25/SD-29 apply: counts first, whole-percent rounding, per-category tables, separate provenance strata (core, micro, red team), and scoped claims only.
+
+## P-17. Opaque unit aliases (SC-05)
+
+1. The runner assigns every evaluation unit a random opaque alias (e.g. `u_7f3a91c2`) per run. The alias→item mapping is stored only in `BENCH_PRIVATE_DIR` and in the run's private manifest.
+2. **No bench-a1 item ID, pair ID, pack name, split name or source filename may appear in any evaluator input** (prompt text, transcript header, metadata fields, file paths passed to tools). Transcript headers carry only the frozen header fields.
+3. Rendered audio files are renamed to their alias before any ASR or evaluator step.
+4. A pre-run test fails the run if any evaluator-bound payload matches the item-ID pattern (`^(G|M|K|C|R|P|J|X|A|AB|E|S|MI|MC|MD|SN|RT|CAL)-`) or contains a pack/split word.
+

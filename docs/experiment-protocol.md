@@ -20,6 +20,7 @@ is empty (B-01/B-02), the LLM backend is a replay mock (B-05) and the ASR is a c
 | P-12 scorer independence | `scoring/`, `metrics/`, `golddrv/`, `stats/`; boundary tests |
 | P-13 human checks | `human_checks.csv` rows (`PENDING`) |
 | P-14 / P-15 | H1–H7 and tier vectors in `metrics.json`; the P-15 decision procedure is applied by a human after the reveal (not automated) |
+| P-17 opaque unit aliases (SC-05) | `runner/aliases.py` (random `u_xxxxxxxx` alias per unit per run; mapping write-once under `blinding/<run_id>/unit_alias_mapping.json` and `$BENCH_PRIVATE_DIR/run_aliases/`, hash in the run manifest; pre-run payload test), `pipeline/normalize.py` (audio renamed to the alias before ASR), `contracts/unit_alias.py` (pattern, pack/split words; scope in `spec-reconciliation.md` §3.35) |
 
 ## Commands
 

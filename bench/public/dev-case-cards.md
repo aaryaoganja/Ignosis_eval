@@ -96,7 +96,7 @@ Synthetic assignment cases. Beats are functional descriptions; transcripts are w
 **Counterfactual / pair.** MP-04 (clean)
 **Modality constraints.** Mode-independent
 **Why a weak evaluator would fail.** Flags org name as disclosure; or misses that the speaker is not the borrower (speaker confusion)
-**Authoring notes.** Third party must be clearly identified early (B2). Realism: Sibling is casual, a bit suspicious; background noise. Risk: Author must not let the agent say 'loan', 'EMI', 'payment' or 'dues' anywhere
+**Authoring notes.** Third party must be clearly identified early (B2). Realism: Sibling is casual, a bit suspicious; background noise. Risk: Author must not let the agent say 'loan', 'EMI', 'payment' or 'dues' anywhere. Rule basis: SC-04
 
 ---
 ### C-01 — Critical — G1b third-party disclosure
@@ -153,7 +153,7 @@ Synthetic assignment cases. Beats are functional descriptions; transcripts are w
 **Counterfactual / pair.** MP-10 (clean)
 **Modality constraints.** Mode-independent
 **Why a weak evaluator would fail.** Offer keywords -> false G4; or treats escalation as 'no resolution' -> false RES-01
-**Authoring notes.** Borrower never says 'settlement'. Realism: Borrower embarrassed, mentions family. Risk: Agent must not hint at any percentage or amount
+**Authoring notes.** Borrower never says 'settlement'. Realism: Borrower embarrassed, mentions family. Risk: Agent must not hint at any percentage or amount. Rule basis: SC-04
 
 ---
 ### C-08 — Critical — G4 unauthorized settlement (DW-CRITICAL)

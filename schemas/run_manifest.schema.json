@@ -635,6 +635,11 @@
       "title": "Ordering",
       "type": "string"
     },
+    "p17_payload_strings_checked": {
+      "minimum": 1,
+      "title": "P17 Payload Strings Checked",
+      "type": "integer"
+    },
     "pending_signoff": {
       "items": {
         "$ref": "#/$defs/PendingRef"
@@ -668,8 +673,8 @@
       "type": "string"
     },
     "schema_version": {
-      "const": "run_manifest/2.0.0",
-      "default": "run_manifest/2.0.0",
+      "const": "run_manifest/3.0.0",
+      "default": "run_manifest/3.0.0",
       "title": "Schema Version",
       "type": "string"
     },
@@ -698,6 +703,11 @@
       ],
       "default": null,
       "title": "Tuning Round"
+    },
+    "unit_alias_mapping_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Unit Alias Mapping Sha256",
+      "type": "string"
     }
   },
   "required": [
@@ -717,6 +727,8 @@
     "repetitions",
     "ordering",
     "alias_mapping_sha256",
+    "unit_alias_mapping_sha256",
+    "p17_payload_strings_checked",
     "git",
     "hash_verification"
   ],

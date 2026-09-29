@@ -91,7 +91,7 @@ Every metric in `metrics.json` carries `"provisional": true` and
 ## 6. Reconciliation with the frozen specification (branch `spec/frozen-stage4`)
 
 The Stage 1–4 documents are now in the repository as the frozen specification pack (`docs/spec/`, contract
-`1.0.0-frozen`, since patched to `1.1.0-frozen` by the final adjudication). Every provisional item above is reconciled. The full table is in
+`1.0.0-frozen`, since patched to `1.1.0-frozen` by the final adjudication and superseded by the owner's frozen `1.2.0-frozen` Stage-5 package). Every provisional item above is reconciled. The full table is in
 [`spec-reconciliation.md`](spec-reconciliation.md).
 
 | # | Resolution |

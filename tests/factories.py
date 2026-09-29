@@ -121,8 +121,8 @@ def record(gates: dict[str, Any] | None = None, findings: list[Finding] | None =
     return EvaluationRecord(
         record_status=RecordStatus.OK, confidence_source=kw.pop("confidence_source", "COMPUTED"),
         system=SystemInfo(system=system, version="test"),
-        contract_version="1.1.0-frozen", rubric_version="1.1-mvp", profile_id="collections_default_v1",
-        profile_version="1.1.0", input_mode=input_mode, unit_mode=unit_mode, verdict=verdict,
+        contract_version="1.2.0-frozen", rubric_version="1.2-mvp", profile_id="collections_default_v1",
+        profile_version="1.1.1", input_mode=input_mode, unit_mode=unit_mode, verdict=verdict,
         critical_status=critical_status, within_scope_complete=kw.pop("within_scope_complete", True),
         evaluability=EvaluabilityResult(status=EvaluabilityStatus.EVALUABLE), gates=gs, findings=findings or [],
         tags=kw.pop("tags", Tags()), **kw)
@@ -131,8 +131,8 @@ def record(gates: dict[str, Any] | None = None, findings: list[Finding] | None =
 def failed(unit_mode: str = "TRANSCRIPT", system: str = "SYS-1") -> EvaluationRecord:
     input_mode = "TRANSCRIPT" if unit_mode in ("TRANSCRIPT", "T-gold", "T-asr") else "AUDIO"
     return EvaluationRecord(record_status=RecordStatus.EVALUATION_FAILED, system=SystemInfo(system=system, version="t"),
-                            contract_version="1.1.0-frozen", rubric_version="1.1-mvp",
-                            profile_id="collections_default_v1", profile_version="1.1.0", input_mode=input_mode,
+                            contract_version="1.2.0-frozen", rubric_version="1.2-mvp",
+                            profile_id="collections_default_v1", profile_version="1.1.1", input_mode=input_mode,
                             unit_mode=unit_mode, failure=FailureInfo(reason="schema-invalid (stub)", schema_attempts=2))
 
 
@@ -193,7 +193,7 @@ def gold(item_id: str = "ZZ-T01", *, split: str = "dev", gates: dict[str, dict[s
 # ------------------------------------------------------------------------------------------ bench
 def card(item_id: str, *, split: str = "dev", pack: str = "core", unit_modes: list[str] | None = None,
          **kw: Any) -> dict[str, Any]:
-    c = {"case_card_version": "case_card/2.1.0", "item_id": item_id, "status": "approved",
+    c = {"case_card_version": "case_card/2.2.0", "item_id": item_id, "status": "approved",
          "authoring": {"author_id": "auth-1", "created_on": str(date(2026, 1, 1)), "reviewers": ["rev-1"]},
          "split": split, "pack": pack, "language": "en", "unit_modes": unit_modes or ["TRANSCRIPT"],
          "intent": "synthetic stub item for automated tests", "rationale":

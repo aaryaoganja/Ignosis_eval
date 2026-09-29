@@ -247,7 +247,8 @@
         "LANGUAGE_UNSUPPORTED",
         "TRANSCRIPT_TRUNCATED",
         "STAGE_UNKNOWN",
-        "NO_AGENT_TURN_AFTER_REQUEST"
+        "NO_AGENT_TURN_AFTER_REQUEST",
+        "NO_AGENT_TURN_AFTER_TRIGGER"
       ],
       "title": "ReasonCode",
       "type": "string"
@@ -308,8 +309,8 @@
       "$ref": "#/$defs/Authoring"
     },
     "case_card_version": {
-      "const": "case_card/2.1.0",
-      "default": "case_card/2.1.0",
+      "const": "case_card/2.2.0",
+      "default": "case_card/2.2.0",
       "title": "Case Card Version",
       "type": "string"
     },

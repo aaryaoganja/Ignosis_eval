@@ -136,11 +136,29 @@ def test_dc00_call_level_mapping_confidence(spec, mapping, expected):
         assert [r.value for r in fr.reason_codes] == ["ROLE_UNCERTAIN"]
 
 
-@pytest.mark.parametrize("roles", [("AGENT", "AGENT"), ("BORROWER", "BORROWER"), ("AGENT", "UNKNOWN", "OTHER"),
-                                   ("UNKNOWN", "UNKNOWN")])
-def test_dc00_needs_both_an_agent_and_a_borrower_turn(spec, roles):
+@pytest.mark.parametrize("roles,reason", [
+    (("BORROWER", "BORROWER"), "ROLE_UNCERTAIN"),              # DC-00: no AGENT turn
+    (("UNKNOWN", "UNKNOWN"), "ROLE_UNCERTAIN"),                # DC-00 comes first (SC-03 order)
+    (("AGENT", "AGENT"), "NON_CONVERSATIONAL"),                # SC-03: DC-02 before the no-BORROWER clause
+    (("AGENT", "UNKNOWN", "OTHER"), "NON_CONVERSATIONAL"),     # OTHER / UNKNOWN turns are not BORROWER turns
+])
+def test_sc03_evaluability_order(spec, roles, reason):
+    """rubric.yaml › evaluability_order (SC-03): DC-00 mapping/no-AGENT, then DC-02, then the no-BORROWER clause
+    only if DC-02 did not apply. A call with no BORROWER turn meets DC-02 ("no borrower turn with >= N words")
+    whatever the pending threshold, so it is NON_CONVERSATIONAL, never ROLE_UNCERTAIN."""
     fr = run_frontend(_turns(*roles), TranscriptHeader(), InputMode.TRANSCRIPT, spec)
-    assert fr.evaluability_status.value == "NOT_EVALUABLE" and [r.value for r in fr.reason_codes] == ["ROLE_UNCERTAIN"]
+    assert fr.evaluability_status.value == "NOT_EVALUABLE" and [r.value for r in fr.reason_codes] == [reason]
+    order = spec.rubric["evaluability_order"]
+    assert [i for i, o in enumerate(order) if "DC-02" in o] < [i for i, o in enumerate(order) if "no-BORROWER" in o]
+    steps = {s.check: s.status for s in fr.steps}
+    assert steps["DC-02"] == ("not_applicable" if reason == "ROLE_UNCERTAIN" else "done")
+
+
+def test_non_conversational_call_still_runs_prechecks(spec):
+    fr = run_frontend(_turns("AGENT", "AGENT"), TranscriptHeader(call_start_ts="2026-09-28T21:00:00+05:30"),
+                      InputMode.TRANSCRIPT, spec)
+    assert [r.value for r in fr.reason_codes] == ["NON_CONVERSATIONAL"]
+    assert {p.gate.value: p.status.value for p in fr.prechecks}["G7"] == "FAIL"
 
 
 def test_unknown_turns_are_span_unreliable_not_call_level(tmp_path, spec):

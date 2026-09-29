@@ -96,6 +96,7 @@ def _manifest(**over):
          "asr": {"status": "not_used"}, "diarization": {"status": "not_used"},
          "telephony_simulation": {"status": "not_used"}, "price_snapshot": {"status": "pending_signoff"},
          "base_seed": 1, "repetitions": 5, "ordering": "P-6", "alias_mapping_sha256": sha,
+         "unit_alias_mapping_sha256": sha, "p17_payload_strings_checked": 1,
          "git": {"commit": "a" * 40, "dirty": False},
          "hash_verification": {"verified_at": now, "bench_manifest": True, "item_files": True,
                                "private_hash_list": None, "gold": True, "rubric": True, "profile": True,
@@ -107,6 +108,9 @@ def _manifest(**over):
 
 def test_run_manifest_lock_rules():
     RunManifest.model_validate(_manifest())
+    for missing in ("unit_alias_mapping_sha256", "p17_payload_strings_checked"):  # P-17 is recorded (fail closed)
+        with pytest.raises(ValidationError):
+            RunManifest.model_validate({k: v for k, v in _manifest().items() if k != missing})
     with pytest.raises(ValidationError):  # holdout data only in a locked run
         RunManifest.model_validate(_manifest(dataset={"split": "holdout", "scope": "private"}))
     locked = dict(kind="locked_holdout", locked=True, dataset={"split": "holdout", "scope": "private"},

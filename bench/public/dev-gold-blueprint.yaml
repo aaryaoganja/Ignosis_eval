@@ -69,7 +69,8 @@ items:
   contested: false
   label_confidence: Sure
   ambiguity_notes: '-'
-  depends_on: &id002 []
+  rule_basis: &id002 []
+  external_dependencies: &id003 []
 - item_id: M-01
   pack: core
   split: dev
@@ -134,7 +135,8 @@ items:
   contested: false
   label_confidence: Probable
   ambiguity_notes: COM-05 on soft commitment (see risk)
-  depends_on: *id002
+  rule_basis: *id002
+  external_dependencies: *id003
 - item_id: K-01
   pack: core
   split: dev
@@ -184,7 +186,9 @@ items:
   contested: false
   label_confidence: Sure
   ambiguity_notes: '-'
-  depends_on: *id002
+  rule_basis:
+  - SC-04
+  external_dependencies: *id003
 - item_id: C-01
   pack: core
   split: dev
@@ -241,7 +245,8 @@ items:
   contested: false
   label_confidence: Sure
   ambiguity_notes: '-'
-  depends_on: *id002
+  rule_basis: *id002
+  external_dependencies: *id003
 - item_id: K-07
   pack: core
   split: dev
@@ -291,7 +296,9 @@ items:
   contested: false
   label_confidence: Sure
   ambiguity_notes: '-'
-  depends_on: *id002
+  rule_basis:
+  - SC-04
+  external_dependencies: *id003
 - item_id: C-08
   pack: core
   split: dev
@@ -356,7 +363,8 @@ items:
   contested: false
   label_confidence: Sure
   ambiguity_notes: '-'
-  depends_on: *id002
+  rule_basis: *id002
+  external_dependencies: *id003
 - item_id: C-03
   pack: core
   split: dev
@@ -421,7 +429,8 @@ items:
   contested: false
   label_confidence: Sure
   ambiguity_notes: '-'
-  depends_on: *id002
+  rule_basis: *id002
+  external_dependencies: *id003
 - item_id: C-05
   pack: core
   split: dev
@@ -486,7 +495,8 @@ items:
   contested: false
   label_confidence: Sure
   ambiguity_notes: '-'
-  depends_on: *id002
+  rule_basis: *id002
+  external_dependencies: *id003
 - item_id: C-10
   pack: core
   split: dev
@@ -551,7 +561,8 @@ items:
   contested: false
   label_confidence: Sure
   ambiguity_notes: '-'
-  depends_on: *id002
+  rule_basis: *id002
+  external_dependencies: *id003
 - item_id: C-12
   pack: core
   split: dev
@@ -616,7 +627,8 @@ items:
   contested: false
   label_confidence: Sure
   ambiguity_notes: '-'
-  depends_on: *id002
+  rule_basis: *id002
+  external_dependencies: *id003
 - item_id: MD-G1
   pack: micro
   split: dev
@@ -681,7 +693,8 @@ items:
   contested: false
   label_confidence: Sure
   ambiguity_notes: '-'
-  depends_on: *id002
+  rule_basis: *id002
+  external_dependencies: *id003
 - item_id: MD-G2
   pack: micro
   split: dev
@@ -746,7 +759,8 @@ items:
   contested: false
   label_confidence: Probable
   ambiguity_notes: J-CONS classification of an out-of-category claim
-  depends_on: *id002
+  rule_basis: *id002
+  external_dependencies: *id003
 - item_id: MD-G3
   pack: micro
   split: dev
@@ -811,7 +825,8 @@ items:
   contested: false
   label_confidence: Sure
   ambiguity_notes: '-'
-  depends_on: *id002
+  rule_basis: *id002
+  external_dependencies: *id003
 - item_id: MD-G4
   pack: micro
   split: dev
@@ -876,7 +891,8 @@ items:
   contested: false
   label_confidence: Sure
   ambiguity_notes: '-'
-  depends_on: *id002
+  rule_basis: *id002
+  external_dependencies: *id003
 - item_id: MD-G5
   pack: micro
   split: dev
@@ -933,7 +949,8 @@ items:
   contested: false
   label_confidence: Sure
   ambiguity_notes: '-'
-  depends_on: *id002
+  rule_basis: *id002
+  external_dependencies: *id003
 - item_id: MD-C1
   pack: micro
   split: dev
@@ -983,7 +1000,8 @@ items:
   contested: false
   label_confidence: Sure
   ambiguity_notes: '-'
-  depends_on: *id002
+  rule_basis: *id002
+  external_dependencies: *id003
 - item_id: MD-C2
   pack: micro
   split: dev
@@ -1033,7 +1051,8 @@ items:
   contested: false
   label_confidence: Sure
   ambiguity_notes: '-'
-  depends_on: *id002
+  rule_basis: *id002
+  external_dependencies: *id003
 - item_id: MD-G6
   pack: micro
   split: dev
@@ -1098,7 +1117,8 @@ items:
   contested: false
   label_confidence: Sure
   ambiguity_notes: '-'
-  depends_on: *id002
+  rule_basis: *id002
+  external_dependencies: *id003
 - item_id: G-02-N5
   pack: modality
   split: dev
@@ -1147,7 +1167,8 @@ items:
   contested: false
   label_confidence: n/a
   ambiguity_notes: '-'
-  depends_on: *id002
+  rule_basis: *id002
+  external_dependencies: *id003
 - item_id: SN-D01
   pack: language
   split: dev
@@ -1169,7 +1190,8 @@ items:
   contested: false
   label_confidence: Sure
   ambiguity_notes: '-'
-  depends_on: *id002
+  rule_basis: *id002
+  external_dependencies: *id003
 - item_id: SN-D02
   pack: language
   split: dev
@@ -1191,7 +1213,8 @@ items:
   contested: false
   label_confidence: Sure
   ambiguity_notes: '-'
-  depends_on: *id002
+  rule_basis: *id002
+  external_dependencies: *id003
 - item_id: SN-D03
   pack: language
   split: dev
@@ -1213,7 +1236,8 @@ items:
   contested: false
   label_confidence: Sure
   ambiguity_notes: '-'
-  depends_on: *id002
+  rule_basis: *id002
+  external_dependencies: *id003
 - item_id: SN-D04
   pack: language
   split: dev
@@ -1235,7 +1259,8 @@ items:
   contested: false
   label_confidence: Sure
   ambiguity_notes: '-'
-  depends_on: *id002
+  rule_basis: *id002
+  external_dependencies: *id003
 - item_id: SN-D05
   pack: language
   split: dev
@@ -1257,7 +1282,8 @@ items:
   contested: false
   label_confidence: Sure
   ambiguity_notes: '-'
-  depends_on: *id002
+  rule_basis: *id002
+  external_dependencies: *id003
 - item_id: SN-D06
   pack: language
   split: dev
@@ -1279,4 +1305,5 @@ items:
   contested: false
   label_confidence: Sure
   ambiguity_notes: '-'
-  depends_on: *id002
+  rule_basis: *id002
+  external_dependencies: *id003

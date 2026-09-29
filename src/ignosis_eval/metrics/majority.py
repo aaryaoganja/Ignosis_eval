@@ -1,4 +1,4 @@
-"""Majority output — scoring-spec SD-04 (AJ-11) / SD-05 / SD-18. No modal status and no tie-breaking.
+"""Majority output — scoring-spec 1.2.0 SD-04 (AJ-11) / SD-05 / SD-18. No modal status and no tie-breaking.
 
 Every majority quantity is a per-rep boolean indicator that must be true in >= 3 of 5 reps. An EVALUATION_FAILED
 rep sets every gate and code indicator to false (it is neither a detection, a pass nor an abstention); for the
@@ -17,7 +17,8 @@ from ignosis_eval.metrics.alignment import EVALUATION_FAILED, RepObs
 
 NO_MAJORITY = "NO_MAJORITY"
 GATE_STATUSES = ("PASS", "NA", "INCONCLUSIVE", "OUT_OF_SCOPE")  # FAIL is decided by the fired indicator
-CODE_STATUSES = ("PASS", "NA", "INCONCLUSIVE", "OUT_OF_SCOPE")  # DEFECT is decided by the emitted indicator
+CODE_HELD_STATUSES = ("INCONCLUSIVE", "OUT_OF_SCOPE", "NA")  # DEFECT: emitted indicator; PASS: SD-04 last rule
+ABSTAINED = ("INCONCLUSIVE", "OUT_OF_SCOPE")  # SD-04 `abstained` indicator
 
 
 def threshold(k: int) -> int:
@@ -54,11 +55,15 @@ def gate_majority_status(reps: Sequence[RepObs], gate: str) -> str:
 
 
 def code_majority_status(reps: Sequence[RepObs], code: str) -> str:
+    """SD-04: DEFECT if majority emitted; else INCONCLUSIVE / OUT_OF_SCOPE / NA if that status holds in >= 3 reps;
+    else PASS if the code is neither emitted nor abstained in >= 3 reps; else NO_MAJORITY."""
     if holds(reps, lambda r: r.emitted(code)):
         return "DEFECT"
-    for st in CODE_STATUSES:
+    for st in CODE_HELD_STATUSES:
         if holds(reps, lambda r, st=st: r.code_status(code) == st):  # type: ignore[misc]
             return st
+    if holds(reps, lambda r: not r.emitted(code) and r.code_status(code) not in ABSTAINED):
+        return "PASS"
     return NO_MAJORITY
 
 

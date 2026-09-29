@@ -1,8 +1,9 @@
 # CLAUDE.md: working rules for this repository
 
 This repository is **reliability-experiment infrastructure** for the Ignosis Voice AI Quality Evaluator
-(collections). The authority is the frozen specification pack in `docs/spec/` (contract `1.1.0-frozen`, rubric
-`1.1-mvp`, profile `1.1.0`; final adjudication in `docs/spec/final-adjudication.md`). Read
+(collections). The authority is the frozen specification pack in `docs/spec/` (contract `1.2.0-frozen`, rubric
+`1.2-mvp`, profile `1.1.1`; Stage-5 adjudications SC-01..SC-08, BD-01, BD-02 in contract §0; freeze commitments in
+`docs/freeze/`). Read
 `docs/spec-reconciliation.md` first: it maps the code to the spec and lists the conventions, the open questions
 and what is still pending.
 
@@ -13,8 +14,10 @@ and what is still pending.
    - The evaluator side (`evaluators/`, `engine/`, `pipeline/`) must not import `contracts.gold_label`,
      `contracts.case_card`, `integrity.freeze`, `benchmark`, `scoring`, `metrics`, `golddrv` or `runner`.
      This is enforced statically and transitively by `tests/test_architecture_boundaries.py`.
-   - At runtime systems run inside `ProtectedPathGuard`, which blocks gold, case cards, manifests, registries
-     and the blinding directory, and blocks subprocesses.
+   - At runtime systems run inside `ProtectedPathGuard`, which blocks gold, case cards, manifests, registries,
+     the private registry, the whole results tree (runs, blinding, views, scoring), and blocks subprocesses.
+   - Systems see only a random per-run unit alias (`u_xxxxxxxx`, P-17 / SC-05). Item ids, pair ids, pack/split names
+     and source file names never reach them; the runner's pre-run payload test fails the run otherwise.
 2. **Gold is never derived from evaluator output.**
    - `GoldProvenance.derived_from_evaluator_output` is the literal `false`.
    - Holdout and red-team gold is labelled blind.
@@ -35,6 +38,8 @@ and what is still pending.
    - Keep the scope line and warnings in `metrics.json`.
 7. **Holdout discipline.**
    - Holdout and red-team data live outside the repo (`$BENCH_PRIVATE_DIR`) and run only as locked runs.
+   - Holdout and red-team *intents* live only in the private registry (SC-06): the repository names those items by
+     ID, split, pack and pair only.
    - A locked run needs `--confirm-holdout`, a tagged clean commit, verified hashes and no blocking pending item
      (P-8 / H7).
    - The locked-run registry is append-only.
@@ -69,7 +74,8 @@ The reconciliation with the frozen spec is complete. **Do not**, without an expl
 | Metric definitions | `metrics/` + `docs/reliability.md` (SD map); fixtures in `tests/test_metrics.py` |
 | Intervals | `stats/` (SD-26) |
 | Benchmark layout, card rules, checks | `benchmark/` (`bench/` on disk) |
-| Frozen DEV design (Stage 5, DEV only) | `bench/public/` (verbatim + `MANIFEST.json`); validator `benchmark/public_dev.py` |
+| Frozen DEV design (Stage 5, DEV only) | `bench/public/` (verbatim); hashes in `docs/freeze/`; validator `benchmark/public_dev.py` |
+| Opaque unit aliases (P-17) | `contracts/unit_alias.py`, `runner/aliases.py` |
 | Hash lists / gold freeze / guard | `integrity/` |
 | Run protocol, lock, blinding, storage | `runner/` |
 

@@ -8,8 +8,9 @@ Plain text:
     BORROWER: <text>                                (timestamps optional, but all-or-none per file)
 Role labels AGENT, BORROWER, OTHER, UNKNOWN; CUSTOMER is an alias of BORROWER. A line without a
 recognised label is kept as an UNKNOWN-role turn (so an unlabeled transcript parses and is later
-NOT_EVALUABLE with ROLE_UNCERTAIN, as AB-06 requires). Reliability markers `[inaudible]`, `[crosstalk]`,
-`???` make their span (turn) unreliable. Any other file format is rejected (SRT/VTT deferred).
+NOT_EVALUABLE with ROLE_UNCERTAIN: DC-00 finds no AGENT turn, and §8 requires labels in TRANSCRIPT mode).
+Reliability markers `[inaudible]`, `[crosstalk]`, `???` make their span (turn) unreliable. Any other file format
+is rejected (SRT/VTT deferred).
 """
 
 from __future__ import annotations

@@ -1,6 +1,6 @@
-"""Shared deterministic finalization — rubric.yaml › architecture_application.A_PLUS (AJ-06): front-end merge,
+"""Shared deterministic finalization — rubric.yaml › architecture_application.A_plus (AJ-06): front-end merge,
 then 1 capability filter, 2 external-truth filter, 3 evidence verifier, 4 confidence cap, 5 status re-map,
-6 attribution, 7 repair allowlist, 8 verdict (V2–V7, PARTIAL) and tags.
+6 attribution, 7 repair, 8 verdict (V2–V7, PARTIAL) and tags. B uses the same modules (architecture_application.B).
 
 Used by A+ (on A's stored raw output, no LLM call), by B (after its rule engine) and by K0. Every
 change relative to the input body is written to the derivation log (P-11 derivation_log.json for A+).
@@ -115,19 +115,21 @@ def _lexicon_hit(check_id: str, sub_rule: str | None, evs: list[Evidence], ni: N
     return False
 
 
-def _template_description(cd_raw: dict, code: str) -> str:
-    """§9.7 / AJ-06 external-truth filter: A+ free text is replaced by rubric templates, which cannot express
-    ledger, payment, record or authority truth."""
-    return f"{code}: {cd_raw.get('name', code)}"
+def _role_matches(ev: Evidence, ni: NormalizedInput) -> bool:
+    """A cited turn exists and its speaker equals the evidence role (header evidence has no speaker)."""
+    if ev.header_field is not None:
+        return True
+    t = ni.turn_by_number(ev.turn) if ev.turn else None
+    return t is not None and ev.role is t.role
 
 
 def finalize(body: RecordBody, ni: NormalizedInput, spec: Spec, *, system: SystemInfo, facts: Facts | None = None,
              log: DerivationLog | None = None, rejudge=None,
              confidence_source: ConfidenceSource = ConfidenceSource.COMPUTED) -> EvaluationRecord:
-    """Shared deterministic post-processing (rubric.yaml › architecture_application.A_PLUS, AJ-06), in order:
+    """Shared deterministic post-processing (rubric.yaml › architecture_application.A_plus, AJ-06), in order:
     (0) front-end merge (V1 pre-checks; missing gates INCONCLUSIVE), then
     1 capability filter · 2 external-truth filter · 3 evidence verifier · 4 confidence cap · 5 status re-map ·
-    6 attribution · 7 repair allowlist · 8 verdict and tags. Every change is logged under its step name."""
+    6 attribution · 7 repair · 8 verdict and tags. Every change is logged under its step name."""
     reg = spec.registry
     facts = facts or Facts()
     log = log or DerivationLog()
@@ -176,17 +178,15 @@ def finalize(body: RecordBody, ni: NormalizedInput, spec: Spec, *, system: Syste
             checks[cid] = CheckStatusEntry(code=cid, status=CheckStatus.OUT_OF_SCOPE, oos_reason=oos)
 
     # ---------------------------------------------------------------- 2 external-truth filter
+    # A_plus.2_external_truth_filter: out_of_scope_codes -> OUT_OF_SCOPE; outcome.verified -> null. Nothing else.
     ext: list[Finding] = []
     for f in kept:
         if f.code in reg.oos_codes:
             log.add("2-external-truth-filter", f.code, "dropped finding on an always-OUT_OF_SCOPE code")
             continue
-        if f.code not in reg.checks:
+        if f.code not in reg.checks:  # not an MVP code at all (no rubric entry to process it with)
             log.add("2-external-truth-filter", f.code, "dropped unknown code")
             continue
-        templ = _template_description(reg.get(f.code).raw, f.code)
-        if f.description != templ:
-            f = f.model_copy(update={"description": templ})
         ext.append(f)
     for code in [c for c in checks if c in reg.oos_codes or c not in reg.checks]:
         log.add("2-external-truth-filter", code, "dropped check entry on an always-OUT_OF_SCOPE / unknown code")
@@ -195,13 +195,11 @@ def finalize(body: RecordBody, ni: NormalizedInput, spec: Spec, *, system: Syste
     if outcome is not None and outcome.verified is not None:
         log.add("2-external-truth-filter", "outcome.verified", "set null (verified outcomes are OUT_OF_SCOPE)")
         outcome = outcome.model_copy(update={"verified": None})
-    for gid, g in list(by_gate.items()):
-        if gid not in pre_ids and g.note:
-            by_gate[gid] = g.model_copy(update={"note": None})
     out_of_scope = [OutOfScopeEntry(code=c, oos_reason=OosReason.EXTERNAL_DATA_REQUIRED) for c in reg.oos_codes]
 
     # ---------------------------------------------------------------- 3 evidence verifier
     quote_ok: dict[str, bool] = {}
+    role_ok: dict[str, bool] = {}
     unverified: dict[str, bool] = {}
     for gid, g in list(by_gate.items()):
         if gid in pre_ids or g.status not in (GateStatus.FAIL, GateStatus.INCONCLUSIVE):
@@ -213,6 +211,7 @@ def finalize(body: RecordBody, ni: NormalizedInput, spec: Spec, *, system: Syste
             ok = bool(g.evidence) and all(verify_evidence(e, ni, threshold)[0] for e in g.evidence)
             by_gate[gid] = g
         quote_ok[gid] = ok
+        role_ok[gid] = all(_role_matches(e, ni) for e in g.evidence)
         unverified[gid] = g.evidence_unverified or (not ok and g.status is GateStatus.FAIL)
         if not ok and g.status is GateStatus.FAIL:
             log.add("3-evidence-verifier", gid, "citation unverifiable -> SUSPECTED, evidence_unverified=true")
@@ -242,7 +241,7 @@ def finalize(body: RecordBody, ni: NormalizedInput, spec: Spec, *, system: Syste
         cd = reg.get(gid)
         turns = _cited_turns(g.evidence, ni)
         gate_level[gid] = conf.compute(
-            cd, sub_rule=g.sub_rule, quote_ok=quote_ok[gid], role_ok=quote_ok[gid],
+            cd, sub_rule=g.sub_rule, quote_ok=quote_ok[gid], role_ok=role_ok[gid],
             spans_reliable=not any(t.unreliable for t in turns), det_confirmed=facts.det_confirmed.get(gid, False),
             lexicon_hit_without_negation=_lexicon_hit(gid, g.sub_rule, g.evidence, ni, spec), llm_label=g.confidence)
         if gate_level[gid] is not g.confidence:
@@ -298,12 +297,12 @@ def finalize(body: RecordBody, ni: NormalizedInput, spec: Spec, *, system: Syste
             log.add("6-attribution", f.code, "recomputed", attribution=attr.primary.value)
         attributed.append(f.model_copy(update={"attribution": attr, "action_type": action}))
 
-    # ---------------------------------------------------------------- 7 repair allowlist
+    # ---------------------------------------------------------------- 7 repair (repair_rules.allowlist enforced)
     findings: list[Finding] = []
     for f in attributed:
         nf = apply_repair(f, reg)
         if (nf.repair_status, nf.severity) != (f.repair_status, f.severity):
-            log.add("7-repair-allowlist", f.code, "repair flag ignored (not on the allowlist)" if f.code not in
+            log.add("7-repair", f.code, "repair flag ignored (not on the allowlist)" if f.code not in
                     reg.repair_allowlist else "ACC-05 severity from repair status",
                     before=[f.repair_status.value, f.severity.value], after=[nf.repair_status.value, nf.severity.value])
         nf = nf.model_copy(update={"finding_state": conf.finding_state(nf.severity, nf.confidence)})
