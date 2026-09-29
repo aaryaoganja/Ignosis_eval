@@ -99,7 +99,8 @@ def test_health_config_and_static(client):
     cfg = client.get("/api/config").json()
     assert cfg["live_available"] is False and cfg["evaluator"]["api_key_configured"] is False
     assert cfg["evaluator"]["provider"] == "gemini" and cfg["evaluator"]["model_id"] == "gemini-3.8-flash"
-    assert [m["label"] for m in cfg["modes"]] == ["Audio", "Transcript", "Audio + Transcript"]
+    assert [m["label"] for m in cfg["modes"]] == ["Transcript", "Audio + Transcript", "Audio only"]
+    assert [m["supported"] for m in cfg["modes"]] == [True, True, False]
     assert cfg["product"]["tagline"].startswith("Ignosis already listens to every call.")
     assert cfg["profile"]["read_only"] is True and cfg["profile"]["profile_version"] == "1.1.1"
     page = client.get("/")
@@ -145,7 +146,7 @@ def test_demo_via_api_with_browser_line_endings(client):
 def test_custom_transcript_without_key_gives_no_verdict(client):
     r = _eval(client, mode="transcript", transcript=STUB, call_name="Stub call").json()
     assert (r["source"], r["status"], r["verdict"]) == ("UNAVAILABLE", "NOT_RUN", None)
-    assert "GEMINI_API_KEY is not set" in r["key_finding"]["explanation"]
+    assert "GEMINI_API_KEY" in r["key_finding"]["explanation"] and "not a pass" in r["action"]
     assert r["frontend"]["evaluability"] == "EVALUABLE" and r["call"]["name"] == "Stub call"
 
 
@@ -161,7 +162,8 @@ def test_audio_mode_gives_a_pathway_not_a_result(client):
     r = _eval(client, mode="audio", files={"audio_file": ("call.wav", b"RIFF-stub", "audio/wav")})
     assert r.status_code == 422
     err = r.json()["error"]
-    assert err["code"] == "ASR_PENDING" and "B-06" in err["message"] and err["pathway"]
+    assert err["code"] == "ASR_PENDING" and "requires speech recognition" in err["message"]
+    assert any("Audio + Transcript" in p for p in err["pathway"])
 
 
 def test_audio_plus_transcript(client):
@@ -261,7 +263,7 @@ def test_result_view_orders_gates_first_and_keeps_failures_explicit():
 
 def test_static_client_never_handles_provider_secrets():
     static = Path(__file__).resolve().parents[1] / "src" / "ignosis_eval" / "app" / "static"
-    text = "".join(p.read_text(encoding="utf-8") for p in static.iterdir())
+    text = "".join(p.read_text(encoding="utf-8") for p in static.iterdir() if p.is_file())
     assert "generativelanguage" not in text and "x-goog-api-key" not in text and "AIza" not in text
     assert "innerHTML" not in text  # dynamic text goes through textContent only
 
@@ -283,3 +285,32 @@ def test_server_listens_on_railway_port(monkeypatch):
     assert seen["port"] == 8000
     docker = (Path(__file__).resolve().parents[1] / "Dockerfile").read_text(encoding="utf-8")
     assert 'CMD ["python", "-m", "ignosis_eval.app"]' in docker
+
+
+def test_sample_recording_is_fictional_synthetic_and_linked(client):
+    """The sample recording: a synthetic rendering of a demo call's transcript, linked to results that use it."""
+    import hashlib
+    import wave
+
+    demos = {d["id"]: d for d in client.get("/api/demo-calls").json()}
+    sample = [d for d in demos.values() if d.get("audio")]
+    assert len(sample) == 1 and sample[0]["id"] == "demo-settlement" and sample[0]["illustrates"]
+    meta = DEMOS["demo-settlement"]["audio"]
+    assert meta["fictional"] is True and "espeak-ng" in meta["generator"]
+    data = client.get(sample[0]["audio"]["url"]).content
+    assert hashlib.sha256(data).hexdigest() == meta["sha256"] and len(data) < 1_500_000
+    path = Path(__file__).resolve().parents[1] / "src" / "ignosis_eval" / "app" / "static" / meta["file"]
+    with wave.open(str(path)) as w:
+        assert (w.getnchannels(), w.getframerate()) == (1, 8000) and 20 < w.getnframes() / 8000 < 90
+    # Audio + Transcript with the sample: replayed demo evaluation, with the recording linked
+    r = _eval(client, mode="audio_transcript", transcript=sample[0]["transcript"], demo_id="demo-settlement",
+              replay="true", files={"audio_file": ("demo-settlement.wav", data, "audio/wav")}).json()
+    assert r["source"] == "DEMO_REPLAY" and r["call"]["unit_mode"] == "A+T" and r["verdict"]["code"] == "CRITICAL_FAIL"
+    assert r["call"]["audio_url"] == sample[0]["audio"]["url"]
+    # Audio only with the sample: the known limitation, with the working alternative, never a result
+    a = _eval(client, mode="audio", files={"audio_file": ("demo-settlement.wav", data, "audio/wav")})
+    assert a.status_code == 422 and a.json()["error"]["code"] == "ASR_PENDING"
+    # without a key, the sample's transcript in Audio + Transcript without replay gets no verdict
+    n = _eval(client, mode="audio_transcript", transcript=sample[0]["transcript"],
+              files={"audio_file": ("demo-settlement.wav", data, "audio/wav")}).json()
+    assert n["source"] == "UNAVAILABLE" and n["verdict"] is None and n["call"]["audio_url"]

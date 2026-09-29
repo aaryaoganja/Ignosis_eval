@@ -40,7 +40,7 @@ ignosis-eval = "ignosis_eval.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-ignosis_eval = ["evaluators/prompts/*.md", "app/demo_calls.json", "app/static/*"]
+ignosis_eval = ["evaluators/prompts/*.md", "app/demo_calls.json", "app/static/*", "app/static/demo/*.wav"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

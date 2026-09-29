@@ -46,6 +46,8 @@ credentials*.json
 *.m4a
 *.ogg
 !tests/fixtures/**/*.wav
+# The review app's fictional sample recording (synthetic espeak-ng voices; scripts/make_demo_audio.py)
+!src/ignosis_eval/app/static/demo/*.wav
 
 # OS / editor
 .DS_Store

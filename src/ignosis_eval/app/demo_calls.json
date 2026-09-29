@@ -171,7 +171,16 @@
       ]
      }
     ]
-   }
+   },
+   "audio": {
+    "file": "demo/demo-settlement.wav",
+    "format": "wav",
+    "sha256": "d5014bb34df11405d317519397fb485c23dddcdb914941909ca7641c8f1f2610",
+    "duration_s": 56.3,
+    "generator": "espeak-ng (synthetic formant voices; no real person's voice), 8 kHz mono",
+    "fictional": true
+   },
+   "illustrates": "Critical fail · Dangerous Win"
   },
   {
    "id": "demo-soft-promise",
@@ -327,7 +336,8 @@
       ]
      }
     ]
-   }
+   },
+   "illustrates": "Needs attention"
   },
   {
    "id": "demo-clean-ptp",
@@ -431,7 +441,8 @@
      }
     },
     "answers": []
-   }
+   },
+   "illustrates": "Meets bar"
   },
   {
    "id": "demo-fraud-dispute",
@@ -599,7 +610,8 @@
       ]
      }
     ]
-   }
+   },
+   "illustrates": "Meets bar · Clean Loss"
   },
   {
    "id": "demo-voicemail",
@@ -619,7 +631,8 @@
      }
     },
     "answers": []
-   }
+   },
+   "illustrates": "Not evaluable"
   }
  ]
 }

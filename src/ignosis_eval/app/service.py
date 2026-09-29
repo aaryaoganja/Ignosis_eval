@@ -102,13 +102,18 @@ class Mode(str, Enum):
 
 
 MODE_INFO = {
-    Mode.AUDIO: {"label": "Audio", "unit_mode": "A", "supported": False,
-                 "note": "Audio-only evaluation needs speech recognition and diarization, which are pending (B-06)."},
     Mode.TRANSCRIPT: {"label": "Transcript", "unit_mode": "TRANSCRIPT", "supported": True,
-                      "note": "Evaluates a labelled transcript (AGENT: / BORROWER: lines, or JSON)."},
+                      "summary": "Text with one line per speaker turn",
+                      "note": "Paste or upload a transcript with one line per turn, starting AGENT: or BORROWER:."},
     Mode.AUDIO_TRANSCRIPT: {"label": "Audio + Transcript", "unit_mode": "A+T", "supported": True,
-                            "note": "Evaluates the supplied transcript; the audio is fingerprinted and recorded. "
-                                    "Audio-only signals (overlap, audio quality) are reported, not guessed."},
+                            "summary": "A recording plus its transcript",
+                            "note": "Upload the recording and its transcript. The transcript is evaluated and the "
+                                    "recording is attached to the result. Signals that need audio analysis (such "
+                                    "as people talking over each other) are listed as not checked."},
+    Mode.AUDIO: {"label": "Audio only", "unit_mode": "A", "supported": False,
+                 "summary": "A recording without a transcript",
+                 "note": "Audio-only evaluation requires speech recognition, which is not enabled in this "
+                         "prototype. Use Audio + Transcript for a working evaluation."},
 }
 
 
@@ -211,11 +216,11 @@ def result_view(record: EvaluationRecord | None, ni: NormalizedInput, spec: Spec
     }
     if record is None:
         view.update(status="NOT_RUN", verdict=None, key_finding={
-            "title": "No verdict: the evaluator did not run",
+            "title": "No verdict: live evaluation is not available",
             "explanation": unavailable_reason or "The evaluator is unavailable."},
             findings=[], uncertainty=None, tags=None, outcome=None, unverified_commitments=[], routing=None,
-            action="Configure the evaluator on the server (GEMINI_API_KEY) and evaluate again. Nothing here is a "
-                   "pass.", record=None)
+            action="Try a demo call, or ask the administrator to configure live evaluation (GEMINI_API_KEY) and "
+                   "evaluate again. No verdict is implied: this is not a pass.", record=None)
         view["transcript"] = _transcript(ni, cited)
         return view
     if record.record_status.value == "EVALUATION_FAILED":
@@ -383,6 +388,7 @@ class ReviewService:
         self.report_path = report_path or Path(os.environ.get(REPORT_ENV) or
                                                self.root / "reports" / "dev-baseline" / "dev-baseline.json")
         self.demos = {d["id"]: d for d in load_demo_calls()}
+        self._demo_audio = {d["audio"]["sha256"]: d["audio"] for d in self.demos.values() if d.get("audio")}
         self._lock = threading.Lock()
         self._library: OrderedDict[str, dict[str, Any]] = OrderedDict()
         self._counter = 0
@@ -442,13 +448,17 @@ class ReviewService:
             raise AppError(400, "MODE_INVALID", "Mode must be audio, transcript or audio_transcript.") from None
         if mode is Mode.AUDIO:
             has_transcript = bool(req.transcript_bytes or (req.transcript_text or "").strip())
-            raise AppError(422, "ASR_PENDING", f"{MODE_INFO[Mode.AUDIO]['note']} No result is produced for "
-                           "audio alone rather than a guessed one.", [
-                               "Use Audio + Transcript with the call's transcript (the platform or a human "
-                               "transcript)." if not has_transcript else
-                               "You supplied a transcript: switch to Audio + Transcript to evaluate it with the audio.",
-                               "Or use Transcript mode.",
-                               "Audio-only evaluation arrives with the ASR / diarization decision (B-06)."])
+            raise AppError(422, "ASR_PENDING", "Audio-only evaluation requires speech recognition, which is not "
+                           "enabled in this prototype, so no result was produced (a guessed transcript would "
+                           "not be trustworthy).", [
+                               "Use Audio + Transcript for a working evaluation: add the call's transcript "
+                               "next to the recording." if not has_transcript else
+                               "You supplied a transcript: switch to Audio + Transcript to evaluate it with the "
+                               "recording.",
+                               "The sample recording comes with its transcript: choose \"Use the sample "
+                               "recording\" under Audio + Transcript.",
+                               "Speech recognition (turning audio into a transcript) is a pending decision for "
+                               "this prototype."])
         parsed = self._parse(req)
         audio = None
         if mode is Mode.AUDIO_TRANSCRIPT:
@@ -496,13 +506,18 @@ class ReviewService:
                 source, unavailable = UNAVAILABLE, redact(str(exc))
         else:
             source = UNAVAILABLE
-            unavailable = ("Live evaluation is not configured on this server: the runtime environment variable "
-                           f"{provider_config.API_KEY_ENV} is not set. Demo calls can still be replayed.")
+            unavailable = ("Live evaluation isn't configured on this server (the administrator has not set "
+                           f"{provider_config.API_KEY_ENV}), so this call was not judged. The automatic pre-checks "
+                           "below did run. Demo calls still show their recorded evaluations.")
         name = (req.call_name or "").strip()[:80] or (demo["title"] if demo else f"Evaluated call {self._next()}")
         call = {"name": name, "mode": mode.value, "mode_label": MODE_INFO[mode]["label"],
                 "unit_mode": ni.unit_mode.value, "n_turns": len(ni.turns), "has_audio": ni.audio is not None,
                 "demo": demo is not None, "demo_id": demo["id"] if demo else None,
                 "scenario": demo["scenario"] if demo else None}
+        sample = self._demo_audio.get(ni.audio.sha256) if ni.audio else None
+        if sample:  # the uploaded recording is the app's sample recording: link it so the reviewer can play it
+            call.update(audio_url=f"/static/{sample['file']}", audio_duration_s=sample["duration_s"],
+                        audio_note="Sample recording: synthetic voices, fictional call")
         view = result_view(record, ni, self.spec, source=source, call=call, trace=trace,
                            latency_s=time.perf_counter() - t0, unavailable_reason=unavailable)
         view["evaluation_id"] = f"ev-{uuid.uuid4().hex[:12]}"
@@ -583,7 +598,15 @@ class ReviewService:
         }
 
     def demo_calls(self) -> list[dict[str, Any]]:
-        return [{k: d[k] for k in ("id", "title", "scenario", "modality", "transcript")} for d in self.demos.values()]
+        out = []
+        for d in self.demos.values():
+            row = {k: d[k] for k in ("id", "title", "scenario", "illustrates", "modality", "transcript")}
+            if d.get("audio"):
+                row["audio"] = {"url": f"/static/{d['audio']['file']}", "duration_s": d["audio"]["duration_s"],
+                                "filename": d["audio"]["file"].rsplit("/", 1)[-1],
+                                "note": "Synthetic voices, fictional call"}
+            out.append(row)
+        return out
 
     def reliability(self) -> dict[str, Any]:
         return reliability_view(self.report_path)

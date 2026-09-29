@@ -1,10 +1,51 @@
-/* Ignosis Call Quality Judge: single-page client. It talks only to this server's /api; it never holds a provider
-   key. Every dynamic string is inserted with textContent (no HTML injection). */
+/* Ignosis Call Quality Judge: single-page client for AI Quality Reviewers.
+   It talks only to this server's /api and never holds a provider key. Every dynamic string is inserted with
+   textContent (no HTML injection). Journey: 1 Choose a call -> 2 Evaluate -> 3 Review result -> explore. */
 "use strict";
 
-const state = { config: null, demos: [], mode: "transcript", demoId: null, lastResult: null };
+const state = {
+  config: null, demos: [], lastResult: null, origin: "evaluate", busy: false, selected: 0,
+  mode: "transcript",
+  form: { transcript: "", callName: "", demoId: null, transcriptFile: null, audio: null, live: false },
+  library: { verdict: "all", source: "all", q: "" },
+};
 const view = document.getElementById("view");
 
+/* ------------------------------------------------------------------ copy (reviewer language) */
+const VERDICT = {
+  CRITICAL_FAIL: { label: "Critical Fail", cls: "crit", meaning: "A hard rule was broken. Escalate this call." },
+  NEEDS_ATTENTION: { label: "Needs Attention", cls: "warn", meaning: "No hard rule was broken, but the agent made at least one mistake that needs correcting." },
+  MEETS_BAR: { label: "Meets Bar", cls: "ok", meaning: "No defects were found in everything that could be checked." },
+  NOT_EVALUABLE: { label: "Not Evaluable", cls: "ne", meaning: "The call cannot be judged, for example a voicemail or unclear speakers." },
+};
+const EVALUABILITY = {
+  EVALUABLE: { label: "Fully evaluable", cls: "ok", text: "Every check that applies to this call could be decided." },
+  PARTIAL: { label: "Partially evaluable", cls: "warn", text: "Some checks could not be decided (listed below). The verdict covers only what could be checked." },
+  NOT_EVALUABLE: { label: "Not evaluable", cls: "ne", text: "The call itself could not be assessed, so no conduct judgement was made." },
+};
+const DW_HELP = "Positive outcome (for example a promise to pay), but the agent broke a hard rule, or made a major mistake before the commitment, to get it. The win carries risk.";
+const CL_HELP = "No positive outcome, but the agent behaved to standard and the result was driven by the customer or by policy (for example a dispute correctly escalated). Not an agent failure.";
+const SEVERITY = { CRITICAL: "Critical", MAJOR: "Major", MINOR: "Minor", INFORMATIONAL: "Info" };
+const MODES = {
+  transcript: { label: "Transcript", works: true },
+  audio_transcript: { label: "Audio + Transcript", works: true },
+  audio: { label: "Audio only", works: false },
+};
+const SYSTEM_NAMES = { K0: "Keyword baseline", A: "Single-pass model judge", "A+": "Model judge + rule checks", B: "Structured evaluator (used in this app)" };
+const METRICS = [
+  ["verdict_accuracy", "Verdict accuracy", "Calls where the verdict matched the intended verdict."],
+  ["critical_recall", "Critical-failure recall", "Intended hard-rule failures that were caught."],
+  ["must_not_fire_precision", "No false alarm on traps", "Trap calls where a hard rule was correctly not flagged."],
+  ["pair_accuracy", "Paired-call accuracy", "Near-identical call pairs (one defective, one clean) told apart."],
+  ["defect_precision", "Defect precision", "Reported defects that were intended."],
+  ["defect_recall", "Defect recall", "Intended defects that were reported."],
+  ["evidence_faithfulness", "Evidence faithfulness", "Cited evidence that really appears in the transcript."],
+  ["attribution_agreement", "Attribution agreement", "Defects attributed to the right cause."],
+  ["dangerous_win_agreement", "Dangerous Win agreement", "Dangerous Win tag matched the intended tag."],
+  ["clean_loss_agreement", "Clean Loss agreement", "Clean Loss tag matched the intended tag."],
+];
+
+/* ------------------------------------------------------------------ helpers */
 function h(tag, attrs, ...children) {
   const el = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs || {})) {
@@ -19,400 +60,612 @@ function h(tag, attrs, ...children) {
   }
   return el;
 }
-
 async function api(path, opts) {
   const res = await fetch(path, opts);
   let body = null;
   try { body = await res.json(); } catch (e) { body = null; }
-  if (!res.ok) {
-    const err = (body && body.error) || { code: "HTTP_" + res.status, message: "Request failed (" + res.status + ").", pathway: [] };
-    throw err;
-  }
+  if (!res.ok) throw (body && body.error) || { code: "HTTP_" + res.status, message: "The server could not complete the request (" + res.status + ").", pathway: [] };
   return body;
 }
-
-function badge(text, cls) { return h("span", { class: "badge " + (cls || "plain") }, text); }
+function store(key, value) {
+  try { if (value === undefined) return window.localStorage.getItem(key); window.localStorage.setItem(key, value); } catch (e) { return null; }
+  return null;
+}
+function chip(text, cls) { return h("span", { class: "chip " + (cls || "") }, text); }
+function sourceChip(source, label) { return h("span", { class: "chip src-" + source }, label); }
 function pct(m) {
-  if (!m || m.value === null || m.value === undefined || m.value === "UNMEASURED") return m && m.den ? m.num + "/" + m.den : "UNMEASURED";
-  return Math.round(m.value * 100) + "% (" + m.num + "/" + m.den + ")";
+  if (!m || m.value === null || m.value === undefined || m.value === "UNMEASURED") return m && m.den ? m.num + " of " + m.den : "UNMEASURED";
+  return Math.round(m.value * 100) + "%  (" + m.num + " of " + m.den + ")";
 }
-function setActive(route) {
-  document.querySelectorAll(".nav a").forEach(a => a.classList.toggle("active", a.dataset.route === route));
+function setNav(route) {
+  document.querySelectorAll(".nav a").forEach(a => {
+    const on = a.dataset.route === route;
+    a.classList.toggle("active", on);
+    if (on) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
+  });
 }
-function errorNotice(err) {
-  return h("div", { class: "notice err", role: "alert" },
-    h("b", {}, err.message || "Something went wrong."),
-    (err.pathway && err.pathway.length) ? h("ul", {}, err.pathway.map(p => h("li", {}, p))) : null);
+function page(...children) { view.replaceChildren(...children.flat(Infinity).filter(Boolean)); }
+function notice(kind, title, lines, actions) {
+  return h("div", { class: "notice " + kind, role: kind === "err" ? "alert" : "status" },
+    title ? h("strong", {}, title) : null,
+    (lines || []).length ? h("ul", {}, lines.map(l => h("li", {}, l))) : null,
+    actions ? h("div", { class: "row gap-s mt-s" }, actions) : null);
+}
+function stepper(current, busy) {
+  const steps = ["Choose a call", "Evaluate", "Review result"];
+  return h("ol", { class: "stepper", id: "stepper", "aria-label": "Evaluation progress" }, steps.map((s, i) => h("li", {
+    class: i < current ? "done" : i === current ? "current" + (busy ? " busy" : "") : "",
+    "aria-current": i === current ? "step" : null,
+  }, h("span", { class: "step-num", "aria-hidden": "true" }, i < current ? "✓" : String(i + 1)), h("span", {}, s),
+    i < current ? h("span", { class: "sr-only" }, " (done)") : null)));
+}
+function setStepper(current, busy) {
+  const el = document.getElementById("stepper");
+  if (el) el.replaceWith(stepper(current, busy));
 }
 
-/* ------------------------------------------------------------------ Screen 1: Evaluate a Call */
+/* ------------------------------------------------------------------ how it works (dismissible) */
+function helpPanel() {
+  return h("section", { class: "help-panel", id: "help-panel", "aria-labelledby": "help-title" },
+    h("div", { class: "help-head" }, h("h2", { id: "help-title" }, "How it works"),
+      h("button", { type: "button", class: "btn btn-quiet", onclick: () => toggleHelp(false) }, "Got it, hide this")),
+    h("ol", { class: "help-steps" },
+      h("li", {}, h("strong", {}, "Choose a call. "), "A demo call, a transcript, or a recording with its transcript."),
+      h("li", {}, h("strong", {}, "Evaluate. "), "The judge checks the agent against the collections rules."),
+      h("li", {}, h("strong", {}, "Review. "), "Verdict first; select a finding to see its transcript lines."),
+      h("li", {}, h("strong", {}, "Explore. "), "Past calls in the Call library; accuracy under Evaluator reliability.")),
+    h("p", { class: "small muted help-foot" }, "Results are labelled LIVE EVALUATION (judged now by the model) or DEMO / REPLAY (a fictional call with a recorded evaluation)."));
+}
+function toggleHelp(show) {
+  const slot = document.getElementById("help-slot");
+  const btn = document.getElementById("help-toggle");
+  const open = show === undefined ? !slot.firstChild : show;
+  slot.replaceChildren(...(open ? [helpPanel()] : []));
+  btn.setAttribute("aria-expanded", open ? "true" : "false");
+  if (!open) store("ignosis.help.dismissed", "1");
+}
+
+/* ------------------------------------------------------------------ Screen 1: Evaluate a call */
 function renderEvaluate() {
-  setActive("evaluate");
-  const cfg = state.config;
-  const live = cfg && cfg.live_available;
-  const modes = (cfg && cfg.modes) || [];
-  const modeInfo = modes.find(m => m.id === state.mode) || {};
-  const out = h("div", { id: "eval-out" });
+  setNav("evaluate");
+  const cfg = state.config, live = cfg.live_available, f = state.form;
+  const demo = state.demos.find(d => d.id === f.demoId);
+  const sample = state.demos.find(d => d.audio);
 
-  const transcriptBox = h("textarea", { id: "transcript", spellcheck: "false",
-    placeholder: "# call_start_ts: 2026-09-28T14:05:00+05:30   (optional header)\nAGENT: Namaste, main ... bol rahi hoon.\nBORROWER: Haan ji, boliye." });
-  const demo = state.demos.find(d => d.id === state.demoId);
-  if (demo) transcriptBox.value = demo.transcript;
-  transcriptBox.addEventListener("input", () => {
-    if (demo && transcriptBox.value.trim() !== demo.transcript.trim()) {
-      state.demoId = null; replayRow.hidden = true;
-      document.querySelectorAll(".demo").forEach(b => b.classList.remove("selected"));
-    }
-  });
-  const tFile = h("input", { type: "file", id: "transcript-file", accept: ".txt,.json" });
-  const aFile = h("input", { type: "file", id: "audio-file", accept: ".wav,.mp3,.m4a" });
-  const callName = h("input", { type: "text", id: "call-name", maxlength: "80", placeholder: "e.g. Branch 12 - evening batch, call 4" });
-  const replayBox = h("input", { type: "checkbox", id: "replay", checked: !live || null, disabled: !live || null });
-  const replayRow = h("label", { class: "row small", hidden: (!demo || state.mode === "audio") || null }, replayBox,
-    live ? " Replay the scripted demo output (DEMO / REPLAY) instead of a live evaluation"
-         : " DEMO / REPLAY: scripted model output replayed through the real rule engine (live evaluation is not configured)");
-  const btn = h("button", { class: "btn btn-primary", type: "button" }, "Evaluate");
+  const demoCards = state.demos.map(d => h("article", { class: "demo-card" },
+    h("div", { class: "row gap-s wrap" }, chip(d.illustrates, "tag-" + tagClass(d.illustrates)), d.audio ? chip("Includes a sample recording", "plain") : null),
+    h("h3", {}, d.title),
+    h("p", { class: "small muted clamp", title: d.scenario }, d.scenario),
+    h("div", { class: "row gap-s wrap mt-auto" },
+      h("button", { type: "button", class: "btn btn-primary btn-sm", "data-demo": d.id,
+        onclick: (e) => runDemo(d, e.currentTarget) }, "View evaluation"),
+      h("button", { type: "button", class: "btn btn-link btn-sm", onclick: () => loadDemo(d, true) }, "Open in the form"))));
 
-  btn.addEventListener("click", async () => {
-    const fd = new FormData();
-    fd.append("mode", state.mode);
-    if (callName.value.trim()) fd.append("call_name", callName.value.trim());
-    if (state.mode !== "audio") {  // audio-only sends the audio alone
-      fd.append("transcript", transcriptBox.value);
-      if (tFile.files[0]) fd.append("transcript_file", tFile.files[0]);
-      if (state.demoId) { fd.append("demo_id", state.demoId); fd.append("replay", replayBox.checked ? "true" : "false"); }
-    }
-    if (state.mode !== "transcript" && aFile.files[0]) fd.append("audio_file", aFile.files[0]);
-    btn.disabled = true; out.replaceChildren(h("p", { class: "spinner-line" },
-      live && !(state.demoId && replayBox.checked) ? "Evaluating live (two model calls; this can take up to a minute)…" : "Evaluating…"));
-    try {
-      const res = await api("/api/evaluate", { method: "POST", body: fd });
-      state.lastResult = res;
-      location.hash = "#/result/" + res.evaluation_id;
-    } catch (err) { out.replaceChildren(errorNotice(err)); }
-    finally { btn.disabled = false; }
-  });
+  const modeCards = h("fieldset", { class: "mode-group" }, h("legend", {}, "What do you have?"),
+    h("div", { class: "mode-options" }, (cfg.modes || []).map(m => h("label", { class: "mode-option" + (state.mode === m.id ? " selected" : "") },
+      h("input", { type: "radio", name: "mode", value: m.id, checked: state.mode === m.id || null,
+        onchange: () => { state.mode = m.id; renderEvaluate(); document.querySelector('input[name="mode"]:checked').focus(); } }),
+      h("span", { class: "mode-title" }, m.label, m.supported ? chip("Works", "ok") : chip("Not enabled", "ne")),
+      h("span", { class: "mode-sub" }, m.summary)))));
+  const modeInfo = (cfg.modes || []).find(m => m.id === state.mode) || {};
 
-  const modeButtons = h("div", { class: "segmented", role: "tablist", "aria-label": "Input mode" },
-    modes.map(m => h("button", { type: "button", role: "tab", class: m.id === state.mode ? "active" : "",
-      "aria-selected": m.id === state.mode ? "true" : "false",
-      onclick: () => { state.mode = m.id; renderEvaluate(); } }, m.label)));
+  const ta = h("textarea", { id: "transcript", spellcheck: "false", "aria-describedby": "transcript-help",
+    placeholder: "AGENT: Namaste, main Priya, Acme Finserv se bol rahi hoon. Kya meri baat Rohan ji se ho rahi hai?\nBORROWER: Haan ji, boliye.\nAGENT: …",
+    oninput: (e) => { f.transcript = e.target.value; if (demo && e.target.value.trim() !== demo.transcript.trim()) { f.demoId = null; renderEvaluate(); focusEnd("transcript"); } } });
+  ta.value = f.transcript;
+  const tFile = h("input", { type: "file", id: "transcript-file", accept: ".txt,.json", class: "file-input",
+    onchange: (e) => { f.transcriptFile = e.target.files[0] || null; f.demoId = null; renderEvaluate(); } });
+  const aFile = h("input", { type: "file", id: "audio-file", accept: ".wav,.mp3,.m4a", class: "file-input",
+    onchange: (e) => { const file = e.target.files[0]; if (file) setAudio({ file, name: file.name, url: URL.createObjectURL(file), sample: false }); } });
 
-  const showTranscript = state.mode !== "audio";
-  const showAudio = state.mode !== "transcript";
-  const form = h("section", { class: "panel" },
-    h("h1", {}, "Evaluate a call"),
-    h("p", { class: "muted" }, "Choose how the call reaches the judge, supply it, and evaluate. The verdict holds within the available evidence."),
-    modeButtons,
-    h("div", { class: "notice " + (modeInfo.supported ? "info" : "warn") }, modeInfo.note || ""),
-    h("label", { class: "field", for: "call-name" }, "Call name (optional)"), callName,
-    showTranscript ? [h("label", { class: "field", for: "transcript" }, "Transcript"), transcriptBox,
-      h("div", { class: "row small", style: "margin-top:8px" }, h("span", { class: "muted" }, "or upload .txt / .json:"), tFile)] : null,
-    showAudio ? [h("label", { class: "field", for: "audio-file" }, state.mode === "audio" ? "Audio" : "Audio file"), aFile,
-      h("div", { class: "small muted" }, "wav, mp3 or m4a, up to " + ((cfg && cfg.limits.audio_mb) || 25) + " MB. The audio is fingerprinted in memory and not stored.")] : null,
-    replayRow,
-    h("div", { class: "row", style: "margin-top:14px" }, btn,
-      h("span", { class: "small muted" }, live ? "LIVE EVALUATION available: " + cfg.evaluator.provider + " · " + cfg.evaluator.model_id
-        : "Live evaluation is not configured on this server. Demo calls replay; other calls get the front-end checks only.")),
-    out);
+  const transcriptField = state.mode === "audio" ? null : h("div", { class: "field" },
+    h("label", { for: "transcript", class: "field-label" }, "Transcript"),
+    ta,
+    h("div", { class: "row gap-s wrap small mt-s", id: "transcript-help" },
+      tFile, h("label", { class: "btn btn-secondary btn-sm file-btn", for: "transcript-file" }, "Upload .txt or .json"),
+      f.transcriptFile ? h("span", {}, "Selected: ", h("strong", {}, f.transcriptFile.name), " ",
+        h("button", { type: "button", class: "btn btn-link btn-sm", onclick: () => { f.transcriptFile = null; renderEvaluate(); } }, "Remove")) : null,
+      h("details", { class: "inline-details" }, h("summary", {}, "Transcript format"),
+        h("ul", { class: "small" },
+          h("li", {}, "One turn per line, starting AGENT: or BORROWER: (CUSTOMER: also works)."),
+          h("li", {}, "Optional first line: # call_start_ts: 2026-09-28T14:05:00+05:30 (enables the calling-hours check)."),
+          h("li", {}, "Mark unclear speech with [inaudible]; those lines are not judged as if clear.")))));
 
-  const demos = h("section", { class: "panel" },
-    h("h2", {}, "Demo calls"),
-    h("p", { class: "small muted" }, "Synthetic calls (fictional names and amounts). Without a live evaluator they run as DEMO / REPLAY: scripted model output through the real rule engine."),
-    h("div", { class: "demo-list" }, state.demos.map(d => h("button", {
-      type: "button", class: "demo" + (d.id === state.demoId ? " selected" : ""),
-      onclick: () => { state.demoId = d.id; state.mode = "transcript"; renderEvaluate(); }
-    }, h("b", {}, d.title), h("span", {}, d.scenario)))));
+  const audioField = state.mode === "transcript" ? null : h("div", { class: "field" },
+    h("span", { class: "field-label", id: "audio-label" }, "Recording"),
+    h("div", { class: "row gap-s wrap", role: "group", "aria-labelledby": "audio-label" },
+      aFile, h("label", { class: "btn btn-secondary btn-sm file-btn", for: "audio-file" }, f.audio ? "Choose a different recording" : "Choose a recording"),
+      sample ? h("button", { type: "button", class: "btn btn-secondary btn-sm", onclick: () => useSample(sample) }, "Use the sample recording") : null),
+    f.audio ? h("div", { class: "audio-preview" },
+      h("div", { class: "small" }, h("strong", {}, f.audio.name), f.audio.sample ? "  ·  sample recording (synthetic voices, fictional call)" : "",
+        " ", h("button", { type: "button", class: "btn btn-link btn-sm", onclick: () => { f.audio = null; renderEvaluate(); } }, "Remove")),
+      h("audio", { controls: true, preload: "none", src: f.audio.url, "aria-label": "Play the selected recording" }))
+      : h("p", { class: "small muted" }, "wav, mp3 or m4a, up to " + cfg.limits.audio_mb + " MB. The recording is fingerprinted in memory and not stored."));
 
-  const help = h("section", { class: "panel" },
-    h("h2", {}, "Transcript format"),
-    h("ul", { class: "list-plain small" },
-      h("li", {}, "One turn per line: AGENT: … / BORROWER: … (CUSTOMER: also works)."),
-      h("li", {}, "Optional header lines first: # call_start_ts: 2026-09-28T14:05:00+05:30 (enables the calling-hours check)."),
-      h("li", {}, "Optional timestamps: [00:03.2-00:07.9] AGENT: …, all turns or none."),
-      h("li", {}, "Mark unclear speech with [inaudible] or [crosstalk]; those spans are not judged as if clear.")));
+  const methodField = demo && live ? h("fieldset", { class: "method-group" }, h("legend", {}, "How should this demo call be evaluated?"),
+    h("label", { class: "radio-line" }, h("input", { type: "radio", name: "method", checked: !f.live || null, onchange: () => { f.live = false; renderEvaluate(); } }),
+      " Recorded demo evaluation (instant, DEMO / REPLAY)"),
+    h("label", { class: "radio-line" }, h("input", { type: "radio", name: "method", checked: f.live || null, onchange: () => { f.live = true; renderEvaluate(); } }),
+      " Live evaluation with " + cfg.evaluator.model_id + " (up to a minute)")) : null;
 
-  view.replaceChildren(h("div", { class: "grid" }, h("div", {}, form), h("div", {}, demos, help)));
+  const goesLive = live && (!demo || f.live);
+  const expectation = state.mode === "audio" ? "Audio only is not enabled: you will get an explanation and the working alternative, not a verdict."
+    : demo && !goesLive ? "Shows the recorded evaluation of this fictional demo call (DEMO / REPLAY)."
+    : goesLive ? "Evaluated live by " + cfg.evaluator.model_id + ". This usually takes 10 to 60 seconds."
+    : "Live evaluation isn't configured on this server: your call gets the automatic pre-checks only, with no verdict. Demo calls still show their recorded evaluations.";
+
+  page(
+    stepper(0),
+    h("header", { class: "page-head" },
+      h("h1", {}, "Evaluate a Voice AI call"),
+      h("p", { class: "lead" }, "Choose a collections call and the judge tells you whether the AI agent behaved correctly."),
+      h("div", { class: "row gap-s wrap cta-row" },
+        h("button", { type: "button", class: "btn btn-primary", onclick: () => jump("demos") }, "Try a demo call"),
+        h("button", { type: "button", class: "btn btn-secondary", onclick: () => jump("own-call") }, "Evaluate your own call")),
+      h("ul", { class: "you-get", "aria-label": "What you get" },
+        h("li", {}, h("strong", {}, "Verdict"), " Critical Fail, Needs Attention, Meets Bar or Not Evaluable"),
+        h("li", {}, h("strong", {}, "Findings"), " each tied to the transcript lines behind it"),
+        h("li", {}, h("strong", {}, "Uncertainty"), " what could not be checked, never counted as a pass"),
+        h("li", {}, h("strong", {}, "Next step"), " what the reviewer should do"))),
+    h("section", { class: "panel", id: "demos", "aria-labelledby": "demos-title" },
+      h("div", { class: "section-head" }, h("h2", { id: "demos-title" }, h("span", { class: "start-here" }, "Start here"), " Try a demo call"),
+        sourceChip("DEMO_REPLAY", "DEMO / REPLAY")),
+      h("p", { class: "muted small" }, "Five fictional calls, each showing a different outcome. One click shows the full recorded evaluation."),
+      h("div", { class: "demo-grid" }, demoCards),
+      h("div", { id: "demo-status", "aria-live": "polite" })),
+    h("section", { class: "panel", id: "own-call", "aria-labelledby": "own-title" },
+      h("h2", { id: "own-title" }, "Or evaluate your own call"),
+      modeCards,
+      h("div", { class: "notice " + (modeInfo.supported ? "info" : "warn") }, modeInfo.note || ""),
+      demo ? h("div", { class: "loaded-demo" }, "Loaded demo call: ", h("strong", {}, demo.title), " ", sourceChip("DEMO_REPLAY", "DEMO"),
+        " ", h("button", { type: "button", class: "btn btn-link btn-sm", onclick: clearForm }, "Clear")) : null,
+      transcriptField, audioField,
+      h("div", { class: "field" }, h("label", { for: "call-name", class: "field-label" }, "Call name ", h("span", { class: "muted" }, "(optional)")),
+        h("input", { type: "text", id: "call-name", maxlength: "80", value: f.callName, placeholder: "e.g. Evening batch, call 4",
+          oninput: (e) => { f.callName = e.target.value; } })),
+      methodField,
+      h("div", { class: "submit-row" },
+        h("button", { type: "button", class: "btn btn-primary btn-lg", id: "evaluate-btn", onclick: submitForm }, "Evaluate call"),
+        h("p", { class: "small muted", id: "expectation" }, expectation)),
+      h("div", { id: "eval-status", "aria-live": "polite" })));
+}
+function jump(id) {
+  const el = document.getElementById(id);
+  el.scrollIntoView({ behavior: "smooth", block: "start" });
+  const target = el.querySelector(id === "demos" ? ".demo-card .btn-primary" : 'input[name="mode"]:checked');
+  if (target) target.focus({ preventScroll: true });
+}
+function tagClass(t) { return /Critical/.test(t) ? "crit" : /attention/i.test(t) ? "warn" : /Not evaluable/i.test(t) ? "ne" : "ok"; }
+function focusEnd(id) { const el = document.getElementById(id); if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; } }
+function clearForm() { Object.assign(state.form, { transcript: "", callName: "", demoId: null, transcriptFile: null, audio: null, live: false }); renderEvaluate(); }
+function loadDemo(d, scroll) {
+  Object.assign(state.form, { transcript: d.transcript, demoId: d.id, transcriptFile: null, callName: "", live: false });
+  if (state.mode === "audio") state.mode = "transcript";
+  if (!d.audio && state.mode === "audio_transcript") state.form.audio = null;
+  renderEvaluate();
+  if (scroll) { document.getElementById("own-call").scrollIntoView({ behavior: "smooth", block: "start" }); document.getElementById("evaluate-btn").focus({ preventScroll: true }); }
+}
+function setAudio(a) { state.form.audio = a; renderEvaluate(); }
+async function useSample(d) {
+  try {
+    const blob = await (await fetch(d.audio.url)).blob();
+    state.form.audio = { file: blob, name: d.audio.filename, url: d.audio.url, sample: true };
+    if (state.mode === "audio_transcript") Object.assign(state.form, { transcript: d.transcript, demoId: d.id, transcriptFile: null, live: false });
+    renderEvaluate();
+  } catch (e) { document.getElementById("eval-status").replaceChildren(notice("err", "The sample recording could not be loaded.", [])); }
+}
+
+let timer = null;
+function startBusy(button, statusEl, text) {
+  state.busy = true;
+  document.querySelectorAll("button").forEach(b => { if (b.dataset.demo || b.id === "evaluate-btn") b.disabled = true; });
+  if (button) { button.dataset.label = button.textContent; button.textContent = "Evaluating…"; }
+  setStepper(1, true);
+  const t0 = Date.now();
+  const line = h("p", { class: "busy-line" }, h("span", { class: "spinner", "aria-hidden": "true" }), text);
+  const secs = h("span", { class: "muted" }, "");
+  line.append(" ", secs);
+  statusEl.replaceChildren(line);
+  timer = setInterval(() => { secs.textContent = Math.round((Date.now() - t0) / 1000) + " s"; }, 1000);
+}
+function stopBusy(button) {
+  state.busy = false; clearInterval(timer);
+  document.querySelectorAll("button").forEach(b => { if (b.dataset.demo || b.id === "evaluate-btn") b.disabled = false; });
+  if (button && button.dataset.label) button.textContent = button.dataset.label;
+  setStepper(0, false);
+}
+async function evaluate(fd, button, statusEl, busyText) {
+  if (state.busy) return;
+  startBusy(button, statusEl, busyText);
+  try {
+    const res = await api("/api/evaluate", { method: "POST", body: fd });
+    state.lastResult = res; state.origin = "evaluate"; state.selected = 0;
+    clearInterval(timer); state.busy = false;
+    location.hash = "#/result/" + res.evaluation_id;
+  } catch (err) {
+    stopBusy(button);
+    statusEl.replaceChildren(errorPanel(err));
+  }
+}
+function runDemo(d, button) {
+  const fd = new FormData();
+  fd.append("mode", "transcript"); fd.append("transcript", d.transcript); fd.append("demo_id", d.id); fd.append("replay", "true");
+  evaluate(fd, button, document.getElementById("demo-status"), "Opening the recorded evaluation of “" + d.title + "”…");
+}
+function submitForm() {
+  const f = state.form, fd = new FormData();
+  fd.append("mode", state.mode);
+  if (f.callName.trim()) fd.append("call_name", f.callName.trim());
+  if (state.mode !== "audio") {
+    if (f.transcriptFile) fd.append("transcript_file", f.transcriptFile);
+    else fd.append("transcript", f.transcript);
+    if (f.demoId) { fd.append("demo_id", f.demoId); fd.append("replay", f.live && state.config.live_available ? "false" : "true"); }
+  }
+  if (state.mode !== "transcript" && f.audio) fd.append("audio_file", f.audio.file, f.audio.name);
+  const live = state.config.live_available && (!f.demoId || f.live) && state.mode !== "audio";
+  evaluate(fd, document.getElementById("evaluate-btn"), document.getElementById("eval-status"),
+    live ? "Evaluating live with " + state.config.evaluator.model_id + ": reading the call, then checking each rule…" : "Evaluating…");
+}
+function errorPanel(err) {
+  if (err.code === "ASR_PENDING") {
+    const sample = state.demos.find(d => d.audio);
+    return notice("warn", "Audio-only evaluation isn't available in this prototype", [err.message, ...(err.pathway || [])], [
+      h("button", { type: "button", class: "btn btn-primary btn-sm", onclick: () => {
+        state.mode = "audio_transcript";
+        if (state.form.audio && state.form.audio.sample && sample) Object.assign(state.form, { transcript: sample.transcript, demoId: sample.id, live: false });
+        renderEvaluate(); document.getElementById("own-call").scrollIntoView({ block: "start" });
+      } }, "Switch to Audio + Transcript")]);
+  }
+  return notice("err", err.message || "Something went wrong. Nothing was evaluated.", err.pathway || []);
 }
 
 /* ------------------------------------------------------------------ Screen 2: Result */
-function sourceBanner(r) {
-  const sub = { LIVE: r.evaluator.model_called ? "Judged now by " + r.evaluator.provider + " · " + r.evaluator.model + " with evaluator B " + r.evaluator.system_version
-                                               : "Decided now by the deterministic front end; no model call was needed.",
-    DEMO_REPLAY: "Scripted model output replayed through the real rule engine. Not a live evaluation and not a measurement.",
-    UNAVAILABLE: "The evaluator did not run on this server." }[r.source];
-  return h("div", { class: "source-banner " + r.source }, r.source_label, h("span", {}, sub));
-}
+function renderResult(r) {
+  const fromLibrary = state.origin === "library";
+  setNav(fromLibrary ? "library" : "evaluate");
+  const v = r.verdict && r.verdict.code ? VERDICT[r.verdict.code] : null;
+  const findings = r.findings || [];
+  const sel = Math.min(state.selected, Math.max(findings.length - 1, 0));
+  const selTurns = new Set(findings.length ? findings[sel].evidence.map(e => e.turn).filter(Boolean) : []);
 
-function evidenceQuote(e) {
-  if (e.header_field) return h("div", { class: "quote" }, "Transcript header: " + e.header_field);
-  return h("div", { class: "quote" },
-    h("a", { href: "#", onclick: (ev) => { ev.preventDefault(); flashTurn(e.turn); } }, "turn " + e.turn),
-    h("b", {}, (e.role || "") + ": "), "“" + (e.quote || "") + "”");
+  const context = fromLibrary
+    ? h("nav", { class: "breadcrumb", "aria-label": "Breadcrumb" }, h("a", { href: "#/library" }, "Call library"), h("span", { "aria-hidden": "true" }, " › "), h("span", { "aria-current": "page" }, r.call.name))
+    : stepper(2);
+  const actions = h("div", { class: "row gap-s wrap result-actions" },
+    h("a", { class: "btn btn-secondary btn-sm", href: "#/evaluate" }, "← Evaluate another call"),
+    fromLibrary ? null : h("a", { class: "btn btn-link btn-sm", href: "#/library" }, "Open the call library"));
+
+  const srcText = { LIVE: r.evaluator.model_called ? "Judged just now by " + r.evaluator.provider + " · " + r.evaluator.model + "." : "Decided just now by the automatic pre-checks; no model call was needed.",
+    DEMO_REPLAY: "A fictional demo call. This is its recorded evaluation, replayed through the real rules engine, not a live model result.",
+    UNAVAILABLE: "Live evaluation isn't available on this server, so this call was not judged." }[r.source];
+  const banner = h("div", { class: "source-banner src-" + r.source }, h("strong", {}, r.source === "UNAVAILABLE" ? "NO VERDICT" : r.source_label), h("span", {}, srcText));
+
+  // 1 VERDICT + 2 WHY
+  const verdictLabel = v ? v.label : r.status === "EVALUATION_FAILED" ? "Evaluation failed" : "No verdict";
+  const verdictMeaning = v ? v.meaning : r.status === "EVALUATION_FAILED"
+    ? "The evaluation could not be completed, so there is no verdict. A failed evaluation is never a pass."
+    : "The call was not judged. Nothing here is a pass.";
+  const ev = r.uncertainty ? EVALUABILITY[r.uncertainty.evaluability] : null;
+  const hero = h("section", { class: "panel verdict v-" + (v ? v.cls : "none"), "aria-labelledby": "verdict-title" },
+    h("p", { class: "small muted" }, r.call.name + " · " + r.call.mode_label + " · " + r.call.n_turns + " turns"),
+    r.call.scenario ? h("p", { class: "small scenario" }, "Scenario (fictional): " + r.call.scenario) : null,
+    h("h1", { id: "verdict-title", class: "verdict-label" }, verdictLabel,
+      r.verdict && r.verdict.critical_status ? h("span", { class: "verdict-sub" }, r.verdict.critical_status === "CONFIRMED" ? " · confirmed" : " · suspected") : null),
+    h("p", { class: "verdict-meaning" }, verdictMeaning, v ? h("span", { class: "muted" }, " Holds within the evidence in this call.") : null),
+    r.call.audio_url ? h("div", { class: "audio-preview" }, h("span", { class: "small muted" }, r.call.audio_note || "Recording"),
+      h("audio", { controls: true, preload: "none", src: r.call.audio_url, "aria-label": "Play the call recording" })) : null,
+    h("div", { class: "why" }, h("h2", {}, "Why"),
+      findings.length ? [h("p", { class: "why-title" }, findings[0].name || findings[0].code, h("span", { class: "muted why-code" }, " " + (findings[0].is_gate ? "hard rule " : "") + findings[0].code)),
+        (findings[0].evidence || []).filter(e => e.turn).slice(0, 1).map(e => h("p", { class: "why-quote" }, "Turn " + e.turn + " · " + (e.role === "BORROWER" ? "Borrower" : "Agent") + ": “" + e.quote + "”")),
+        findings.length > 1 ? h("p", { class: "small muted" }, "+ " + (findings.length - 1) + " more finding" + (findings.length > 2 ? "s" : "") + " below.") : null]
+        : [h("p", { class: "why-title" }, r.key_finding.title), r.key_finding.explanation ? h("p", { class: "small" }, r.key_finding.explanation) : null]),
+    h("ul", { class: "facts", "aria-label": "Summary" },
+      ev ? h("li", { class: "fact f-" + ev.cls }, h("span", { class: "fact-k" }, "Evaluability"), h("span", { class: "fact-v" }, ev.label)) : null,
+      r.tags ? h("li", { class: "fact " + (r.tags.dangerous_win !== "NONE" ? "f-crit" : "") }, h("span", { class: "fact-k" }, "Dangerous Win"), h("span", { class: "fact-v" }, r.tags.dangerous_win === "NONE" ? "No" : "Yes (" + r.tags.dangerous_win.toLowerCase() + ")")) : null,
+      r.tags ? h("li", { class: "fact " + (r.tags.clean_loss ? "f-ok" : "") }, h("span", { class: "fact-k" }, "Clean Loss"), h("span", { class: "fact-v" }, r.tags.clean_loss ? "Yes" : "No")) : null,
+      r.status === "OK" ? h("li", { class: "fact" }, h("span", { class: "fact-k" }, "Findings"), h("span", { class: "fact-v" }, String(findings.length))) : null),
+    r.status !== "OK" ? h("div", { class: "row gap-s wrap mt-s" },
+      h("a", { class: "btn btn-primary btn-sm", href: "#/evaluate" }, "Try a demo call")) : null);
+
+  // 3 FINDINGS
+  const findingsSec = r.status === "OK" ? h("section", { class: "panel", "aria-labelledby": "findings-title" },
+    h("h2", { id: "findings-title" }, "Findings (" + findings.length + ")"),
+    findings.length ? h("p", { class: "small muted" }, "Select a finding to highlight its evidence in the transcript below.")
+      : h("p", {}, "No hard rule was broken and no defect was found in what could be checked."),
+    h("div", { class: "finding-list", role: "list" }, findings.map((f, i) => findingCard(f, i, i === sel))))
+    : h("section", { class: "panel", "aria-labelledby": "ran-title" }, h("h2", { id: "ran-title" }, "What did run"),
+      h("p", { class: "small" }, r.status === "EVALUATION_FAILED" ? "The model evaluation started but did not complete, so no findings are reported." : "Only the automatic pre-checks ran; no rule was judged."),
+      r.frontend ? h("p", { class: "small muted" }, "Pre-checks: the call looks " + (r.frontend.evaluability === "EVALUABLE" ? "evaluable" : r.frontend.evaluability.toLowerCase().replace("_", " ")) + (r.frontend.reason_text ? " (" + r.frontend.reason_text + ")" : "") + ".") : null);
+
+  // 4 EVIDENCE
+  const cited = new Set((r.transcript || []).filter(t => t.cited).map(t => t.turn));
+  const commitTurns = new Set((r.unverified_commitments || []).map(e => e.turn));
+  const evidence = h("section", { class: "panel", "aria-labelledby": "evidence-title" },
+    h("h2", { id: "evidence-title" }, "Evidence: the transcript"),
+    findings.length ? h("p", { class: "legend small" }, h("span", { class: "sw sw-strong" }), " selected finding  ", h("span", { class: "sw sw-soft" }), " other cited lines  ",
+      commitTurns.size ? [h("span", { class: "sw sw-commit" }), " agent promise (unverified)"] : null) : null,
+    h("div", { class: "transcript" }, (r.transcript || []).map(t => h("div", {
+      id: "turn-" + t.turn,
+      class: "turn" + (selTurns.has(t.turn) ? " hl-strong" : cited.has(t.turn) ? " hl-soft" : "") + (commitTurns.has(t.turn) ? " hl-commit" : "") + (t.unreliable ? " unreliable" : "") },
+      h("span", { class: "n" }, t.turn), h("span", { class: "r" }, t.role === "BORROWER" ? "Borrower" : t.role === "AGENT" ? "Agent" : t.role), h("span", { class: "t" }, t.text)))),
+    (r.unverified_commitments || []).length ? h("div", { class: "mt" },
+      h("h3", {}, "Agent promises to verify"),
+      h("p", { class: "small muted" }, "Things the agent said it would do. Whether they were done needs systems outside the call, so they are listed for follow-up, not judged."),
+      r.unverified_commitments.map(quote)) : null);
+
+  // 5 CONFIDENCE / UNCERTAINTY
+  const u = r.uncertainty;
+  const external = u ? u.out_of_scope.filter(c => c.reason_code === "EXTERNAL_DATA_REQUIRED") : [];
+  const modeCap = u ? u.out_of_scope.filter(c => c.reason_code !== "EXTERNAL_DATA_REQUIRED") : [];
+  const uncertainty = u ? h("section", { class: "panel", "aria-labelledby": "unc-title" },
+    h("h2", { id: "unc-title" }, "Confidence and what could not be checked"),
+    h("div", { class: "eval-box f-" + ev.cls }, h("strong", {}, ev.label), h("span", {}, ev.text), u.reason_text ? h("span", { class: "small" }, "Reason: " + u.reason_text + ".") : null),
+    h("div", { class: "unc-grid" },
+      h("div", {}, h("h3", {}, "Could not be decided (" + u.inconclusive.length + ")"),
+        h("p", { class: "small muted" }, "Relevant here, but not decidable from this call: a threshold awaiting sign-off, unclear speech or missing context. Never counted as a pass."),
+        u.inconclusive.length ? collapsible(u.inconclusive.length > 6, "Show all " + u.inconclusive.length + " checks",
+          h("ul", { class: "plain-list" }, u.inconclusive.map(c => h("li", {}, h("strong", {}, c.name || c.code), h("span", { class: "muted" }, " (" + c.code + ")"), ": " + c.reasons))))
+          : h("p", { class: "small" }, "None.")),
+      h("div", {}, h("h3", {}, "Not verifiable from the call alone"),
+        external.length ? h("p", { class: "small" }, "Payment status, account figures and follow-up actions could not be externally verified: they need payment, account or CRM records.") : h("p", { class: "small" }, "None."),
+        external.length ? h("details", {}, h("summary", {}, "Show the " + external.length + " checks"), h("ul", { class: "plain-list small" }, external.map(c => h("li", {}, (c.name || c.code) + " (" + c.code + ")")))) : null,
+        modeCap.length ? h("details", {}, h("summary", {}, "Not observable in this input (" + modeCap.length + ")"), h("ul", { class: "plain-list small" }, modeCap.map(c => h("li", {}, (c.name || c.code) + " (" + c.code + "): " + c.reason))))
+          : null)),
+    h("p", { class: "small muted" }, "Confidence is " + (u.confidence_source === "SELF_REPORTED" ? "self-reported by the model." : "computed by the rules engine from the evidence, not self-reported by the model."))) : null;
+
+  // Outcome tags (diagnostic)
+  const outcome = r.tags ? h("section", { class: "panel", "aria-labelledby": "outcome-title" },
+    h("h2", { id: "outcome-title" }, "Outcome: did the result come the right way?"),
+    h("div", { class: "tag-grid" },
+      h("div", { class: "tag-card " + (r.tags.dangerous_win !== "NONE" ? "on-crit" : "") },
+        h("h3", {}, "Dangerous Win: " + (r.tags.dangerous_win === "NONE" ? "No" : "Yes (" + r.tags.dangerous_win.toLowerCase() + ")")),
+        h("p", { class: "small" }, DW_HELP), r.tags.dangerous_win !== "NONE" ? h("p", { class: "small strong" }, r.tags.dangerous_win_text) : null),
+      h("div", { class: "tag-card " + (r.tags.clean_loss ? "on-ok" : "") },
+        h("h3", {}, "Clean Loss: " + (r.tags.clean_loss ? "Yes" : "No")),
+        h("p", { class: "small" }, CL_HELP))),
+    r.outcome ? h("p", { class: "small muted" }, "Call outcome: " + (r.outcome.dispositions || []).map(x => x.toLowerCase().replace(/_/g, " ")).join(", ") +
+      (r.outcome.positive ? " (positive)" : " (no positive outcome)") + (r.outcome.firmness ? ", commitment " + r.outcome.firmness : "") +
+      (r.outcome.outcome_attribution ? ", driven by " + ({ AGENT_DRIVEN: "the agent", CUSTOMER_DRIVEN: "the customer", POLICY_DRIVEN: "policy", INDETERMINATE: "unclear factors" }[r.outcome.outcome_attribution] || r.outcome.outcome_attribution.toLowerCase()) : "") + ".") : null) : null;
+
+  // 6 ATTRIBUTION
+  const attribution = findings.length ? h("section", { class: "panel", "aria-labelledby": "attr-title" },
+    h("h2", { id: "attr-title" }, "Attribution"),
+    h("p", { class: "small muted" }, "Who or what each finding is attributed to, by rubric rule. The model's reasoning is not shown."),
+    h("ul", { class: "plain-list" }, findings.map(f => h("li", {}, h("strong", {}, f.name || f.code), " → " + (f.attribution ? f.attribution.label : "not attributed"),
+      f.attribution && f.attribution.secondary ? " (also " + f.attribution.secondary.toLowerCase().replace(/_/g, " ") + ")" : "")))) : null;
+
+  // 7 ACTION
+  const action = h("section", { class: "panel next-step", "aria-labelledby": "next-title" },
+    h("h2", { id: "next-title" }, "Next step"),
+    h("p", { class: "strong" }, r.action),
+    r.routing ? h("p", { class: "small muted" }, "Review queue: " + r.routing.label) : null,
+    h("div", { class: "row gap-s wrap" },
+      h("a", { class: "btn btn-primary btn-sm", href: "#/evaluate" }, "Evaluate another call"),
+      h("a", { class: "btn btn-secondary btn-sm", href: "#/library" }, "Open the call library"),
+      r.record ? h("button", { type: "button", class: "btn btn-link btn-sm", onclick: () => downloadRecord(r) }, "Download the evaluation record (JSON)") : null));
+
+  page(h("div", { class: "result-top" }, context, actions), banner, hero,
+    h("div", { class: "grid" },
+      h("div", { class: "col-main" }, findingsSec, evidence, uncertainty, outcome, attribution, action),
+      h("aside", { class: "col-side", "aria-label": "About this result" }, readingGuide(), evaluatorPanel(r), profilePanel())));
 }
-function flashTurn(n) {
+function collapsible(collapse, label, content) {
+  return collapse ? h("details", {}, h("summary", {}, label), content) : content;
+}
+function findingCard(f, i, selected) {
+  const select = () => { state.selected = i; renderResult(state.lastResult); const t = (f.evidence || []).find(e => e.turn); if (t) flashTurn(t.turn, false);
+    const b = document.querySelectorAll(".finding-select")[i]; if (b) b.focus({ preventScroll: true }); };
+  return h("div", { role: "listitem", class: "finding" + (selected ? " selected" : "") },
+    h("button", { type: "button", class: "finding-select", "aria-pressed": selected ? "true" : "false", onclick: select },
+      h("span", { class: "finding-head" }, h("span", { class: "finding-name" }, f.name || f.code),
+        chip(SEVERITY[f.severity] || f.severity, "sev-" + f.severity),
+        chip(f.is_gate ? (f.status.includes("CONFIRMED") ? "Hard rule · confirmed" : "Hard rule · suspected") : (f.status === "ASSERTED" ? "Found" : "Possible"), "plain"),
+        h("span", { class: "code" }, f.code)),
+      h("span", { class: "finding-meta small" }, [f.confidence ? f.confidence.toLowerCase() + " confidence" : null, f.attribution ? "attributed to " + f.attribution.label.toLowerCase() : null, f.dimension].filter(Boolean).join(" · ")),
+      selected ? null : h("span", { class: "small muted" }, "Show evidence")),
+    selected ? h("div", { class: "finding-body" },
+      (f.evidence || []).map(quote),
+      f.evidence_unverified ? h("p", { class: "small warn-text" }, "The cited evidence could not be verified against the transcript.") : null,
+      f.explanation ? h("details", {}, h("summary", { class: "small" }, "Rule applied"), h("p", { class: "small muted" }, f.explanation)) : null) : null);
+}
+function quote(e) {
+  if (!e.turn) return h("div", { class: "quote" }, "Transcript header: " + (e.header_field || ""));
+  return h("div", { class: "quote" }, h("button", { type: "button", class: "btn btn-link btn-xs", onclick: () => flashTurn(e.turn, true) }, "Turn " + e.turn),
+    " ", (e.role === "BORROWER" ? "Borrower" : "Agent") + ": “" + (e.quote || "") + "”");
+}
+function flashTurn(n, scroll) {
   const el = document.getElementById("turn-" + n);
   if (!el) return;
-  el.scrollIntoView({ block: "center" });
-  el.classList.add("flash"); setTimeout(() => el.classList.remove("flash"), 1200);
+  el.scrollIntoView({ block: "center", behavior: scroll ? "smooth" : "auto" });
+  el.classList.add("flash"); setTimeout(() => el.classList.remove("flash"), 1400);
 }
-
-function renderResult(r) {
-  setActive("library");
-  const main = [];
-  main.push(sourceBanner(r));
-  const vcode = r.verdict ? r.verdict.code : null;
-  const hero = h("section", { class: "panel verdict " + (vcode || "none") },
-    h("div", { class: "small muted" }, r.call.name + " · " + r.call.mode_label + " · " + r.call.n_turns + " turns"),
-    h("div", { class: "verdict-label" }, r.verdict ? r.verdict.label : "No verdict",
-      r.verdict && r.verdict.critical_status ? h("small", {}, " " + r.verdict.critical_status) : null,
-      r.verdict && r.verdict.code ? h("small", {}, " — within available evidence") : null),
-    h("div", { class: "key-finding" }, h("b", {}, r.key_finding.title),
-      r.key_finding.explanation ? h("div", { class: "small" }, r.key_finding.explanation) : null),
-    r.tags ? h("div", { class: "chips" },
-      badge(r.tags.dangerous_win === "NONE" ? "No Dangerous Win" : "Dangerous Win: " + r.tags.dangerous_win, r.tags.dangerous_win === "NONE" ? "plain" : "tag-on"),
-      badge(r.tags.clean_loss ? "Clean Loss" : "Not a Clean Loss", r.tags.clean_loss ? "tag-cl" : "plain"),
-      r.uncertainty ? badge("Evaluability: " + r.uncertainty.evaluability, "plain") : null,
-      r.routing && r.routing.tier ? badge("Routing tier " + r.routing.tier, "plain") : null) : null);
-  main.push(hero);
-
-  // Why
-  const why = h("section", { class: "panel" }, h("h3", {}, "Why"));
-  if (r.status === "NOT_RUN" || r.status === "EVALUATION_FAILED") {
-    why.append(h("div", { class: "notice " + (r.status === "EVALUATION_FAILED" ? "err" : "warn") }, r.key_finding.explanation));
-    if (r.frontend) why.append(h("p", { class: "small" }, "Front-end checks that did run: evaluability " + r.frontend.evaluability +
-      (r.frontend.reason_text ? " (" + r.frontend.reason_text + ")" : "") + "; pre-checks " +
-      Object.entries(r.frontend.prechecks).map(([k, v]) => k + " " + v).join(", ") + "."));
-  } else if (!r.findings.length) {
-    why.append(h("p", {}, "No gate fired and no finding was asserted."));
-  }
-  for (const f of r.findings || []) {
-    why.append(h("div", { class: "finding" },
-      h("div", { class: "finding-head" }, h("span", { class: "code" }, f.code), h("b", {}, f.name || ""),
-        badge(f.severity, "sev-" + f.severity), badge(f.status, "plain")),
-      h("dl", { class: "finding-meta" },
-        h("div", {}, h("dt", {}, "Dimension"), h("dd", {}, f.dimension || "-")),
-        h("div", {}, h("dt", {}, "Confidence"), h("dd", {}, f.confidence || "-")),
-        h("div", {}, h("dt", {}, "Attribution"), h("dd", {}, f.attribution ? f.attribution.label : "-")),
-        h("div", {}, h("dt", {}, "Action type"), h("dd", {}, f.action_type || "-"))),
-      f.explanation ? h("div", { class: "small muted" }, h("b", {}, "Rule: "), f.explanation) : null,
-      f.evidence_unverified ? h("div", { class: "notice warn" }, "The cited evidence could not be verified against the transcript.") : null,
-      (f.evidence || []).map(evidenceQuote)));
-  }
-  main.push(why);
-
-  // Evidence
-  const tr = h("div", { class: "transcript" }, (r.transcript || []).map(t => h("div", {
-    id: "turn-" + t.turn, class: "turn" + (t.cited ? " cited" : "") + (t.unreliable ? " unreliable" : "") },
-    h("span", { class: "n" }, t.turn), h("span", { class: "r" }, t.role), h("span", { class: "t" }, t.text))));
-  const evid = h("section", { class: "panel" }, h("h3", {}, "Evidence"),
-    h("p", { class: "small muted" }, "Highlighted turns are cited by a finding or an unverified commitment."), tr);
-  if (r.unverified_commitments && r.unverified_commitments.length) {
-    evid.append(h("h3", { style: "margin-top:14px" }, "Unverified agent commitments"),
-      h("p", { class: "small muted" }, "Things the agent promised to do. Whether they were done needs systems outside the call (EXE-03, out of scope), so they are listed, not judged."),
-      ...r.unverified_commitments.map(evidenceQuote));
-  }
-  main.push(evid);
-
-  // Confidence / uncertainty
-  if (r.uncertainty) {
-    const u = r.uncertainty;
-    main.push(h("section", { class: "panel" }, h("h3", {}, "Confidence and uncertainty"),
-      h("div", { class: "kv" },
-        h("div", {}, "Evaluability"), h("div", {}, h("b", {}, u.evaluability), u.reason_text ? " - " + u.reason_text : ""),
-        h("div", {}, "All in-scope checks decided"), h("div", {}, u.within_scope_complete ? "yes" : "no"),
-        h("div", {}, "Confidence source"), h("div", {}, u.confidence_source || "-")),
-      h("p", { class: "small muted" }, u.note),
-      h("div", { class: "grid-2" },
-        h("div", {}, h("b", {}, "INCONCLUSIVE (" + u.inconclusive.length + ")"),
-          u.inconclusive.length ? h("ul", { class: "list-plain" }, u.inconclusive.map(c => h("li", {}, h("span", { class: "mono" }, c.code), " " + (c.name || "") + " - " + c.reasons))) : h("p", { class: "small muted" }, "none")),
-        h("div", {}, h("b", {}, "OUT OF SCOPE (" + u.out_of_scope.length + ")"),
-          h("p", { class: "small muted" }, "Not judged from a call alone: they need data outside the call or a capability this input mode lacks."),
-          u.out_of_scope.length ? h("details", {}, h("summary", { class: "small" }, "Show the " + u.out_of_scope.length + " checks"),
-            h("ul", { class: "list-plain small" }, u.out_of_scope.map(c => h("li", {}, h("span", { class: "mono" }, c.code), " " + (c.name || "") + " - " + c.reason)))) : null))));
-  }
-
-  // Attribution
-  if (r.findings && r.findings.length) {
-    main.push(h("section", { class: "panel" }, h("h3", {}, "Attribution"),
-      h("p", { class: "small muted" }, "Who or what each finding is attributed to, by rubric rule. The model's reasoning is not shown."),
-      h("ul", { class: "list-plain" }, r.findings.map(f => h("li", {}, h("span", { class: "mono" }, f.code), " → ",
-        h("b", {}, f.attribution ? f.attribution.label : "-"),
-        f.attribution && f.attribution.secondary ? " (secondary: " + f.attribution.secondary + ")" : "",
-        f.attribution ? " · basis " + f.attribution.basis : "")))));
-  }
-  if (r.tags) {
-    main.push(h("section", { class: "panel" }, h("h3", {}, "Outcome tags"),
-      h("p", {}, r.tags.dangerous_win_text), h("p", {}, r.tags.clean_loss_text),
-      r.outcome ? h("p", { class: "small muted" }, "Outcome: " + (r.outcome.dispositions || []).join(", ") +
-        " · positive " + r.outcome.positive + (r.outcome.firmness ? " · firmness " + r.outcome.firmness : "") +
-        (r.outcome.outcome_attribution ? " · driven by " + r.outcome.outcome_attribution : "")) : null));
-  }
-
-  // Action / routing
-  main.push(h("section", { class: "panel" }, h("h3", {}, "Action and routing"),
-    h("p", {}, h("b", {}, r.action)),
-    r.routing ? h("p", { class: "small muted" }, r.routing.label) : null,
-    r.record ? h("button", { class: "btn btn-ghost", type: "button", onclick: () => downloadRecord(r) }, "Download evaluation record (JSON)") : null));
-
-  const side = [evaluatorPanel(r), profilePanel()];
-  view.replaceChildren(h("div", { class: "grid" }, h("div", {}, main), h("div", {}, side)));
-}
-
 function downloadRecord(r) {
   const blob = new Blob([JSON.stringify(r.record, null, 2)], { type: "application/json" });
   const a = h("a", { href: URL.createObjectURL(blob), download: r.evaluation_id + ".json" });
   document.body.append(a); a.click(); a.remove();
 }
-
+function readingGuide() {
+  return h("section", { class: "panel side", "aria-labelledby": "guide-title" }, h("h2", { id: "guide-title", class: "h3" }, "How to read a verdict"),
+    h("dl", { class: "scale" }, Object.values(VERDICT).map(x => [h("dt", {}, h("span", { class: "dot d-" + x.cls, "aria-hidden": "true" }), x.label), h("dd", {}, x.meaning)])));
+}
 function evaluatorPanel(r) {
   const e = r.evaluator, u = r.usage || {};
-  return h("section", { class: "panel" }, h("h3", {}, "Evaluator"),
-    h("div", { class: "kv" },
-      h("div", {}, "Source"), h("div", {}, badge(r.source_label, r.source)),
-      h("div", {}, "System"), h("div", {}, e.system + " " + e.system_version),
-      h("div", {}, "Provider"), h("div", {}, e.provider),
-      h("div", {}, "Model"), h("div", { class: "mono" }, e.model),
-      (e.served_model_versions && e.served_model_versions.length) ? [h("div", {}, "Served version"),
-        h("div", { class: "mono" }, e.served_model_versions.join(", "))] : null,
-      h("div", {}, "Prompt"), h("div", { class: "mono" }, e.prompt_version),
-      h("div", {}, "Engine"), h("div", { class: "mono" }, e.engine_version),
-      h("div", {}, "Temperature"), h("div", {}, String(e.temperature)),
-      h("div", {}, "Model calls"), h("div", {}, String(u.llm_calls || 0) + (u.schema_retries ? " (" + u.schema_retries + " schema retry)" : "")),
-      h("div", {}, "Tokens in / out"), h("div", {}, (u.input_tokens || 0) + " / " + (u.output_tokens || 0)),
-      h("div", {}, "Latency"), h("div", {}, (u.latency_s || 0) + " s"),
-      h("div", {}, "Evaluated at"), h("div", { class: "small" }, r.created_at)));
+  return h("details", { class: "panel side" }, h("summary", {}, "Evaluator details"),
+    h("dl", { class: "kv" },
+      h("dt", {}, "Source"), h("dd", {}, sourceChip(r.source, r.source_label)),
+      h("dt", {}, "Evaluator"), h("dd", {}, e.system + " " + e.system_version),
+      h("dt", {}, "Provider"), h("dd", {}, e.provider),
+      h("dt", {}, "Model"), h("dd", { class: "mono" }, e.model),
+      (e.served_model_versions || []).length ? [h("dt", {}, "Served version"), h("dd", { class: "mono" }, e.served_model_versions.join(", "))] : null,
+      h("dt", {}, "Prompt"), h("dd", { class: "mono" }, e.prompt_version),
+      h("dt", {}, "Rules engine"), h("dd", { class: "mono" }, e.engine_version),
+      h("dt", {}, "Model calls"), h("dd", {}, String(e.model_called ? u.llm_calls || 0 : 0)),
+      h("dt", {}, "Tokens in / out"), h("dd", {}, (u.input_tokens || 0) + " / " + (u.output_tokens || 0)),
+      h("dt", {}, "Time"), h("dd", {}, (u.latency_s || 0) + " s"),
+      h("dt", {}, "Evaluated at"), h("dd", { class: "small" }, new Date(r.created_at).toLocaleString())));
 }
-
 function profilePanel() {
   const p = state.config && state.config.profile;
   if (!p) return null;
-  return h("section", { class: "panel" }, h("h3", {}, "Evaluation profile (read-only)"),
-    h("div", { class: "kv" },
-      h("div", {}, "Profile"), h("div", { class: "mono" }, p.profile_id + " " + p.profile_version),
-      h("div", {}, "Rubric"), h("div", { class: "mono" }, p.rubric_version),
-      h("div", {}, "Contract"), h("div", { class: "mono" }, p.contract_version),
-      p.settings.map(s => [h("div", {}, s.name), h("div", {}, s.value)])),
+  return h("details", { class: "panel side" }, h("summary", {}, "Evaluation profile (rules used, read-only)"),
     h("p", { class: "small muted" }, p.disclaimer),
-    h("details", {}, h("summary", { class: "small" }, "Hard gates (" + p.gates.length + ")"),
-      h("ul", { class: "list-plain small" }, p.gates.map(g => h("li", {}, h("span", { class: "mono" }, g.id), " " + g.name)))),
-    h("p", { class: "small muted" }, p.pending_signoff.count + " profile / rubric values await human sign-off; they are never defaulted."));
+    h("dl", { class: "kv" },
+      h("dt", {}, "Profile"), h("dd", { class: "mono" }, p.profile_id + " " + p.profile_version),
+      h("dt", {}, "Rubric"), h("dd", { class: "mono" }, p.rubric_version),
+      p.settings.map(s => [h("dt", {}, s.name), h("dd", {}, s.value.replace(/_/g, " "))])),
+    h("h3", { class: "h4" }, "Hard rules (" + p.gates.length + ")"),
+    h("ul", { class: "plain-list small" }, p.gates.map(g => h("li", {}, g.name + " (" + g.id + ")"))),
+    h("p", { class: "small muted" }, p.pending_signoff.count + " profile values await human sign-off; they are never filled in by default."));
 }
 
-/* ------------------------------------------------------------------ Screen 3: Call Library */
-async function renderLibrary() {
-  setActive("library");
-  view.replaceChildren(h("p", { class: "spinner-line" }, "Loading…"));
-  let rows;
-  try { rows = await api("/api/calls"); } catch (err) { view.replaceChildren(errorNotice(err)); return; }
-  const body = rows.map(r => h("tr", { class: "click", onclick: () => { location.hash = "#/result/" + r.evaluation_id; } },
-    h("td", {}, h("b", {}, r.name)),
-    h("td", {}, r.modality),
-    h("td", { class: "v-" + (r.verdict_code || "null") }, r.verdict || (r.status === "EVALUATION_FAILED" ? "Evaluation Failed" : "No verdict")),
-    h("td", {}, r.primary_finding || "-"),
-    h("td", {}, { OK: "Evaluated", EVALUATION_FAILED: "Failed", NOT_RUN: "Not run" }[r.status] || r.status,
-      r.evaluability ? h("div", { class: "small muted" }, "Evaluability: " + r.evaluability) : null),
-    h("td", {}, badge(r.source_label, r.source))));
-  view.replaceChildren(h("section", { class: "panel" },
-    h("h1", {}, "Call library"),
-    h("p", { class: "muted small" }, "Demo calls and calls evaluated on this server since it started (kept in memory, never persisted). DEV / demo only: no production or holdout calls."),
-    h("div", { class: "table-wrap" }, h("table", {},
-      h("thead", {}, h("tr", {}, ["Call", "Modality", "Verdict", "Primary finding", "Status", "Source"].map(c => h("th", {}, c)))),
-      h("tbody", {}, body)))));
-}
-
-/* ------------------------------------------------------------------ Screen 4: Evaluator Reliability */
-async function renderReliability() {
-  setActive("reliability");
-  view.replaceChildren(h("p", { class: "spinner-line" }, "Loading…"));
-  let r;
-  try { r = await api("/api/reliability"); } catch (err) { view.replaceChildren(errorNotice(err)); return; }
-  const blocks = [
-    h("section", { class: "panel" },
-      h("div", { class: "big-label" }, r.label),
-      h("div", { class: "pending", style: "margin-top:6px" }, r.final_validation),
-      h("p", { class: "small muted" }, "These are engineering measurements on DEV drafts against the frozen design intent. They are not gold-scored, not holdout results and not reliability evidence.")),
-    h("section", { class: "panel" }, h("h3", {}, "Evaluator under measurement"),
-      h("div", { class: "kv" },
-        h("div", {}, "Evaluator"), h("div", {}, r.evaluator.system + " · version " + r.evaluator.system_version),
-        h("div", {}, "Provider / model"), h("div", {}, r.evaluator.provider + " · " + r.evaluator.model),
-        h("div", {}, "Prompt version"), h("div", { class: "mono" }, r.evaluator.prompt_version),
-        h("div", {}, "Engine"), h("div", { class: "mono" }, r.evaluator.engine_version),
-        h("div", {}, "Live on this server"), h("div", {}, r.evaluator.live_available ? "yes" : "no (GEMINI_API_KEY not set)"),
-        h("div", {}, "Gold"), h("div", {}, r.gold),
-        h("div", {}, "Holdout"), h("div", {}, r.holdout),
-        h("div", {}, "Red team"), h("div", {}, r.red_team))),
-  ];
-  if (r.status !== "OK") {
-    blocks.push(h("div", { class: "notice warn" }, r.message));
-    view.replaceChildren(...blocks); return;
+/* ------------------------------------------------------------------ Screen 3: Call library */
+async function renderLibrary(cached) {
+  setNav("library");
+  const L = state.library;
+  let rows = cached ? L.rows : null;
+  if (!rows) {
+    page(h("p", { class: "busy-line" }, h("span", { class: "spinner", "aria-hidden": "true" }), "Loading the call library…"));
+    try { rows = L.rows = await api("/api/calls"); } catch (err) { page(errorPanel(err)); return; }
   }
-  blocks.push(h("section", { class: "panel" }, h("h3", {}, "DEV benchmark"),
-    h("div", { class: "kv" },
-      h("div", {}, "Split"), h("div", {}, r.benchmark.split),
-      h("div", {}, "Calls measured"), h("div", {}, r.benchmark.items_executed + " (" + r.benchmark.items_excluded + " excluded: snippets and a tuning-only copy)"),
-      h("div", {}, "Modality"), h("div", {}, r.run.unit_mode + " · " + r.run.asr_mode),
-      h("div", {}, "Reference"), h("div", {}, r.benchmark.reference),
-      h("div", {}, "Run"), h("div", { class: "mono" }, r.run.run_id + " · commit " + r.run.git_commit + " · reps " + r.run.repetitions))));
-  const metricKeys = [["verdict_accuracy", "Verdict accuracy"], ["critical_recall", "Critical recall"],
-    ["must_not_fire_precision", "Must-not-fire precision"], ["pair_accuracy", "Pair accuracy"],
-    ["defect_precision", "Defect precision"], ["defect_recall", "Defect recall"],
-    ["evidence_faithfulness", "Evidence faithfulness"], ["attribution_agreement", "Attribution agreement"],
-    ["dangerous_win_agreement", "Dangerous Win agreement"], ["clean_loss_agreement", "Clean Loss agreement"]];
+  const verdictOf = r => r.verdict_code || (r.status === "EVALUATION_FAILED" ? "FAILED" : "NONE");
+  const filters = [["all", "All"], ["CRITICAL_FAIL", "Critical Fail"], ["NEEDS_ATTENTION", "Needs Attention"], ["MEETS_BAR", "Meets Bar"], ["NOT_EVALUABLE", "Not Evaluable"], ["NONE", "No verdict"]];
+  const count = k => rows.filter(r => k === "all" || verdictOf(r) === k || (k === "NONE" && verdictOf(r) === "FAILED")).length;
+  const shown = rows.filter(r => (L.verdict === "all" || verdictOf(r) === L.verdict || (L.verdict === "NONE" && verdictOf(r) === "FAILED"))
+    && (L.source === "all" || (L.source === "live" ? r.source === "LIVE" : r.source === "DEMO_REPLAY"))
+    && (!L.q || (r.name + " " + (r.primary_finding || "")).toLowerCase().includes(L.q.toLowerCase())));
+  const open = r => { state.origin = "library"; state.selected = 0; location.hash = "#/result/" + r.evaluation_id; };
+  const list = shown.length ? h("div", { class: "table-wrap" }, h("table", { class: "calls" },
+    h("caption", { class: "sr-only" }, "Evaluated calls. Select a row to open its result."),
+    h("thead", {}, h("tr", {}, ["Call", "Input", "Verdict", "Key finding", "Source", ""].map(c => h("th", { scope: "col" }, c)))),
+    h("tbody", {}, shown.map(r => h("tr", { class: "row-link", tabindex: "0", "aria-label": "Open the result for " + r.name,
+      onclick: () => open(r), onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(r); } } },
+      h("td", { "data-label": "Call" }, h("strong", {}, r.name), h("div", { class: "small muted" }, new Date(r.created_at).toLocaleTimeString())),
+      h("td", { "data-label": "Input" }, r.modality),
+      h("td", { "data-label": "Verdict" }, verdictPill(r)),
+      h("td", { "data-label": "Key finding" }, r.primary_finding || "-"),
+      h("td", { "data-label": "Source" }, sourceChip(r.source, r.source === "UNAVAILABLE" ? "NO VERDICT" : r.source_label)),
+      h("td", { class: "open-cell", "aria-hidden": "true" }, "Open ›"))))))
+    : h("div", { class: "empty" }, h("p", {}, "No calls match these filters."),
+      h("button", { type: "button", class: "btn btn-secondary btn-sm", onclick: () => { Object.assign(L, { verdict: "all", source: "all", q: "" }); renderLibrary(true); } }, "Clear filters"));
+  const search = h("input", { type: "search", id: "lib-search", value: L.q, placeholder: "Search by call name or finding",
+    oninput: (e) => { L.q = e.target.value; renderLibrary(true).then(() => focusEnd("lib-search")); } });
+  page(
+    h("header", { class: "page-head" }, h("h1", {}, "Call library"),
+      h("p", { class: "lead" }, "Every call evaluated on this server since it started, plus the five demo calls. Open a call to review its verdict and evidence."),
+      h("p", { class: "small muted" }, "Kept in memory while the server runs; fictional demo and development calls only.")),
+    h("section", { class: "panel" },
+      h("div", { class: "filters" },
+        h("div", { class: "filter-group", role: "group", "aria-label": "Filter by verdict" }, filters.map(([k, label]) =>
+          h("button", { type: "button", class: "filter" + (L.verdict === k ? " on" : ""), "aria-pressed": L.verdict === k ? "true" : "false",
+            onclick: () => { L.verdict = k; renderLibrary(true); } }, label + " (" + count(k) + ")"))),
+        h("div", { class: "filter-group", role: "group", "aria-label": "Filter by source" }, [["all", "All sources"], ["live", "Live"], ["demo", "Demo"]].map(([k, label]) =>
+          h("button", { type: "button", class: "filter" + (L.source === k ? " on" : ""), "aria-pressed": L.source === k ? "true" : "false",
+            onclick: () => { L.source = k; renderLibrary(true); } }, label))),
+        h("label", { class: "search" }, h("span", { class: "sr-only" }, "Search calls"), search)),
+      list,
+      h("div", { class: "row gap-s mt" }, h("a", { class: "btn btn-primary btn-sm", href: "#/evaluate" }, "Evaluate a new call"))));
+}
+function verdictPill(r) {
+  const v = VERDICT[r.verdict_code];
+  if (v) return h("span", { class: "pill p-" + v.cls }, v.label);
+  return h("span", { class: "pill p-ne" }, r.status === "EVALUATION_FAILED" ? "Evaluation failed" : "No verdict");
+}
+
+/* ------------------------------------------------------------------ Screen 4: Evaluator reliability */
+async function renderReliability() {
+  setNav("reliability");
+  page(h("p", { class: "busy-line" }, h("span", { class: "spinner", "aria-hidden": "true" }), "Loading reliability measurements…"));
+  let r;
+  try { r = await api("/api/reliability"); } catch (err) { page(errorPanel(err)); return; }
+  const head = h("header", { class: "page-head" }, h("h1", {}, "Evaluator reliability"),
+    h("p", { class: "lead" }, "How closely the evaluator's judgements match the intended answers: what has been measured during development, and what final validation still requires."));
+  if (r.status !== "OK") { page(head, notice("warn", r.message, [])); return; }
   const names = Object.keys(r.systems);
-  const rows = metricKeys.map(([k, label]) => h("tr", {}, h("td", {}, label), names.map(n => {
-    const s = r.systems[n];
-    return h("td", {}, s.status !== "EXECUTED" ? "-" : pct((s.metrics || {})[k]));
-  })));
-  rows.push(h("tr", {}, h("td", {}, "Abstention"), names.map(n => {
-    const a = r.systems[n].abstention;
-    return h("td", {}, a ? "EF " + a.evaluation_failed + "/" + a.records + " · NE " + a.not_evaluable + " · PARTIAL " + a.partial : "-");
-  })));
-  rows.push(h("tr", {}, h("td", {}, "Status"), names.map(n => {
-    const s = r.systems[n];
-    return h("td", {}, s.status === "EXECUTED" ? "EXECUTED" : h("span", { class: "pending" }, "NOT EXECUTED"),
-      s.reason ? h("div", { class: "small muted" }, s.reason) : null);
-  })));
-  blocks.push(h("section", { class: "panel" }, h("h3", {}, "K0 / A / A+ / B on DEV"),
-    h("div", { class: "table-wrap" }, h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, "Metric"), names.map(n => h("th", {}, n)))),
-      h("tbody", {}, rows)))));
-  const cs = r.reproducibility;
-  blocks.push(h("section", { class: "panel" }, h("h3", {}, "Reproducibility"),
-    cs ? h("p", {}, "Run " + cs.run_id + ": " + cs.repetitions + " repetitions under the same settings; overall stable: " + cs.stable + ".")
-       : h("p", { class: "muted" }, "Not run."),
-    h("p", { class: "small muted" }, "Front end: evaluability agreement " + pct(r.frontend.evaluability_agreement) + " · G7 agreement " + pct(r.frontend.g7_agreement) + ".")));
-  blocks.push(h("section", { class: "panel" }, h("h3", {}, "UNMEASURED"),
-    r.unmeasured.length ? h("ul", { class: "list-plain" }, r.unmeasured.map(u => h("li", {}, u))) : h("p", { class: "muted" }, "none"),
-    h("p", { class: "small muted" }, "A metric is UNMEASURED when the run gives it no support. It is never filled in.")));
-  view.replaceChildren(...blocks);
+  const executed = names.filter(n => r.systems[n].status === "EXECUTED");
+  const notRun = names.filter(n => r.systems[n].status !== "EXECUTED");
+  const measuredLines = executed.map(n => {
+    const m = r.systems[n].metrics || {};
+    return h("li", {}, h("strong", {}, SYSTEM_NAMES[n] + " (" + n + "): "), "verdict matched on " + pct(m.verdict_accuracy) + " of calls; caught " + pct(m.critical_recall) + " of intended hard-rule failures.");
+  });
+  const summary = h("div", { class: "rel-grid" },
+    h("section", { class: "panel rel-card", "aria-labelledby": "dev-title" },
+      h("div", { class: "section-head" }, h("h2", { id: "dev-title" }, "Development measurement"), chip("DEV ENGINEERING MEASUREMENT", "warn")),
+      h("h3", {}, "What was tested"),
+      h("p", { class: "small" }, r.benchmark.items_executed + " fictional development calls (draft transcripts awaiting human review), evaluated from transcripts. Each result is compared with the intended outcome in the call's design, not with final gold labels."),
+      h("h3", {}, "Measured so far"),
+      h("ul", { class: "plain-list small" }, measuredLines,
+        notRun.length ? h("li", {}, h("strong", {}, notRun.map(n => SYSTEM_NAMES[n] ? n : n).join(", ") + ": "), "not measured yet. The development run with the live model has not been executed; the model-based numbers stay empty until it is (see Technical details).") : null,
+        r.reproducibility ? h("li", {}, h("strong", {}, "Repeatability: "), r.reproducibility.repetitions + " identical runs, results " + (r.reproducibility.stable ? "stable." : "not stable.")) : null)),
+    h("section", { class: "panel rel-card pending-card", "aria-labelledby": "final-title" },
+      h("div", { class: "section-head" }, h("h2", { id: "final-title" }, "Final reliability validation"), chip("PENDING", "crit")),
+      h("p", { class: "small" }, "Final validation proves the evaluator works on calls it has never seen. It needs:"),
+      h("ul", { class: "check-list small" },
+        h("li", {}, "Transcripts reviewed by a native Hindi / Hinglish speaker"),
+        h("li", {}, "Final gold labels (the agreed correct answers)"),
+        h("li", {}, "A holdout run on unseen calls: " + r.holdout),
+        h("li", {}, "A red-team run on adversarial calls: " + r.red_team)),
+      h("p", { class: "small strong" }, "Until these are complete, no number on this page is evidence that the evaluator works.")));
+  const table = h("section", { class: "panel", "aria-labelledby": "cmp-title" },
+    h("h2", { id: "cmp-title" }, "Evaluators compared on the development calls"),
+    h("p", { class: "small muted" }, "The app uses B. The others are comparison points. UNMEASURED means the run gives the number no support; it is never filled in."),
+    h("div", { class: "table-wrap" }, h("table", { class: "metrics" },
+      h("thead", {}, h("tr", {}, h("th", { scope: "col" }, "Measure"), names.map(n => h("th", { scope: "col" }, n, h("div", { class: "small muted th-sub" }, SYSTEM_NAMES[n] || ""))))),
+      h("tbody", {},
+        h("tr", {}, h("th", { scope: "row" }, "Status"), names.map(n => h("td", {}, r.systems[n].status === "EXECUTED" ? chip("Measured", "ok") : chip("Not run yet", "ne")))),
+        METRICS.map(([k, label, help]) => h("tr", {}, h("th", { scope: "row" }, label, h("div", { class: "small muted" }, help)),
+          names.map(n => h("td", {}, r.systems[n].status === "EXECUTED" ? pct((r.systems[n].metrics || {})[k]) : "–")))),
+        h("tr", {}, h("th", { scope: "row" }, "Failures and abstentions", h("div", { class: "small muted" }, "Evaluation failures · not evaluable · partially evaluable")),
+          names.map(n => { const a = r.systems[n].abstention; return h("td", {}, a ? a.evaluation_failed + " · " + a.not_evaluable + " · " + a.partial : "–"); }))))));
+  const unmeasured = h("section", { class: "panel", "aria-labelledby": "unm-title" }, h("h2", { id: "unm-title" }, "Not measurable in this run"),
+    r.unmeasured.length ? h("ul", { class: "plain-list small" }, r.unmeasured.map(x => h("li", {}, x))) : h("p", { class: "small" }, "None."));
+  const tech = h("details", { class: "panel" }, h("summary", {}, "Technical details"),
+    h("dl", { class: "kv" },
+      h("dt", {}, "Label"), h("dd", {}, r.label),
+      h("dt", {}, "Evaluator in the app"), h("dd", {}, r.evaluator.system + " · " + r.evaluator.system_version),
+      h("dt", {}, "Provider / model"), h("dd", { class: "mono" }, r.evaluator.provider + " · " + r.evaluator.model),
+      h("dt", {}, "Prompt / engine"), h("dd", { class: "mono" }, r.evaluator.prompt_version + " · " + r.evaluator.engine_version),
+      h("dt", {}, "Live on this server"), h("dd", {}, r.evaluator.live_available ? "yes" : "no"),
+      h("dt", {}, "Run"), h("dd", { class: "mono" }, r.run.run_id + " · commit " + r.run.git_commit + " · " + r.run.repetitions + " repetition(s)"),
+      h("dt", {}, "Input"), h("dd", {}, r.run.unit_mode + " · " + r.run.asr_mode),
+      h("dt", {}, "Reference"), h("dd", {}, r.benchmark.reference),
+      h("dt", {}, "Excluded"), h("dd", {}, r.benchmark.items_excluded + " items (component snippets and a tuning-only copy)"),
+      h("dt", {}, "Pre-checks"), h("dd", {}, "evaluability agreement " + pct(r.frontend.evaluability_agreement) + " · calling-hours agreement " + pct(r.frontend.g7_agreement)),
+      h("dt", {}, "Gold"), h("dd", {}, r.gold),
+      notRun.length ? [h("dt", {}, "Not executed"), h("dd", {}, notRun.join(", ") + ": " + (r.systems[notRun[0]].reason || ""))] : null));
+  page(head, summary, table, unmeasured, tech);
 }
 
 /* ------------------------------------------------------------------ routing */
 async function route() {
   const hash = location.hash || "#/evaluate";
   const parts = hash.slice(2).split("/");
-  view.focus({ preventScroll: true });
+  window.scrollTo(0, 0);
   if (parts[0] === "result" && parts[1]) {
-    if (state.lastResult && state.lastResult.evaluation_id === parts[1]) { renderResult(state.lastResult); return; }
-    try { renderResult(await api("/api/calls/" + encodeURIComponent(parts[1]))); }
-    catch (err) { view.replaceChildren(errorNotice(err)); }
-    return;
-  }
-  if (parts[0] === "library") return renderLibrary();
-  if (parts[0] === "reliability") return renderReliability();
-  return renderEvaluate();
+    if (!(state.lastResult && state.lastResult.evaluation_id === parts[1])) {
+      try { state.lastResult = await api("/api/calls/" + encodeURIComponent(parts[1])); state.selected = 0; }
+      catch (err) { setNav("library"); page(errorPanel(err), h("a", { class: "btn btn-secondary btn-sm", href: "#/library" }, "Open the call library")); return; }
+      if (state.origin !== "evaluate") state.origin = "library";
+    }
+    renderResult(state.lastResult);
+  } else if (parts[0] === "library") await renderLibrary();
+  else if (parts[0] === "reliability") await renderReliability();
+  else renderEvaluate();
+  if (!state.busy) view.focus({ preventScroll: true });
 }
 
 async function boot() {
+  document.getElementById("help-toggle").addEventListener("click", () => toggleHelp());
   try {
     const [cfg, demos] = await Promise.all([api("/api/config"), api("/api/demo-calls")]);
     state.config = cfg; state.demos = demos;
     const ls = document.getElementById("live-status");
-    ls.textContent = cfg.live_available ? "LIVE EVALUATION: " + cfg.evaluator.model_id : "DEMO / REPLAY only (live evaluator not configured)";
+    ls.textContent = cfg.live_available ? "Live evaluation on · " + cfg.evaluator.model_id : "Demo mode · live evaluation off";
+    ls.title = cfg.live_available ? "Calls you submit are judged live by the model." : "Demo calls show recorded evaluations; your own calls get the automatic pre-checks only.";
     ls.classList.toggle("on", !!cfg.live_available);
-    document.getElementById("footer-version").textContent = "v" + cfg.product.version + " · evaluator B " + cfg.evaluator.system_version + " · " + cfg.evaluator.prompt_version;
-  } catch (err) { view.replaceChildren(errorNotice(err)); return; }
-  window.addEventListener("hashchange", route);
+    document.getElementById("footer-version").textContent = "v" + cfg.product.version + " · evaluator " + cfg.evaluator.system + " " + cfg.evaluator.system_version;
+  } catch (err) { page(errorPanel(err)); return; }
+  if (!store("ignosis.help.dismissed")) toggleHelp(true);
+  window.addEventListener("hashchange", () => { if (!location.hash.startsWith("#/result/")) state.origin = location.hash.startsWith("#/library") ? "library" : "evaluate"; route(); });
   route();
 }
 boot();

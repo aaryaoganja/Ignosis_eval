@@ -24,6 +24,7 @@ bench/
 tests/
 scripts/
 *.wav
+!src/ignosis_eval/app/static/demo/*.wav
 *.mp3
 *.m4a
 *.flac

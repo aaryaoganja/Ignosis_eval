@@ -387,7 +387,18 @@ H (a result would be wrong or unsafe), M (a metric or process would be incompara
       benchmark content, gold or a measurement, and an edited demo transcript is never replayed.
     - **Library.** In memory, capped at 200 entries, and reset on restart.
     - **Secrets.** The browser talks only to the backend, and no response carries the key.
-    Tests: `test_app.py`, `test_secrets.py`.
+    - **Product UX pass (owner request 2026-09-29).** Presentation only; no change to B, the rules, contracts or
+      metrics.
+      - Journey stepper (choose → evaluate → review → explore), a dismissible *How it works* guide, demo calls first
+        on the Evaluate screen, and the result framed as step 3 of the same journey.
+      - The result follows verdict → why → findings → evidence → uncertainty → outcome → attribution → action.
+        Dangerous Win and Clean Loss are explained in place. A record that is not OK (no key, not run, failed)
+        shows what ran and never a verdict or a findings section.
+      - The reliability screen separates the development measurement from the pending final validation.
+      - A fictional sample recording for `demo-settlement` (espeak-ng synthetic voices, `scripts/make_demo_audio.py`,
+        sha256 pinned in `demo_calls.json`). The app recognises it by sha256 and links it on the result for playback.
+        The bytes are still never evaluated as audio: A+T evaluates the transcript, and audio-only stays refused (B-06).
+    Tests: `test_app.py` (incl. `test_sample_recording_is_fictional_synthetic_and_linked`), `test_secrets.py`.
 
 ## 4. Open questions / inconsistencies found in the spec (for the spec owner)
 
