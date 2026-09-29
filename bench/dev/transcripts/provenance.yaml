@@ -2,6 +2,8 @@
 # mirror the case card `authoring` block, CC009). Not gold, not a case card, not evaluator input.
 schema: dev_transcript_provenance/1.0
 status: draft
+human_review_pending: true
+review_checklist: REVIEW-CHECKLIST.md
 design: bench-a1 design v1.0 (bench/public; docs/freeze/FREEZE-public.md)
 owner_authorization: '2026-09-29: the benchmark owner instructed the implementing agent to author the complete DEV transcript
   set with Claude assistance; the evaluator model family is pinned separately before the evaluator and gold freeze'
@@ -20,6 +22,7 @@ items:
   llm_family: anthropic-claude
   reviewers: []
   native_hand_edit: false
+  human_review_pending: true
   qc_fixes: []
 - item_id: M-01
   author_id: owner-handoff-batch-1
@@ -29,6 +32,7 @@ items:
   llm_family: anthropic-claude
   reviewers: []
   native_hand_edit: false
+  human_review_pending: true
   qc_fixes:
   - 'turn 10: deleted the sentence ''Poora toh mushkil lagta hai.'' (owner fix 1: it read as an inability statement beyond
     the card''s hedged partial attempt)'
@@ -40,6 +44,7 @@ items:
   llm_family: anthropic-claude
   reviewers: []
   native_hand_edit: false
+  human_review_pending: true
   qc_fixes: []
 - item_id: C-01
   author_id: owner-handoff-batch-1
@@ -49,6 +54,7 @@ items:
   llm_family: anthropic-claude
   reviewers: []
   native_hand_edit: false
+  human_review_pending: true
   qc_fixes: []
 - item_id: K-07
   author_id: owner-handoff-batch-1
@@ -58,6 +64,7 @@ items:
   llm_family: anthropic-claude
   reviewers: []
   native_hand_edit: false
+  human_review_pending: true
   qc_fixes: []
 - item_id: C-08
   author_id: owner-handoff-batch-1
@@ -67,6 +74,7 @@ items:
   llm_family: anthropic-claude
   reviewers: []
   native_hand_edit: false
+  human_review_pending: true
   qc_fixes:
   - 'turns 5-8: 23,200 -> 23,220 (owner fix 2: 60 percent of 38,700 is 23,220)'
 - item_id: C-03
@@ -77,6 +85,7 @@ items:
   llm_family: anthropic-claude
   reviewers: []
   native_hand_edit: false
+  human_review_pending: true
   qc_fixes: []
 - item_id: C-05
   author_id: owner-handoff-batch-1
@@ -86,6 +95,7 @@ items:
   llm_family: anthropic-claude
   reviewers: []
   native_hand_edit: false
+  human_review_pending: true
   qc_fixes: []
 - item_id: C-10
   author_id: owner-handoff-batch-1
@@ -95,6 +105,7 @@ items:
   llm_family: anthropic-claude
   reviewers: []
   native_hand_edit: false
+  human_review_pending: true
   qc_fixes: []
 - item_id: C-12
   author_id: owner-handoff-batch-1
@@ -104,6 +115,7 @@ items:
   llm_family: anthropic-claude
   reviewers: []
   native_hand_edit: false
+  human_review_pending: true
   qc_fixes:
   - 'turn 3: interruption after the amounts, ''Toh sir—'' (owner fix 3: realism constraint 2)'
 - item_id: MD-G1
@@ -114,6 +126,7 @@ items:
   llm_family: anthropic-claude
   reviewers: []
   native_hand_edit: false
+  human_review_pending: true
   authoring_notes:
   - B6 is 'will check, and look into the payment' with no commitment, so the designed outcome stays ACKNOWLEDGED (no date-less
     promise to pay)
@@ -126,6 +139,7 @@ items:
   llm_family: anthropic-claude
   reviewers: []
   native_hand_edit: false
+  human_review_pending: true
   authoring_notes:
   - the network glitch is carried by the words only (no reliability marker, so no span is unreliable); no situational constraint
     and no inability in B6
@@ -138,6 +152,7 @@ items:
   llm_family: anthropic-claude
   reviewers: []
   native_hand_edit: false
+  human_review_pending: true
   authoring_notes:
   - the evening callback is 18:30, inside the calling window
   - a closing borrower turn after B9 confirms the callback time
@@ -149,6 +164,7 @@ items:
   llm_family: anthropic-claude
   reviewers: []
   native_hand_edit: false
+  human_review_pending: true
   authoring_notes:
   - late fee 590 + EMI 6,800 = total 7,390; the commitment and its read-back carry no amount
 - item_id: MD-G5
@@ -159,6 +175,7 @@ items:
   llm_family: anthropic-claude
   reviewers: []
   native_hand_edit: false
+  human_review_pending: true
   authoring_notes:
   - the call ends on B5 (no transfer, callback or collection after the request)
 - item_id: MD-C1
@@ -169,6 +186,7 @@ items:
   llm_family: anthropic-claude
   reviewers: []
   native_hand_edit: false
+  human_review_pending: true
   authoring_notes:
   - B6 names the topic (charges) without asking the agent a question
   - after B8 the agent reads back the callback and the borrower confirms
@@ -180,6 +198,7 @@ items:
   llm_family: anthropic-claude
   reviewers: []
   native_hand_edit: false
+  human_review_pending: true
   authoring_notes:
   - B5 offers a timed callback inside the calling window and a human contact number; no collection content after the cue
   - a closing borrower turn after B7 confirms the callback
@@ -191,6 +210,7 @@ items:
   llm_family: anthropic-claude
   reviewers: []
   native_hand_edit: false
+  human_review_pending: true
   authoring_notes:
   - the relative is labeled BORROWER (SC-03 / rubric event_common.turn)
   - a short agent turn between B2 and B3 asks for the borrower again, so the third-party signal and the death cue each have
@@ -204,6 +224,7 @@ items:
   llm_family: anthropic-claude
   reviewers: []
   native_hand_edit: false
+  human_review_pending: true
   snippet_type: amount
   reference_date: '2026-09-29'
   authoring_notes:
@@ -216,6 +237,7 @@ items:
   llm_family: anthropic-claude
   reviewers: []
   native_hand_edit: false
+  human_review_pending: true
   snippet_type: amount
   reference_date: '2026-09-29'
   authoring_notes:
@@ -228,6 +250,7 @@ items:
   llm_family: anthropic-claude
   reviewers: []
   native_hand_edit: false
+  human_review_pending: true
   snippet_type: date
   reference_date: '2026-09-26'
   authoring_notes:
@@ -240,6 +263,7 @@ items:
   llm_family: anthropic-claude
   reviewers: []
   native_hand_edit: false
+  human_review_pending: true
   snippet_type: date
   reference_date: '2026-09-29'
   authoring_notes:
@@ -252,6 +276,7 @@ items:
   llm_family: anthropic-claude
   reviewers: []
   native_hand_edit: false
+  human_review_pending: true
   snippet_type: polarity
   reference_date: '2026-09-29'
   authoring_notes:
@@ -264,6 +289,7 @@ items:
   llm_family: anthropic-claude
   reviewers: []
   native_hand_edit: false
+  human_review_pending: true
   snippet_type: polarity
   reference_date: '2026-09-29'
   authoring_notes:
@@ -278,6 +304,7 @@ items:
   llm_family: anthropic-claude
   reviewers: []
   native_hand_edit: false
+  human_review_pending: true
   authoring_notes:
   - no content is authored for this item; its audio is G-02@A degraded to SNR 5 dB by script after B-06 / B-09 (audio is
     git-ignored)

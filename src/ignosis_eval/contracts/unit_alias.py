@@ -54,9 +54,14 @@ def payload_violations(text: str, *, free_text: bool = True, own_tokens: Iterabl
     out += [f"benchmark label {m.group(0)!r}" for m in LABEL_TOKEN.finditer(text)]
     if free_text:
         out += [f"check id {m.group(0)!r}" for m in CHECK_ID_TOKEN.finditer(text)]
-    low = text.lower()
-    out += [f"source identifier {t!r}" for t in own_tokens if t and t.lower() in low]
+    out += [f"source identifier {t!r}" for t in own_tokens if t and own_token(t).search(text)]
     return out
+
+
+def own_token(token: str) -> re.Pattern[str]:
+    """A unit's own identifier as a whole token (any case): `C-01` matches "c-01" and "C-01.txt" but not the
+    front end's step name "DC-01-transcript-markers" (the same boundaries as the item-id pattern)."""
+    return re.compile(_B + re.escape(token) + _E, re.IGNORECASE)
 
 
 def evaluator_payload(ni_json: dict) -> tuple[list[str], list[str]]:
@@ -85,5 +90,5 @@ def strings_of(obj: object) -> Iterable[str]:
 
 
 __all__ = ["BENCHMARK_LABELS", "CHECK_ID_TOKEN", "ITEM_ID_PREFIX_PATTERN", "ITEM_ID_TOKEN", "LABEL_TOKEN",
-           "PAIR_ID_TOKEN", "UNIT_ALIAS_PATTERN", "evaluator_payload", "new_unit_alias", "payload_violations",
-           "strings_of"]
+           "PAIR_ID_TOKEN", "UNIT_ALIAS_PATTERN", "evaluator_payload", "new_unit_alias", "own_token",
+           "payload_violations", "strings_of"]

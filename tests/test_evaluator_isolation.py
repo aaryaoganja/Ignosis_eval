@@ -145,19 +145,22 @@ def test_case_ids_cannot_leak_into_prompts(tmp_path):
     ni = build_normalized_input(*_item(tmp_path, "C-08"), UnitMode.TRANSCRIPT, SP)
     F.write_replay(tmp_path / "replay", "a_evaluate", ni, [F.body_json(F.record())])
     F.write_replay(tmp_path / "replay", "b_extract", ni, [json.dumps({"events": []})])
+    F.write_replay(tmp_path / "replay", "b_judge", ni, [json.dumps({"answers": [  # no org statement -> J-G8P
+        {"judgment": "J-G8P", "target": "caller_identifies_org", "answer": "PRESENT", "cited_turns": [1]}]})])
     client = ReplayLLMClient(tmp_path / "replay")
     ctx_a = EvaluationContext(repetition=1, spec=SP, trace=TraceSink())
     rec = EvaluatorA(client, SP, sleep=NO_SLEEP).evaluate(ni, ctx_a)
     ctx_b = EvaluationContext(repetition=1, spec=SP, trace=TraceSink())
-    with pytest.raises(NotImplementedError):  # B's rule engine is the next phase; the extraction call still ran
-        EvaluatorB(client, SP, sleep=NO_SLEEP).evaluate(ni, ctx_b)
+    rec_b = EvaluatorB(client, SP, sleep=NO_SLEEP).evaluate(ni, ctx_b)
+    assert rec_b.record_status.value == "OK"
     requests = ctx_a.trace.requests + ctx_b.trace.requests
-    assert {r["task"] for r in requests} == {"a_evaluate", "b_extract"}
+    assert {r["task"] for r in requests} == {"a_evaluate", "b_extract", "b_judge"}
     prompts = json.dumps(requests)
     assert _leaks(prompts, _forbidden(tmp_path)) == []
     assert "stub agent line alpha" in prompts  # the prompt does carry the (synthetic) content
     aplus, log = APlusDeriver(SP).derive(rec, a_final_raw_output(ctx_a.trace.responses), ni, SP)
-    outputs = json.dumps([rec.to_json_dict(), aplus.to_json_dict(), log.entries])
+    outputs = json.dumps([rec.to_json_dict(), aplus.to_json_dict(), log.entries, rec_b.to_json_dict(),
+                          ctx_b.trace.derivation])
     assert _leaks(outputs, _forbidden(tmp_path)) == []
 
 

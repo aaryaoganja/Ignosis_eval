@@ -7,7 +7,7 @@ from pathlib import Path
 from ignosis_eval.contracts.enums import System
 from ignosis_eval.evaluators.judgement import RuleEngine
 from ignosis_eval.evaluators.k0 import KeywordFloorK0
-from ignosis_eval.evaluators.llm import AnthropicLLMClient, LLMClient
+from ignosis_eval.evaluators.llm import AnthropicLLMClient, LLMClient, OpenAIChatClient
 from ignosis_eval.evaluators.mock_llm import ReplayLLMClient
 from ignosis_eval.evaluators.pipelines import APlusDeriver, EvaluatorA, EvaluatorB
 from ignosis_eval.spec.loader import Spec
@@ -20,6 +20,8 @@ def build_llm_client(backend: str, *, replay_dir: Path | None = None, model_id: 
         return ReplayLLMClient(replay_dir, model_id=model_id or "mock-replay/0")
     if backend == "anthropic":
         return AnthropicLLMClient(model_id or "PENDING-B-05")
+    if backend == "openai":
+        return OpenAIChatClient(model_id)
     raise ValueError(f"unknown LLM backend {backend!r}")
 
 

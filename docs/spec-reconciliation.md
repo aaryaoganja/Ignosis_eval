@@ -23,7 +23,7 @@ appears verbatim in §0). The mapping of each decision to the implementation:
 
 | ID | Decision (short) | Implementation | Tests |
 |---|---|---|---|
-| SC-01 | Terminal trigger: a non_response check (except G5) with no AGENT turn after its trigger is INCONCLUSIVE, no trigger, `NO_AGENT_TURN_AFTER_TRIGGER` | `ReasonCode.NO_AGENT_TURN_AFTER_TRIGGER`; `engine/rules.py::terminal_trigger` / `terminal_trigger_applies` (scope read from each check's rubric `attribution_class`). No implemented rule is non_response except G5, so the helper is a library for B's rule engine (next phase), like the other rules | `test_rules.py` (SC-01 block), `test_spec_consistency.py::test_sc01_*` |
+| SC-01 | Terminal trigger: a non_response check (except G5) with no AGENT turn after its trigger is INCONCLUSIVE, no trigger, `NO_AGENT_TURN_AFTER_TRIGGER` | `ReasonCode.NO_AGENT_TURN_AFTER_TRIGGER`; `engine/rules.py::terminal_trigger` / `terminal_trigger_applies` (scope read from each check's rubric `attribution_class`). B's rule engine (`engine/code_rules.py`) applies it to every non_response check except G5 | `test_rules.py` (SC-01 block), `test_spec_consistency.py::test_sc01_*` |
 | SC-02 | Unreliable audio cannot contradict a reliable transcript in AUDIO_TRANSCRIPT | Not executable yet: DC-DIV needs the normalizer and DC-01-audio needs the PENDING ASR thresholds (B-06/B-11). The front end records DC-DIV as `not_implemented` and DC-01-audio as `pending_signoff` in every manifest. Nothing in the code lets audio override a transcript | `test_spec_consistency.py::test_sc02_reliability_precondition_present` |
 | SC-03 | Evaluability order: DC-02 before the no-BORROWER ROLE_UNCERTAIN clause | `pipeline/prechecks.py::run_frontend` applies `rubric.yaml › evaluability_order` first-match: DC-00 (mapping < 0.85 or no AGENT turn) → ROLE_UNCERTAIN; else no BORROWER turn → DC-02 NON_CONVERSATIONAL; the no-BORROWER clause is then unreachable, as specified | `test_frontend.py::test_sc03_evaluability_order`, `test_non_conversational_call_still_runs_prechecks` |
 | SC-04 | Must-not-fire controls may have gold PASS or NA | `metrics/compute.py::sd08` admits gold ∈ {PASS, NA}; PD016 is now an error only outside {PASS, NA} | `test_metrics.py::test_sd08_control_target_with_gold_na_counts`, `test_public_dev.py::test_control_target*` |
@@ -80,7 +80,7 @@ H (a result would be wrong or unsafe), M (a metric or process would be incompara
 | **Evaluability and pre-checks** (AJ-04, AJ-05) | Heuristic evaluability (no content → inconclusive, no collections keyword → out_of_scope). | §9: reason codes; pre-checks G1c, G7, G8/G9 string parts, POL-01b before evaluability; call-level NOT_EVALUABLE; truncation only from the header or a marker; missing evidence never becomes PASS. | **Partly done.** `pipeline/prechecks.py`, in the SC-03 `evaluability_order`: DC-00 call-level role gate (`role_confidence_min` on the call-level mapping confidence, or no AGENT turn → ROLE_UNCERTAIN; AJ-05), then DC-02 for a call with no BORROWER turn → NON_CONVERSATIONAL, UNKNOWN turns span-unreliable, G7 (calling window, IST), G8/G9 (NA under the default profile), POL-01b, TRANSCRIPT_TRUNCATED from the header. **Pending sign-off:** DC-01-audio, DC-02, DC-03/G1c, DC-LANG (their thresholds and lexicons are PENDING). PARTIAL is derived by the verdict engine per V7 (AJ-04). **Pending sign-off:** the turn-level `diarization_turn_min_confidence` (B-11, AJ-05). **Not implemented:** the in-text truncation marker (no syntax in §2.3), DC-DIV. Every step's status is recorded in the normalized input and the run manifest. | M (pending by design) |
 | **LLM protocol** | Mock backend "mock"; a retry policy; `model_id` and temperature recorded. | P-3: one pinned snapshot (no "latest"), temperature 0, seed if supported, transport retries ≤ 3 not counted, 1 schema retry → EVALUATION_FAILED, structured output, consistency re-run off, English free text. | **Done.** `evaluators/llm.py` (`RecordingClient`, `structured_call`), `SystemConfig` rules. The real client still raises (B-05). The mock replays recorded fixtures only. | M (B-05 pending) |
 | **K0** | `heuristics.py`: regex lexicons written by the implementer against the test fixtures (e.g. `\bpolice\b`, `besharam`), with a contact-hours window. | §11: the keyword floor uses only the profile lexicon `terms`; deterministic; never tuned; `seed_candidates_unreviewed` are never used (§19). | **Done.** `evaluators/k0.py` uses `profile.lexicons.*.terms` only; all terms are empty until B-04, so K0 fires only the deterministic pre-checks. `heuristics.py` is unreferenced (§6). | H → resolved |
-| **Evaluator B** (AJ-03, AJ-07) | Per-gate LLM calls (`b_gate_check`, `b_defect_scan`, `b_outcome`). | §11: extraction (LLM #1) → verifier → rule engine → batched judgments (LLM #2, only if triggered) → attribution → verdict. `rubric.yaml › extraction_schema` (AJ-07). | **Interface done** (`EvaluatorB`, `JudgmentRequest/Answer`, `RuleEngine` ABC). The typed extraction contract follows the 1.2 `extraction_schema` (`contracts/extraction.py`, `extraction/2.0.0`, `schemas/extraction.schema.json`), and so does its evidence verifier (`engine/extraction.py`: the turn speaker must match the event side; invalid `responds_to` ids removed and logged). The adjudicated deterministic rules are implemented and tested as a library (`engine/rules.py`: G1, G2a/G2b, G3 prohibited categories, G4, the G5 decision table with the 1.2 honoring events + RES-06, ACC-03u, ACC-05 + repair, TRT-06, the SC-01 terminal-trigger rule). The full rule engine (the remaining codes, judgments, wiring as B's default) is the next build phase: `NotImplementedRuleEngine` is still B's default and fails explicitly. New stub prompts `b_extraction.md` and `b_judgments.md` (unoptimized). | M (next phase) |
+| **Evaluator B** (AJ-03, AJ-07) | Per-gate LLM calls (`b_gate_check`, `b_defect_scan`, `b_outcome`). | §11: extraction (LLM #1) → verifier → rule engine → batched judgments (LLM #2, only if triggered) → attribution → verdict. `rubric.yaml › extraction_schema` (AJ-07). | **Interface done** (`EvaluatorB`, `JudgmentRequest/Answer`, `RuleEngine` ABC). The typed extraction contract follows the 1.2 `extraction_schema` (`contracts/extraction.py`, `extraction/2.0.0`, `schemas/extraction.schema.json`), and so does its evidence verifier (`engine/extraction.py`: the turn speaker must match the event side; invalid `responds_to` ids removed and logged). The adjudicated deterministic rules are implemented and tested as a library (`engine/rules.py`: G1, G2a/G2b, G3 prohibited categories, G4, the G5 decision table with the 1.2 honoring events + RES-06, ACC-03u, ACC-05 + repair, TRT-06, the SC-01 terminal-trigger rule). The full rule engine is B's default: `SpecRuleEngine` (`evaluators/judgement.py`) over `engine/code_rules.py` covers every MVP gate and code, asks the rubric's judgments in one batched call, and integrates the answers (§3.46). The stub prompts carry the generated output contracts (template 0.4.0). | Done (provider pending, B-05) |
 | **Units, ordering, repetitions** | Optional item shuffle; per-rep seeds; one evaluator per run. | P-5 / P-6: unit = (item, mode); k = 5; `order_r = seeded_shuffle(units, BASE_SEED + r)`; `arch_order_r = rotate([A, B], r − 1)`; A+ derived right after A; K0 once before rep 1. | **Done.** `runner/experiment.py` (`seeded_order`, `arch_order`, several systems per run). The ordering algorithm id is recorded in the manifest. | M → resolved |
 | **Blind scoring** | None; the scorer read the evaluator name. | P-10: seeded alias mapping SYS-1..n; the mapping hashed into the manifest and stored outside the scorer input path; scorer and human checks use aliases; reveal after the report hash is committed. | **Done.** `runner/blind.py` (mapping at run start, aliased view with its own hash list, reveal gated on the report hash). The scorer reads `blinded/<run_id>/` only. | M → resolved |
 | **Storage** | `runs/<run_id>/<item>/rep_<k>/…`, write-once; `scoring/<run_id>/…`. | P-11: `runs/<run_id>/<system>/<item>__<mode>/rep_<k>/{7 files}`, A+ `derivation_log.json`, `scoring/<run_id>/{item_scores, metrics, discordance, human_checks}`; tuning runs `dev-<round>-<timestamp>`. | **Done.** `contracts/run_manifest.py::rep_dir`, `runner/storage.py`. | L → resolved |
@@ -299,6 +299,34 @@ H (a result would be wrong or unsafe), M (a metric or process would be incompara
       (MD-G3, MD-C1, MD-C2), so COM-03 does not fire where the design expects no COM-03.
     - In MD-G6 a short agent turn separates the two third-party beats (B2 signal, B3 cue).
     - Tests: `test_transcript_qc.py::test_snippet_shape`, `test_derived_copy`, `test_committed_dev_drafts`.
+46. **B's rule engine** (`engine/code_rules.py`, `SpecRuleEngine`). Deterministic rules run first. The rubric's
+    LLM_JUDGE checks become one batched judgment request each (J-REG, J-PATH, J-OBJ, J-Q, J-CONS, J-G6, J-FIRM,
+    J-CONSTR, J-RIGHTS, J-G8P). A missing, out-of-vocabulary or uncited answer counts as CANNOT_DETERMINE: the check
+    is INCONCLUSIVE, and a gate with an in-span trigger is SUSPECTED. The rubric's bare `YES`/`NO` answers are
+    restored after YAML 1.1 turns them into booleans.
+    Conventions where the rubric leaves the rule open:
+    - one J-REG / J-PATH / J-OBJ / J-RIGHTS per code per call, on the first unregistered (or, for J-PATH,
+      registered) trigger;
+    - ACC-04 when a material question follows an agent-stated value and J-Q = DEFLECTED, else UND-04 (never both);
+    - UND-02 and TRT-01 count borrower events whose strength is explicit or unstated;
+    - COM-01 treats a raw, un-normalized date or amount as present (the non_specific test needs B-04);
+    - COM-03 applies to firm commitments (MAJOR) and to callback routes (MINOR: no later read-back event, or no
+      BORROWER turn after it); soft or conditional commitments are COM-02's subject;
+    - COM-06 fires only for a route with an explicit null `next_step_quote`; an absent key is INCONCLUSIVE;
+    - UND-03 and COM-05 compare digits only (`parse_values`), and anything else is INCONCLUSIVE (B-04);
+    - TRT-03 treats `hi-en` as compatible with `hi` and `en`;
+    - G6: collection content within the next two agent turns with no care / human / callback route before it;
+      DISTRESS_NONEXPLICIT gives NA (SC-08);
+    - outcome dispositions map one to one from event types, with `payment_claim` → PAYMENT_CLAIMED_ALREADY_PAID
+      (the in-call case cannot be told apart, §3.38); ACKNOWLEDGED or INCOMPLETE when nothing else applies.
+    Tests: `test_rule_engine.py`.
+47. **DEV draft runs and the intent reference** (`runner/dev_drafts.py`, `devbaseline/`). Drafts run as in-memory
+    TRANSCRIPT items with the protocol's front end, P-17 aliases, identity-leak test, guard and write-once storage,
+    under `dev_draft_runs/` (not `runs/`). An LLM system of the drafts' assisting family is refused (authoring
+    constraint 1), and a missing provider stops the run before anything is written. The baseline's reference is the
+    frozen design intent held in memory, never a gold file. The P-17 own-identifier test matches whole tokens, so
+    the front end's step name `DC-01-...` is not an item `C-01` leak. Tests: `test_dev_drafts.py`,
+    `test_runner.py::test_p17_prerun_check_includes_the_units_own_source_names`.
 
 ## 4. Open questions / inconsistencies found in the spec (for the spec owner)
 
@@ -365,11 +393,8 @@ H (a result would be wrong or unsafe), M (a metric or process would be incompara
 
 ## 5. Not implemented in this commit (next phase; explicit markers in code)
 
-- **B build:**
-  - B rule engine and judgment integration: `NotImplementedRuleEngine`.
-  - Wiring `engine/rules.py` into a full rule engine for the remaining codes, plus judgments (the 1.2 extraction
-    schema and the adjudicated rules are done). The engine must apply `terminal_trigger` (SC-01) to every non_response
-    check except G5, and J-G6 must implement the SC-08 `DISTRESS_NONEXPLICIT` → G6 NA rule.
+- **B build:** done (§3.46). What B still cannot decide is reported INCONCLUSIVE: RES-11 (B-11), UND-12 (no ask slot
+  in extraction 2.0.0), UND-03 / COM-05 on number words (B-04). The evaluator provider is pending (B-05).
 - **Deterministic normalizer** (amounts, dates, modes, polarity), and what depends on it:
   - SD-22 snippets;
   - ASR entity error rate;

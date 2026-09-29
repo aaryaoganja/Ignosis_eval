@@ -277,3 +277,7 @@ def test_committed_dev_drafts():
     assert set(entries) == set(design.items) and prov["status"] == "draft"
     assert all(e["llm_family"] for e in entries.values() if e["llm_assisted"])
     assert all("reference_date" in entries[i] for i in design.items if i.startswith("SN-"))
+    # still drafts: nobody has signed a transcript off (the review checklist is for the human editor)
+    assert prov["human_review_pending"] is True and all(e["human_review_pending"] for e in entries.values())
+    checklist = (drafts / "REVIEW-CHECKLIST.md").read_text(encoding="utf-8")
+    assert all(f"| {i} |" in checklist for i in design.items)

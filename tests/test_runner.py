@@ -317,6 +317,10 @@ def test_p17_prerun_check_includes_the_units_own_source_names(spec):
     with pytest.raises(OpaqueAliasViolation, match="source identifier"):
         prerun_payload_check({"u": ni}, {"u": ["ZZ-Q01", "zzfile7.txt"]})
     assert prerun_payload_check({"u": F.make_ni(spec)}, {"u": ["ZZ-Q01", "zzfile7.txt"]}) > 0
+    # own tokens match as whole identifiers: the front end's step names (DC-01-...) are not an item C-01 leak
+    assert prerun_payload_check({"u": F.make_ni(spec)}, {"u": ["C-01", "C-01.txt", "transcripts"]}) > 0
+    assert payload_violations("DC-01-transcript-markers", free_text=False, own_tokens=["C-01"]) == []
+    assert payload_violations("see c-01.txt", own_tokens=["C-01.txt"])
 
 
 def test_audio_is_renamed_to_the_alias_before_asr(tmp_path, spec):

@@ -7,7 +7,7 @@ confirmation); `engine/finalize.py` then applies quote verification, span reliab
 Implemented: G1 (a, b), G2 (a via consequence category; b via claims_human), G3 (prohibited consequence
 categories only), G4 (offer_type class lookup), G5 (the ordered decision_table) + RES-06, ACC-03u,
 ACC-05 (+ its repair), TRT-06, and the SC-01 terminal-trigger rule (`terminal_trigger`) that B's rule engine applies to
-every non_response check except G5. The remaining codes are the next build phase (B's rule engine).
+every non_response check except G5. The remaining codes and the judgments are in engine/code_rules.py.
 """
 
 from __future__ import annotations

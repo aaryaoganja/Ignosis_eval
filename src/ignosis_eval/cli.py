@@ -12,6 +12,9 @@
     score --run-id ID [--suffix S] [--human-checks F]
     reveal --run-id ID --scoring-id S --report-sha256 H
     schemas export
+    dev run [--systems K0,A,A+,B] [--llm-backend openai --model M] [--reps k]   DEV draft run (not a protocol run)
+    dev report --run-id ID [--out DIR] [--price-in USD --price-out USD]           intent-referenced baseline report
+    dev consistency [--items ...] [--reps 3] [--systems K0]                        reproducibility smoke run
 """
 
 from __future__ import annotations
@@ -119,6 +122,96 @@ def cmd_bench_transcript_qc(args) -> int:
     print(f"pairs checked: {rep.pairs_checked or 'none'}; semantic QC (beats, gate behavior, verdict, "
           "naturalness) is the reviewer's")
     return _print_issues(rep.issues)
+
+
+def _draft_cfg(args, **kw):
+    from ignosis_eval.contracts.enums import System
+    from ignosis_eval.runner.dev_drafts import DraftRunConfig
+
+    systems = [System(s.strip()) for s in args.systems.split(",") if s.strip()]
+    return DraftRunConfig(drafts_dir=Path(args.drafts), bench_root=Path(args.bench_root), systems=systems,
+                          repetitions=args.reps, base_seed=args.seed, results_root=Path(args.results_root),
+                          spec_dir=Path(args.spec_dir) if args.spec_dir else None, llm_backend=args.llm_backend,
+                          model_id=args.model, replay_dir=Path(args.replay_dir) if args.replay_dir else None,
+                          max_tokens=args.max_tokens, item_ids=args.items, invocation=["ignosis-eval", *sys.argv[1:]],
+                          **kw)
+
+
+def cmd_dev_run(args) -> int:
+    from ignosis_eval.runner.dev_drafts import DraftRunError, run_dev_drafts
+
+    try:
+        res = run_dev_drafts(_draft_cfg(args))
+    except DraftRunError as exc:
+        print(str(exc))
+        return 2
+    print(f"{res.run_id}: {res.completion['status']} · {res.completion['n_records_written']} records · "
+          f"{res.run_dir}")
+    return 0
+
+
+def cmd_dev_report(args) -> int:
+    import json
+    import os
+
+    from ignosis_eval.benchmark.public_dev import validate_public_dev
+    from ignosis_eval.devbaseline.report import build_report, render_markdown
+    from ignosis_eval.runner.dev_drafts import DRAFT_RUNS_DIR, evaluator_configuration
+
+    spec = _spec(args)
+    run_dir = Path(args.results_root) / DRAFT_RUNS_DIR / args.run_id
+    manifest = json.loads((run_dir / "draft_run.json").read_text(encoding="utf-8"))
+    llm = manifest.get("llm") or {}
+    pending = None if os.environ.get("OPENAI_API_KEY") else (
+        "PROVIDER PENDING (B-05): no non-Claude provider configured (OPENAI_API_KEY absent)")
+    not_executed = {s: pending or "not requested in this run" for s in ("A", "A+", "B")}
+    design = validate_public_dev(_layout(args).public_dir, spec).design
+    if design is None:
+        print("the frozen DEV design does not validate")
+        return 2
+    prices = (args.price_in, args.price_out) if args.price_in is not None and args.price_out is not None else None
+    report = build_report(run_dir, design, _layout(args).public_dir,
+                          quote_match_min=float(spec.threshold("quote_match_min")),
+                          evaluator_configuration=evaluator_configuration(spec, llm.get("backend"),
+                                                                          llm.get("model_snapshot_id")),
+                          not_executed=not_executed, prices=prices)
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "dev-baseline.json").write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    (out / "dev-baseline.md").write_text(render_markdown(report), encoding="utf-8")
+    for row in report["summary_table"]:
+        print(" | ".join(f"{k}: {v}" for k, v in row.items()))
+    print(f"wrote {out / 'dev-baseline.json'} and {out / 'dev-baseline.md'}")
+    return 0
+
+
+def cmd_dev_consistency(args) -> int:
+    import json
+
+    from ignosis_eval.devbaseline.metrics import load_run
+    from ignosis_eval.runner.dev_drafts import DraftRunError, frontend_stability, run_dev_drafts
+    from ignosis_eval.runner.storage import write_json_once
+
+    cfg = _draft_cfg(args, consistency=True)
+    try:
+        res = run_dev_drafts(cfg)
+    except DraftRunError as exc:
+        print(str(exc))
+        return 2
+    manifest, by_system = load_run(res.run_dir)
+    records = {s: {i: sorted({r.content_hash()[:16] for r in u.records}) for i, u in units.items()}
+               for s, units in by_system.items()}
+    summary = {"run_id": res.run_id, "repetitions": cfg.repetitions,
+               "frontend_distinct_input_hashes": frontend_stability(cfg, cfg.repetitions),
+               "record_distinct_content_hashes": {s: {i: len(h) for i, h in d.items()} for s, d in records.items()},
+               "system_configs": manifest["systems"], "component_versions": manifest["component_versions"],
+               "spec": manifest["spec"]}
+    summary["stable"] = all(v == 1 for v in summary["frontend_distinct_input_hashes"].values()) and all(
+        n == 1 for d in summary["record_distinct_content_hashes"].values() for n in d.values())
+    write_json_once(res.run_dir / "consistency.json", summary)
+    print(json.dumps({k: summary[k] for k in ("run_id", "repetitions", "stable", "frontend_distinct_input_hashes",
+                                              "record_distinct_content_hashes")}, indent=1))
+    return 0 if summary["stable"] else 1
 
 
 def _validator(args, scope: str, require_gold: bool):
@@ -304,7 +397,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--repetitions", type=int, default=5)
     p.add_argument("--base-seed", type=int, required=True)
     p.add_argument("--results-root", default=".")
-    p.add_argument("--llm-backend", choices=["mock_replay", "anthropic"], default="mock_replay")
+    p.add_argument("--llm-backend", choices=["mock_replay", "openai", "anthropic"], default="mock_replay")
     p.add_argument("--replay-dir", default=None)
     p.add_argument("--model-id", default=None)
     p.add_argument("--max-tokens", type=int, default=None)
@@ -336,6 +429,30 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--report-sha256", required=True)
     p.add_argument("--results-root", default=".")
     p.set_defaults(func=cmd_reveal)
+
+    g = sub.add_parser("dev").add_subparsers(dest="cmd", required=True)
+    for name, fn, reps, systems in (("run", cmd_dev_run, 1, "K0"), ("consistency", cmd_dev_consistency, 3, "K0")):
+        p = g.add_parser(name)
+        common(p)
+        p.add_argument("--drafts", default="bench/dev/transcripts")
+        p.add_argument("--systems", default=systems, help="comma list of K0,A,A+,B")
+        p.add_argument("--reps", type=int, default=reps)
+        p.add_argument("--seed", type=int, default=0)
+        p.add_argument("--results-root", default=".")
+        p.add_argument("--llm-backend", choices=["mock_replay", "openai", "anthropic"], default="mock_replay")
+        p.add_argument("--model", default=None, help="pinned, dated model snapshot (B-05)")
+        p.add_argument("--replay-dir", default=None)
+        p.add_argument("--max-tokens", type=int, default=None)
+        p.add_argument("--items", nargs="+", default=None)
+        p.set_defaults(func=fn)
+    p = g.add_parser("report")
+    common(p)
+    p.add_argument("--run-id", required=True)
+    p.add_argument("--results-root", default=".")
+    p.add_argument("--out", default="reports/dev-baseline")
+    p.add_argument("--price-in", type=float, default=None, help="USD per million input tokens (estimate)")
+    p.add_argument("--price-out", type=float, default=None, help="USD per million output tokens (estimate)")
+    p.set_defaults(func=cmd_dev_report)
 
     g = sub.add_parser("schemas").add_subparsers(dest="cmd", required=True)
     p = g.add_parser("export")

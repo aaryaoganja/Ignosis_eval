@@ -58,7 +58,8 @@ and what is still pending.
 
 The reconciliation with the frozen spec is complete. **Do not**, without an explicit request:
 - optimize or rewrite evaluator prompts (`evaluators/prompts/*.md` are unoptimized stubs);
-- tune A / A+ / B, or wire the real LLM backend (`AnthropicLLMClient` raises until B-05);
+- tune A / A+ / B, or pick the evaluator provider / snapshot (B-05: the `openai` client is implemented but inert
+  without a key and a pinned snapshot; a Claude evaluator is refused on the Claude-assisted DEV drafts);
 - author benchmark cases, registries entries, gold labels or red-team items;
 - run official (locked) holdout or red-team experiments;
 - choose values the spec marks `PENDING_HUMAN_SIGNOFF` (`ignosis-eval spec pending`);
@@ -78,7 +79,9 @@ The reconciliation with the frozen spec is complete. **Do not**, without an expl
 | Intervals | `stats/` (SD-26) |
 | Benchmark layout, card rules, checks | `benchmark/` (`bench/` on disk) |
 | Frozen DEV design (Stage 5, DEV only) | `bench/public/` (verbatim); hashes in `docs/freeze/`; validator `benchmark/public_dev.py` |
-| DEV transcript drafts | `bench/dev/transcripts/` (+ `provenance.yaml`); QC `benchmark/transcript_qc.py` |
+| DEV transcript drafts | `bench/dev/transcripts/` (+ `provenance.yaml`, `REVIEW-CHECKLIST.md`); QC `benchmark/transcript_qc.py` |
+| B rule engine | `engine/code_rules.py` + `engine/rules.py`; `evaluators/judgement.py::SpecRuleEngine` |
+| DEV draft runs / baseline | `runner/dev_drafts.py` (runs), `devbaseline/` (intent-referenced metrics, report; scorer side) |
 | Opaque unit aliases (P-17) | `contracts/unit_alias.py`, `runner/aliases.py` |
 | Hash lists / gold freeze / guard | `integrity/` |
 | Run protocol, lock, blinding, storage | `runner/` |
@@ -93,6 +96,7 @@ ignosis-eval schemas export          # after any contract change (a test enforce
 ignosis-eval spec pending            # PENDING_HUMAN_SIGNOFF inventory
 ignosis-eval bench check --scope dev --require-gold   # includes bench/public (bench public-check alone)
 ignosis-eval bench transcript-qc <dir>               # TQ checks on draft DEV transcripts <ITEM_ID>.txt before freeze
+ignosis-eval dev run | report | consistency         # DEV draft baseline vs design intent (docs/dev-baseline.md)
 ignosis-eval bench manifest | gold freeze | run | blind | score | reveal   (see README)
 ```
 

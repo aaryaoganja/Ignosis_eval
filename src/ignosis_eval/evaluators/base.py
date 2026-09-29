@@ -30,6 +30,7 @@ class TraceSink:
     requests: list[dict] = field(default_factory=list)
     responses: list[dict] = field(default_factory=list)
     usage: dict[str, int] = field(default_factory=_usage)
+    derivation: list[dict] = field(default_factory=list)  # B's derivation log (verifier, rules, judgments)
 
 
 @dataclass

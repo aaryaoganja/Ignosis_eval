@@ -6,9 +6,11 @@ A   shared front end -> ONE structured LLM call -> schema validation (1 retry, t
     SELF_REPORTED; no capability / external-truth filter (A must be able to violate H1 and H6).
 A+  derived from A's stored raw output of the same rep through the eight ordered deterministic steps of
     engine/finalize.py (the same modules B uses). Zero LLM calls, no prompt of its own, no tuning; COMPUTED.
-B   extraction (LLM #1) -> extraction verifier (quotes, responds_to ids) -> rule engine -> targeted batched
-    judgments (LLM #2, only if triggered) -> finalize. The full rule engine is the next build phase.
-Prompts are unoptimized stubs (evaluators/prompts/); the rubric section is generated from the spec.
+B   extraction (LLM #1) -> extraction verifier (quotes, responds_to ids) -> rule engine (SpecRuleEngine: every MVP
+    gate and code, engine/code_rules.py) -> targeted batched judgments (LLM #2, only if a rule asks for one) ->
+    finalize. B's derivation log (verifier drops, rule decisions, judgment answers) is kept in the trace.
+Prompts are unoptimized stubs (evaluators/prompts/); the rubric section, the extraction guide and the output
+contracts are generated from the spec and the contracts (template 0.4.0).
 """
 
 from __future__ import annotations
@@ -28,8 +30,8 @@ from ignosis_eval.evaluators.builder import failed_record, parse_ok_record
 from ignosis_eval.evaluators.judgement import (
     ExtractionOutput,
     JudgmentOutput,
-    NotImplementedRuleEngine,
     RuleEngine,
+    SpecRuleEngine,
     judgment_text,
 )
 from ignosis_eval.evaluators.llm import LLMClient, LLMRequest, OutputSchemaError, RecordingClient, structured_call
@@ -37,6 +39,8 @@ from ignosis_eval.evaluators.prompts import (
     A_PROMPTS,
     B_PROMPTS,
     capability_summary,
+    extraction_guide,
+    output_schema,
     prompt_hashes,
     render,
     render_transcript,
@@ -77,7 +81,7 @@ class _LLMSystem(Evaluator):
 
 
 class EvaluatorA(_LLMSystem):
-    system, version = System.A, "0.1.0-stub"
+    system, version = System.A, "0.2.0"
     PROMPTS = A_PROMPTS
 
     def evaluate(self, ni: NormalizedInput, ctx: EvaluationContext) -> EvaluationRecord:
@@ -87,7 +91,7 @@ class EvaluatorA(_LLMSystem):
         content = render("a_holistic", profile_id=spec.profile_id, profile_version=spec.profile_version,
                          gates=rubric_section(spec), defects="(see the generated rubric section above)",
                          input_mode=ni.input_mode.value, capabilities=capability_summary(ni, spec),
-                         transcript=render_transcript(ni))
+                         transcript=render_transcript(ni), output_schema=output_schema("a_holistic"))
         req = self._request("a_evaluate", content, ni, ctx)
         rec, _raw, err, attempts = structured_call(self._recording(ctx), req,
                                                    lambda c: parse_ok_record(c, ni, spec, info))
@@ -135,12 +139,12 @@ class APlusDeriver:
 
 
 class EvaluatorB(_LLMSystem):
-    system, version = System.B, "0.1.0-stub"
+    system, version = System.B, "0.2.0"
     PROMPTS = B_PROMPTS
 
     def __init__(self, client: LLMClient, spec: Spec, *, rule_engine: RuleEngine | None = None, **kw):
         super().__init__(client, spec, **kw)
-        self.rule_engine = rule_engine or NotImplementedRuleEngine()
+        self.rule_engine = rule_engine or SpecRuleEngine()
 
     def evaluate(self, ni: NormalizedInput, ctx: EvaluationContext) -> EvaluationRecord:
         spec, info = ctx.spec, self.system_info()
@@ -148,7 +152,8 @@ class EvaluatorB(_LLMSystem):
             return short_circuit_record(ni, spec, info, ConfidenceSource.COMPUTED)
         rec_client = self._recording(ctx)
         content = render("b_extraction", rubric_section=rubric_section(spec), input_mode=ni.input_mode.value,
-                         transcript=render_transcript(ni))
+                         transcript=render_transcript(ni), extraction_guide=extraction_guide(spec),
+                         output_schema=output_schema("b_extraction"))
 
         def parse_extraction(c: str) -> ExtractionOutput:
             try:
@@ -168,7 +173,7 @@ class EvaluatorB(_LLMSystem):
         result = self.rule_engine.apply(ex, ni, spec)
         if result.judgments_needed:
             jcontent = render("b_judgments", judgments=judgment_text(spec, result.judgments_needed),
-                              transcript=render_transcript(ni))
+                              transcript=render_transcript(ni), output_schema=output_schema("b_judgments"))
 
             def parse_j(c: str) -> JudgmentOutput:
                 try:
@@ -180,4 +185,9 @@ class EvaluatorB(_LLMSystem):
             if ans is None:
                 return failed_record(ni, spec, info, err or "schema-invalid judgments", attempts)
             result = self.rule_engine.integrate(result, ans, spec)
-        return finalize(result.body, ni, spec, system=info, facts=result.facts, log=log)
+        for entry in result.log:
+            log.add("rule-engine", str(entry.get("judgment") or entry.get("rule") or entry.get("check") or "call"),
+                    "decision", **{k: v for k, v in entry.items() if k not in ("step", "target", "change")})
+        record = finalize(result.body, ni, spec, system=info, facts=result.facts, log=log)
+        ctx.trace.derivation.extend(log.entries)
+        return record

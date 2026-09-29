@@ -67,7 +67,7 @@ class TransportRetryPolicy(Contract):
 class SystemConfig(Contract):
     system: System
     version: NonEmptyStr
-    llm_backend: Literal["none", "mock_replay", "anthropic"]
+    llm_backend: Literal["none", "mock_replay", "anthropic", "openai"]
     model_snapshot_id: str | None = None
     temperature: float | None = None
     seed: int | None = None
@@ -177,7 +177,7 @@ class PendingRef(Contract):
 
 
 class RunManifest(Contract):
-    schema_version: Literal["run_manifest/3.0.0"] = RUN_MANIFEST_SCHEMA
+    schema_version: Literal["run_manifest/3.1.0"] = RUN_MANIFEST_SCHEMA
     run_id: NonEmptyStr
     kind: Literal["dev", "dev_tuning", "locked_holdout", "locked_redteam"]
     locked: bool

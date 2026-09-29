@@ -15,9 +15,10 @@ freeze commitments of bench-a1 design v1.0 (13 file hashes, the private bundle c
 adjudication log) are in [`docs/freeze/`](docs/freeze/). The earlier 1.1 adjudication record is kept as history in
 [`docs/history/final-adjudication-1.1.md`](docs/history/final-adjudication-1.1.md).
 
-> **Nothing in this repository is a measured result.** The benchmark design is frozen. The 25 DEV transcripts
-> exist as unfrozen drafts in `bench/dev/transcripts/` (Claude-assisted; `provenance.yaml`). Holdout transcripts,
-> audio and all gold do not exist yet (B-01/B-02 pending). bench-a1 contains no G7 positive, so G7 recall is not measured (BD-02). The LLM
+> **Nothing in this repository is a reliability result.** The benchmark design is frozen. The 25 DEV transcripts
+> exist as unfrozen drafts in `bench/dev/transcripts/` (Claude-assisted; human review pending). The first DEV
+> baseline (`reports/dev-baseline/`, `docs/dev-baseline.md`) compares against the design intent, not gold. Holdout
+> transcripts, audio and all gold do not exist yet (B-01/B-02 pending). bench-a1 contains no G7 positive, so G7 recall is not measured (BD-02). The LLM
 > backend is a replay mock (B-05), the ASR is a cache replay (B-06), the lexicon terms are empty (B-04) and 18
 > profile/rubric values are `PENDING_HUMAN_SIGNOFF`. Every locked (holdout / red-team) run is refused until those
 > are resolved. Every `metrics.json` carries the SD-29 scope line and warnings.
@@ -28,9 +29,10 @@ adjudication log) are in [`docs/freeze/`](docs/freeze/). The earlier 1.1 adjudic
 |---|---|
 | Spec pack | `docs/spec/` (the 6 frozen 1.2.0 files, verbatim; hashes committed in `docs/freeze/FREEZE-HANDOFF.md` and verified by every `bench check`). `ignosis-eval spec pending` lists the pending items. |
 | Contracts, front end, engine, K0 / A / A+ / B interfaces, gold derivation, scorer, runner, lock, blinding | Implemented and tested (`python -m pytest`). |
-| B extraction contract (rubric 1.2 `extraction_schema`) + verifier, adjudicated deterministic rules (G1, G2, G3 categories, G4, G5 table, ACC-03u, ACC-05, TRT-06, SC-01 terminal trigger) | Implemented and tested as a library (`engine/rules.py`); not yet wired as B's default rule engine. |
+| B: extraction contract + verifier, full rule engine (`SpecRuleEngine`: every MVP gate and code, batched judgments) | Implemented and tested; B's default. A, A+ and B run end to end (tested on replay fixtures and a fake OpenAI-compatible server). |
+| Evaluator provider | **PENDING (B-05).** `openai` client implemented (stdlib), inert without `OPENAI_API_KEY` and a pinned snapshot; a Claude evaluator is refused on the Claude-assisted drafts (constraint 1). |
 | Opaque unit aliases (P-17, SC-05) | Random `u_xxxxxxxx` alias per unit per run, private mapping, audio renamed before ASR, pre-run identity-leak test that fails the run (identity tokens only; ordinary words pass). |
-| Full B rule engine, deterministic normalizer, DC-02 / DC-LANG / DC-01-audio, diarization turn threshold, timing signals | Next phase / pending sign-off (see the reconciliation doc §5). |
+| Deterministic normalizer, DC-02 / DC-LANG / DC-01-audio, diarization turn threshold, timing signals | Pending sign-off (see the reconciliation doc §5). |
 | Frozen DEV design (Stage 5) | `bench/public/`: 25 DEV case cards (functional beats), master matrix and gold blueprint, verbatim; committed by `docs/freeze/FREEZE-public.md`; validated by `ignosis-eval bench public-check` (0 errors, 6 PD015 authoring-rule warnings; clarifications BD-03..BD-05 in `docs/bd-changelog.md`). DEV only. |
 | Transcripts, gold, registries | DEV transcript **drafts** in `bench/dev/transcripts/` (25; not frozen; `bench transcript-qc` clean). Gold and registries are empty (B-02); the blueprint is intent, not gold. |
 | Results | **None.** |
@@ -44,6 +46,7 @@ ruff check src tests scripts && mypy     # lint + types
 ignosis-eval spec check && ignosis-eval spec pending
 ignosis-eval bench check --scope dev --require-gold
 ignosis-eval bench transcript-qc <dir>          # draft DEV transcripts (<ITEM_ID>.txt) before the hash freeze
+ignosis-eval dev run --systems K0 && ignosis-eval dev report --run-id <id>   # DEV draft baseline (docs/dev-baseline.md)
 ```
 
 A full dev run once items, cards and gold exist (plumbing only while the backend is a mock):

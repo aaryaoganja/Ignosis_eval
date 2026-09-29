@@ -13,7 +13,7 @@ from ignosis_eval.evaluators.base import EvaluationContext, TraceSink
 from ignosis_eval.evaluators.judgement import ExtractionOutput, RuleEngine, RuleEngineResult
 from ignosis_eval.evaluators.k0 import KeywordFloorK0
 from ignosis_eval.evaluators.llm import AnthropicLLMClient, LLMUnavailableError
-from ignosis_eval.evaluators.mock_llm import ReplayLLMClient
+from ignosis_eval.evaluators.mock_llm import ReplayLLMClient, ReplayMissError
 from ignosis_eval.evaluators.pipelines import APlusDeriver, EvaluatorA, EvaluatorB, a_final_raw_output
 from ignosis_eval.spec.loader import load_spec
 
@@ -124,8 +124,15 @@ def test_b_interfaces(tmp_path, spec):
     assert ExtractionOutput.model_validate(ex).check_vocabulary(spec) == []
     F.write_replay(tmp_path / "replay", "b_extract", ni, [json.dumps(ex)])
     client = ReplayLLMClient(tmp_path / "replay")
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(ReplayMissError):  # the default SpecRuleEngine asks for judgments (UND-01 J-REG, J-G8P)
         EvaluatorB(client, spec, sleep=NO_SLEEP).evaluate(ni, EvaluationContext(repetition=1, spec=spec))
+    F.write_replay(tmp_path / "replay", "b_judge", ni, [json.dumps({"answers": [
+        {"judgment": "J-REG", "target": "E1", "answer": "NOT_ACKNOWLEDGED", "cited_turns": [2]},
+        {"judgment": "J-G8P", "target": "caller_identifies_org", "answer": "PRESENT", "cited_turns": [1]}]})])
+    ctx = EvaluationContext(repetition=1, spec=spec)
+    rec = EvaluatorB(ReplayLLMClient(tmp_path / "replay"), spec, sleep=NO_SLEEP).evaluate(ni, ctx)
+    assert rec.record_status.value == "OK" and "UND-01" in {f.code for f in rec.findings}
+    assert any(e["step"] == "rule-engine" for e in ctx.trace.derivation)
     rec = EvaluatorB(client, spec, rule_engine=StubRuleEngine(), sleep=NO_SLEEP).evaluate(
         ni, EvaluationContext(repetition=1, spec=spec))
     assert rec.record_status.value == "OK" and rec.gate("G7").status.value == "OUT_OF_SCOPE"
@@ -165,7 +172,15 @@ def test_prompt_rubric_section_is_generated(spec):
     assert "G1" in text and "UND-01" in text
     assert "seed_candidates_unreviewed" not in text  # unreviewed lexicon seeds never reach a prompt
     h = prompt_hashes(("a_holistic",), spec)
-    assert set(h) == {"a_holistic", "rubric_section"}
+    assert set(h) == {"a_holistic", "rubric_section", "output_schema:a_holistic"}
+    from ignosis_eval.evaluators.prompts import extraction_guide, output_schema
+
+    guide = extraction_guide(spec)
+    assert "collection_content_agent_events" in guide and "seed_candidates_unreviewed" not in guide
+    assert json.loads(output_schema("b_extraction"))["title"] == "ExtractionOutput"
+    assert set(prompt_hashes(("b_extraction", "b_judgments"), spec)) == {
+        "b_extraction", "b_judgments", "rubric_section", "output_schema:b_extraction", "output_schema:b_judgments",
+        "extraction_guide"}
 
 
 # ------------------------------------------------------------------ AJ-06: A (uncorrected baseline) vs A+

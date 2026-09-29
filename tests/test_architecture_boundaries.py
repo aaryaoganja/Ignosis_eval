@@ -29,6 +29,7 @@ FORBIDDEN = {
                   "ignosis_eval.pipeline", "ignosis_eval.golddrv"],
     "evaluators": EVALUATOR_FORBIDDEN, "engine": EVALUATOR_FORBIDDEN, "pipeline": EVALUATOR_FORBIDDEN,
     "scoring": SCORER_FORBIDDEN, "metrics": SCORER_FORBIDDEN, "golddrv": SCORER_FORBIDDEN, "stats": SCORER_FORBIDDEN,
+    "devbaseline": SCORER_FORBIDDEN,  # DEV draft baseline: scorer side (reads records, never the evaluator)
     "spec": ["ignosis_eval.evaluators", "ignosis_eval.engine", "ignosis_eval.pipeline", "ignosis_eval.scoring",
              "ignosis_eval.metrics", "ignosis_eval.golddrv", "ignosis_eval.runner", "ignosis_eval.contracts.gold_label"],
 }

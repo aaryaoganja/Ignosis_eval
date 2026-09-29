@@ -2,12 +2,20 @@
 
   * Transport errors: up to 3 retries with backoff; logged; NOT counted as retries.
   * Schema-invalid output: exactly 1 retry; if still invalid the caller emits EVALUATION_FAILED (V0 / R-03).
-  * The real backend is not wired: the model snapshot id, API access and key handling are PENDING (B-05).
+  * Backends: `mock_replay` (recorded fixtures), `openai` (OpenAI-compatible Chat Completions over stdlib HTTPS; inert
+    until OPENAI_API_KEY and a dated, pinned snapshot are supplied) and `anthropic` (fails closed: the DEV transcripts
+    are Claude-assisted, so a Claude-family evaluator would break authoring constraint 1). The provider choice and
+    the pinned snapshot remain the owner's decision (B-05); nothing here selects one.
 """
 
 from __future__ import annotations
 
+import json
+import os
+import re
 import time
+import urllib.error
+import urllib.request
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -30,6 +38,22 @@ class LLMUnavailableError(RuntimeError):
 
 class OutputSchemaError(ValueError):
     """The model output does not validate against the structured-output schema."""
+
+
+class ProviderConfigError(RuntimeError):
+    """The LLM provider is not configured (key, pinned snapshot): B-05 is pending. Fails closed before any call."""
+
+
+class ProviderRequestError(RuntimeError):
+    """A non-retryable provider error (e.g. HTTP 400/401/403/404): an infrastructure failure, never a record."""
+
+
+# backend -> model family (authoring constraint 1 compares it with the transcripts' assisting family)
+MODEL_FAMILIES = {"anthropic": "anthropic-claude", "openai": "openai", "mock_replay": "mock", "none": "none"}
+
+
+def backend_family(backend: str) -> str:
+    return MODEL_FAMILIES.get(backend, backend)
 
 
 @dataclass
@@ -138,3 +162,68 @@ class AnthropicLLMClient(LLMClient):
 
     def complete(self, request: LLMRequest, attempt: int) -> LLMResponse:  # pragma: no cover
         raise NotImplementedError
+
+
+DATED_SNAPSHOT = re.compile(r"\d{4}-\d{2}-\d{2}$")
+RETRYABLE_HTTP = (408, 409, 429)
+
+
+class OpenAIChatClient(LLMClient):
+    """OpenAI-compatible Chat Completions client (stdlib urllib; no SDK). Structured output via JSON mode; the parser
+    validates against the contract and gets one schema retry (P-3). Configuration (fail closed):
+      * an explicit model id ending in a dated snapshot (YYYY-MM-DD); aliases such as "latest" are refused (P-3);
+      * OPENAI_API_KEY (or `api_key`); OPENAI_BASE_URL (or `base_url`) for a compatible endpoint.
+    Transport: timeouts, connection errors, HTTP 408/409/429 and 5xx raise TransportError (retried by
+    RecordingClient); any other HTTP error raises ProviderRequestError."""
+
+    backend = "openai"
+
+    def __init__(self, model_id: str | None, *, api_key: str | None = None, base_url: str | None = None,
+                 timeout_s: float = 120.0, opener: Callable[..., Any] | None = None):
+        if not model_id or "latest" in model_id.lower() or not DATED_SNAPSHOT.search(model_id):
+            raise ProviderConfigError(f"model {model_id!r} is not a dated, pinned snapshot (P-3; B-05 is pending)")
+        key = api_key or os.environ.get("OPENAI_API_KEY")
+        if not key:
+            raise ProviderConfigError("OPENAI_API_KEY is not set: the evaluator provider is pending (B-05)")
+        self.model_id = model_id
+        self._key = key
+        self.base_url = (base_url or os.environ.get("OPENAI_BASE_URL") or "https://api.openai.com/v1").rstrip("/")
+        self.timeout_s = timeout_s
+        self._open = opener or urllib.request.urlopen
+
+    def payload(self, request: LLMRequest) -> dict[str, Any]:
+        body: dict[str, Any] = {"model": self.model_id, "messages": request.messages,
+                                "temperature": request.temperature, "response_format": {"type": "json_object"}}
+        if request.max_tokens:
+            body["max_completion_tokens"] = request.max_tokens
+        seed = request.metadata.get("seed")
+        if seed is not None:
+            body["seed"] = seed
+        return body
+
+    def complete(self, request: LLMRequest, attempt: int) -> LLMResponse:
+        req = urllib.request.Request(f"{self.base_url}/chat/completions",
+                                     data=json.dumps(self.payload(request)).encode("utf-8"), method="POST",
+                                     headers={"Authorization": f"Bearer {self._key}",
+                                              "Content-Type": "application/json"})
+        try:
+            with self._open(req, timeout=self.timeout_s) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", "replace")[:500] if exc.fp is not None else ""
+            if exc.code in RETRYABLE_HTTP or exc.code >= 500:
+                raise TransportError(f"HTTP {exc.code}: {detail}") from exc
+            raise ProviderRequestError(f"HTTP {exc.code}: {detail}") from exc
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
+            raise TransportError(f"{type(exc).__name__}: {exc}") from exc
+        try:
+            choice = data["choices"][0]
+            content = choice["message"].get("content") or ""
+        except (KeyError, IndexError, TypeError) as exc:
+            raise ProviderRequestError(f"unexpected response shape: {str(data)[:500]}") from exc
+        usage = data.get("usage") or {}
+        cached = (usage.get("prompt_tokens_details") or {}).get("cached_tokens") or 0
+        return LLMResponse(request.request_id, str(data.get("model") or self.model_id), content,
+                           input_tokens=int(usage.get("prompt_tokens") or 0),
+                           output_tokens=int(usage.get("completion_tokens") or 0), cached_tokens=int(cached),
+                           stop_reason=str(choice.get("finish_reason") or "stop"))
