@@ -170,7 +170,11 @@ def cmd_dev_report(args) -> int:
         print("the frozen DEV design does not validate")
         return 2
     prices = (args.price_in, args.price_out) if args.price_in is not None and args.price_out is not None else None
-    report = build_report(run_dir, design, _layout(args).public_dir,
+    consistency = None
+    if args.consistency_run_id:
+        cpath = Path(args.results_root) / DRAFT_RUNS_DIR / args.consistency_run_id / "consistency.json"
+        consistency = json.loads(cpath.read_text(encoding="utf-8"))
+    report = build_report(run_dir, design, _layout(args).public_dir, consistency=consistency,
                           quote_match_min=float(spec.threshold("quote_match_min")),
                           evaluator_configuration=evaluator_configuration(spec, llm.get("backend"),
                                                                           llm.get("model_snapshot_id")),
@@ -452,6 +456,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--out", default="reports/dev-baseline")
     p.add_argument("--price-in", type=float, default=None, help="USD per million input tokens (estimate)")
     p.add_argument("--price-out", type=float, default=None, help="USD per million output tokens (estimate)")
+    p.add_argument("--consistency-run-id", default=None, help="include a `dev consistency` run's summary")
     p.set_defaults(func=cmd_dev_report)
 
     g = sub.add_parser("schemas").add_subparsers(dest="cmd", required=True)

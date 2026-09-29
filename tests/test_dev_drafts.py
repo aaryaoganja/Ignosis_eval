@@ -89,6 +89,7 @@ def test_llm_systems_plumbing_and_report(tmp_path):
     assert rep["systems"]["A"]["evidence_faithfulness"]["value"] == UNMEASURED  # the stub record cites nothing
     assert rep["systems"]["B"]["pair_accuracy"]["value"] == UNMEASURED  # no complete pair in this subset
     md = render_markdown(rep)
+    assert "Reproducibility smoke run" in md and "Not run." in md
     assert "NOT gold" in md and "| B |" in md and "human review pending: **True**" in md
     assert any((res.run_dir / "B" / i / "TRANSCRIPT" / "r1" / "derivation_log.json").exists() for i in items)
 

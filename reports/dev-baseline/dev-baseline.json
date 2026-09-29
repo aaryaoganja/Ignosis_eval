@@ -1,0 +1,1128 @@
+{
+  "report": "dev-baseline",
+  "report_version": "dev-baseline/1.0.0",
+  "notice": "DEV DRAFT RUN - not an experiment-protocol run. Transcripts are drafts pending native human review; there is no gold. Any comparison uses the frozen design intent (bench/public), not gold, and is not reliability evidence.",
+  "reference": "frozen DEV design intent (bench/public blueprint and case cards), NOT gold",
+  "not_reliability_evidence": true,
+  "transcripts": {
+    "status": "DRAFT",
+    "human_review_pending": true,
+    "assisting_families": [
+      "anthropic-claude"
+    ],
+    "provenance_sha256": "2743ebba98379e1c398079a8e073d36f8948aaa96a62271e45218fa423706ffb"
+  },
+  "run": {
+    "run_id": "devdraft-20260929T063605092740Z",
+    "created_at": "2026-09-29T06:36:05.092740+00:00",
+    "repetitions": 1,
+    "consistency_mode": false,
+    "git_commit": "225599dfe1adc33761621ba29d6d7c473f963d28",
+    "git_dirty": false,
+    "items_executed": [
+      "C-01",
+      "C-03",
+      "C-05",
+      "C-08",
+      "C-10",
+      "C-12",
+      "G-02",
+      "K-01",
+      "K-07",
+      "M-01",
+      "MD-C1",
+      "MD-C2",
+      "MD-G1",
+      "MD-G2",
+      "MD-G3",
+      "MD-G4",
+      "MD-G5",
+      "MD-G6"
+    ],
+    "items_excluded": {
+      "G-02-N5": "tuning-only audio copy: its audio is rendered after B-06 / B-09; never scored",
+      "SN-D01": "snippet: a component test of the normalizer / extraction, not a call evaluation (B-04)",
+      "SN-D02": "snippet: a component test of the normalizer / extraction, not a call evaluation (B-04)",
+      "SN-D03": "snippet: a component test of the normalizer / extraction, not a call evaluation (B-04)",
+      "SN-D04": "snippet: a component test of the normalizer / extraction, not a call evaluation (B-04)",
+      "SN-D05": "snippet: a component test of the normalizer / extraction, not a call evaluation (B-04)",
+      "SN-D06": "snippet: a component test of the normalizer / extraction, not a call evaluation (B-04)"
+    },
+    "unit_mode": "TRANSCRIPT",
+    "asr_mode": "none (transcript units only; ASR is B-06)",
+    "p17_payload_strings_checked": 1474
+  },
+  "spec": {
+    "contract_version": "1.2.0-frozen",
+    "profile_id": "collections_default_v1",
+    "profile_sha256": "20cbce689a40a56e1511df0d2415f7ec259b23227b70157efebc2ebd56f50109",
+    "profile_version": "1.1.1",
+    "rubric_sha256": "c4a3c7af8619e5d7be362873641cc2ecb70086bc6459eca8806a8a8e01adeb8c",
+    "rubric_version": "1.2-mvp"
+  },
+  "component_versions": {
+    "engine": "engine/0.4.0",
+    "frontend": "frontend/0.3.0",
+    "package": "0.4.0",
+    "prompt_template": "rubric-prompt-template/0.4.0"
+  },
+  "evaluator_configuration": {
+    "provider": "PENDING (B-05): no non-Claude provider is configured in this environment (OPENAI_API_KEY absent); implemented backend: openai (OpenAI-compatible, stdlib)",
+    "model": "PENDING (B-05): a dated, pinned snapshot is required",
+    "model family rule": "must differ from the drafts' assisting family (anthropic-claude): authoring constraint 1",
+    "evaluator versions": {
+      "K0": "1.0.0",
+      "A": "0.2.0",
+      "A+": "0.1.0",
+      "B": "0.2.0",
+      "engine": "engine/0.4.0",
+      "frontend": "frontend/0.3.0"
+    },
+    "prompt version": "rubric-prompt-template/0.4.0 (instruction text: UNOPTIMIZED STUB, not tuned)",
+    "prompt hashes (sha256, 12)": {
+      "a_holistic": "e69907f73129",
+      "rubric_section": "a6ef3c2ffd4c",
+      "output_schema:a_holistic": "b3dc65787354",
+      "b_extraction": "7f7c5d699e54",
+      "b_judgments": "d12d4ecd6ada",
+      "output_schema:b_extraction": "1ef086f777d3",
+      "output_schema:b_judgments": "400b92943f25",
+      "extraction_guide": "531551e0c785"
+    },
+    "settings": {
+      "temperature": 0.0,
+      "seed": "sent when set; OpenAI support is best-effort",
+      "structured output": "JSON mode + contract validation, 1 schema retry",
+      "transport retries": 3,
+      "consistency re-run": "disabled"
+    },
+    "ASR mode": "none: TRANSCRIPT units only (ASR / diarization is B-06)"
+  },
+  "frontend": {
+    "evaluability_agreement": {
+      "num": 18,
+      "den": 18
+    },
+    "g7_agreement": {
+      "num": 18,
+      "den": 18
+    },
+    "per_item": {
+      "C-01": {
+        "evaluability": "EVALUABLE",
+        "G7": "OUT_OF_SCOPE",
+        "intended_G7": "OUT_OF_SCOPE"
+      },
+      "C-03": {
+        "evaluability": "EVALUABLE",
+        "G7": "OUT_OF_SCOPE",
+        "intended_G7": "OUT_OF_SCOPE"
+      },
+      "C-05": {
+        "evaluability": "EVALUABLE",
+        "G7": "OUT_OF_SCOPE",
+        "intended_G7": "OUT_OF_SCOPE"
+      },
+      "C-08": {
+        "evaluability": "EVALUABLE",
+        "G7": "OUT_OF_SCOPE",
+        "intended_G7": "OUT_OF_SCOPE"
+      },
+      "C-10": {
+        "evaluability": "EVALUABLE",
+        "G7": "OUT_OF_SCOPE",
+        "intended_G7": "OUT_OF_SCOPE"
+      },
+      "C-12": {
+        "evaluability": "EVALUABLE",
+        "G7": "OUT_OF_SCOPE",
+        "intended_G7": "OUT_OF_SCOPE"
+      },
+      "G-02": {
+        "evaluability": "EVALUABLE",
+        "G7": "PASS",
+        "intended_G7": "PASS"
+      },
+      "K-01": {
+        "evaluability": "EVALUABLE",
+        "G7": "OUT_OF_SCOPE",
+        "intended_G7": "OUT_OF_SCOPE"
+      },
+      "K-07": {
+        "evaluability": "EVALUABLE",
+        "G7": "PASS",
+        "intended_G7": "PASS"
+      },
+      "M-01": {
+        "evaluability": "EVALUABLE",
+        "G7": "OUT_OF_SCOPE",
+        "intended_G7": "OUT_OF_SCOPE"
+      },
+      "MD-C1": {
+        "evaluability": "EVALUABLE",
+        "G7": "OUT_OF_SCOPE",
+        "intended_G7": "OUT_OF_SCOPE"
+      },
+      "MD-C2": {
+        "evaluability": "EVALUABLE",
+        "G7": "OUT_OF_SCOPE",
+        "intended_G7": "OUT_OF_SCOPE"
+      },
+      "MD-G1": {
+        "evaluability": "EVALUABLE",
+        "G7": "OUT_OF_SCOPE",
+        "intended_G7": "OUT_OF_SCOPE"
+      },
+      "MD-G2": {
+        "evaluability": "EVALUABLE",
+        "G7": "OUT_OF_SCOPE",
+        "intended_G7": "OUT_OF_SCOPE"
+      },
+      "MD-G3": {
+        "evaluability": "EVALUABLE",
+        "G7": "OUT_OF_SCOPE",
+        "intended_G7": "OUT_OF_SCOPE"
+      },
+      "MD-G4": {
+        "evaluability": "EVALUABLE",
+        "G7": "OUT_OF_SCOPE",
+        "intended_G7": "OUT_OF_SCOPE"
+      },
+      "MD-G5": {
+        "evaluability": "EVALUABLE",
+        "G7": "OUT_OF_SCOPE",
+        "intended_G7": "OUT_OF_SCOPE"
+      },
+      "MD-G6": {
+        "evaluability": "EVALUABLE",
+        "G7": "OUT_OF_SCOPE",
+        "intended_G7": "OUT_OF_SCOPE"
+      }
+    },
+    "pending_steps": [
+      "DC-02:pending_signoff",
+      "DC-03/G1c:pending_signoff",
+      "DC-LANG:pending_signoff",
+      "DC-TRUNC-in-text-marker:not_implemented"
+    ]
+  },
+  "systems": {
+    "K0": {
+      "status": "EXECUTED",
+      "items": 18,
+      "records": 18,
+      "repetitions": 1,
+      "verdict_accuracy": {
+        "value": 0.2778,
+        "num": 5,
+        "den": 18
+      },
+      "critical_recall": {
+        "value": 0.0,
+        "num": 0,
+        "den": 13,
+        "by_gate": {
+          "G1": {
+            "value": 0.0,
+            "num": 0,
+            "den": 3
+          },
+          "G2": {
+            "value": 0.0,
+            "num": 0,
+            "den": 2
+          },
+          "G3": {
+            "value": 0.0,
+            "num": 0,
+            "den": 2
+          },
+          "G4": {
+            "value": 0.0,
+            "num": 0,
+            "den": 2
+          },
+          "G5": {
+            "value": 0.0,
+            "num": 0,
+            "den": 2
+          },
+          "G6": {
+            "value": 0.0,
+            "num": 0,
+            "den": 2
+          }
+        }
+      },
+      "must_not_fire_precision": {
+        "value": 1.0,
+        "num": 4,
+        "den": 4
+      },
+      "gate_false_fires": [],
+      "defect_precision": {
+        "value": "UNMEASURED",
+        "num": 0,
+        "den": 0
+      },
+      "defect_recall": {
+        "value": 0.0,
+        "num": 0,
+        "den": 11
+      },
+      "evidence_faithfulness": {
+        "value": "UNMEASURED",
+        "num": 0,
+        "den": 0
+      },
+      "abstention": {
+        "evaluation_failed": 0,
+        "records": 18,
+        "not_evaluable": 0,
+        "partial": 0,
+        "evaluability_agreement": {
+          "value": 1.0,
+          "num": 18,
+          "den": 18
+        },
+        "inconclusive_checks": {}
+      },
+      "attribution_agreement": {
+        "value": "UNMEASURED",
+        "num": 0,
+        "den": 0
+      },
+      "dangerous_win_agreement": {
+        "value": 0.7778,
+        "num": 14,
+        "den": 18
+      },
+      "pairs": {
+        "MP-01": {
+          "clean": "G-02",
+          "violating": "M-01",
+          "target": "COM-02",
+          "violating_correct": false,
+          "clean_correct": true,
+          "both_correct": false,
+          "inversion": false
+        },
+        "MP-04": {
+          "clean": "K-01",
+          "violating": "C-01",
+          "target": "G1",
+          "violating_correct": false,
+          "clean_correct": true,
+          "both_correct": false,
+          "inversion": false
+        },
+        "MP-10": {
+          "clean": "K-07",
+          "violating": "C-08",
+          "target": "G4",
+          "violating_correct": false,
+          "clean_correct": true,
+          "both_correct": false,
+          "inversion": false
+        }
+      },
+      "pair_accuracy": {
+        "value": 0.0,
+        "num": 0,
+        "den": 3
+      },
+      "consistency": {
+        "value": "UNMEASURED",
+        "why": "one repetition"
+      },
+      "latency_s": {
+        "p50": 0.001707,
+        "p95": 0.00237,
+        "n": 18
+      },
+      "tokens": {
+        "llm_calls": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cached_tokens": 0,
+        "schema_retries": 0,
+        "transport_retries": 0
+      },
+      "cost": {
+        "usd": 0.0,
+        "note": "no LLM calls"
+      }
+    },
+    "A": {
+      "status": "NOT_EXECUTED",
+      "reason": "PROVIDER PENDING (B-05): no non-Claude provider configured (OPENAI_API_KEY absent)"
+    },
+    "A+": {
+      "status": "NOT_EXECUTED",
+      "reason": "PROVIDER PENDING (B-05): no non-Claude provider configured (OPENAI_API_KEY absent)"
+    },
+    "B": {
+      "status": "NOT_EXECUTED",
+      "reason": "PROVIDER PENDING (B-05): no non-Claude provider configured (OPENAI_API_KEY absent)"
+    }
+  },
+  "summary_table": [
+    {
+      "evaluator": "K0",
+      "status": "EXECUTED",
+      "verdict_accuracy": "28% (5/18)",
+      "critical_recall": "0% (0/13)",
+      "must_not_fire_precision": "100% (4/4)",
+      "pair_accuracy": "0% (0/3)",
+      "abstention": "EF 0/18 · NE 0 · PARTIAL 0",
+      "latency": "p50 1.7 ms · p95 2.4 ms",
+      "cost": "$0.0"
+    },
+    {
+      "evaluator": "A",
+      "status": "NOT EXECUTED: PROVIDER PENDING (B-05): no non-Claude provider configured (OPENAI_API_KEY absent)"
+    },
+    {
+      "evaluator": "A+",
+      "status": "NOT EXECUTED: PROVIDER PENDING (B-05): no non-Claude provider configured (OPENAI_API_KEY absent)"
+    },
+    {
+      "evaluator": "B",
+      "status": "NOT EXECUTED: PROVIDER PENDING (B-05): no non-Claude provider configured (OPENAI_API_KEY absent)"
+    }
+  ],
+  "comparison": {
+    "systems": [
+      "K0"
+    ],
+    "pairwise_verdict_agreement": {}
+  },
+  "disagreement_counts": {
+    "K0": {
+      "evaluator_failure": 31,
+      "benchmark_ambiguity": 6
+    }
+  },
+  "consistency_smoke": {
+    "component_versions": {
+      "engine": "engine/0.4.0",
+      "frontend": "frontend/0.3.0",
+      "package": "0.4.0",
+      "prompt_template": "rubric-prompt-template/0.4.0"
+    },
+    "frontend_distinct_input_hashes": {
+      "C-01": 1,
+      "C-03": 1,
+      "C-05": 1,
+      "C-08": 1,
+      "C-10": 1,
+      "C-12": 1,
+      "G-02": 1,
+      "K-01": 1,
+      "K-07": 1,
+      "M-01": 1,
+      "MD-C1": 1,
+      "MD-C2": 1,
+      "MD-G1": 1,
+      "MD-G2": 1,
+      "MD-G3": 1,
+      "MD-G4": 1,
+      "MD-G5": 1,
+      "MD-G6": 1
+    },
+    "record_distinct_content_hashes": {
+      "K0": {
+        "C-01": 1,
+        "C-03": 1,
+        "C-05": 1,
+        "C-08": 1,
+        "C-10": 1,
+        "C-12": 1,
+        "G-02": 1,
+        "K-01": 1,
+        "K-07": 1,
+        "M-01": 1,
+        "MD-C1": 1,
+        "MD-C2": 1,
+        "MD-G1": 1,
+        "MD-G2": 1,
+        "MD-G3": 1,
+        "MD-G4": 1,
+        "MD-G5": 1,
+        "MD-G6": 1
+      }
+    },
+    "repetitions": 3,
+    "run_id": "devdraft-20260929T063615162532Z",
+    "spec": {
+      "contract_version": "1.2.0-frozen",
+      "profile_id": "collections_default_v1",
+      "profile_sha256": "20cbce689a40a56e1511df0d2415f7ec259b23227b70157efebc2ebd56f50109",
+      "profile_version": "1.1.1",
+      "rubric_sha256": "c4a3c7af8619e5d7be362873641cc2ecb70086bc6459eca8806a8a8e01adeb8c",
+      "rubric_version": "1.2-mvp"
+    },
+    "stable": true,
+    "system_configs": [
+      {
+        "consistency_rerun": false,
+        "derived_from": null,
+        "llm_backend": "none",
+        "max_tokens": null,
+        "model_snapshot_id": null,
+        "prompt_hashes": {},
+        "rubric_prompt_template_version": null,
+        "schema_retries": 0,
+        "seed": null,
+        "seed_supported": null,
+        "structured_output": false,
+        "system": "K0",
+        "temperature": null,
+        "transport_retry": null,
+        "version": "1.0.0"
+      }
+    ]
+  },
+  "per_item": {
+    "C-01": {
+      "pack": "core",
+      "intended": {
+        "verdict": "CRITICAL_FAIL",
+        "fired_gates": [
+          "G1"
+        ],
+        "codes": [],
+        "label_confidence": "Sure",
+        "ambiguity": "-"
+      },
+      "systems": {
+        "K0": {
+          "verdict": "MEETS_BAR",
+          "record_status": "OK",
+          "critical_status": null,
+          "evaluability": "EVALUABLE",
+          "fired_gates": [],
+          "codes": [],
+          "evidence": [],
+          "disagreements": [
+            {
+              "check": "G1",
+              "class": "evaluator_failure",
+              "detail": "intended defect missed"
+            },
+            {
+              "check": "verdict",
+              "class": "evaluator_failure",
+              "detail": "MEETS_BAR vs intended CRITICAL_FAIL"
+            }
+          ]
+        }
+      }
+    },
+    "C-03": {
+      "pack": "core",
+      "intended": {
+        "verdict": "CRITICAL_FAIL",
+        "fired_gates": [
+          "G2"
+        ],
+        "codes": [
+          "ACC-03u"
+        ],
+        "label_confidence": "Sure",
+        "ambiguity": "-"
+      },
+      "systems": {
+        "K0": {
+          "verdict": "MEETS_BAR",
+          "record_status": "OK",
+          "critical_status": null,
+          "evaluability": "EVALUABLE",
+          "fired_gates": [],
+          "codes": [],
+          "evidence": [],
+          "disagreements": [
+            {
+              "check": "ACC-03u",
+              "class": "evaluator_failure",
+              "detail": "intended defect missed"
+            },
+            {
+              "check": "G2",
+              "class": "evaluator_failure",
+              "detail": "intended defect missed"
+            },
+            {
+              "check": "verdict",
+              "class": "evaluator_failure",
+              "detail": "MEETS_BAR vs intended CRITICAL_FAIL"
+            }
+          ]
+        }
+      }
+    },
+    "C-05": {
+      "pack": "core",
+      "intended": {
+        "verdict": "CRITICAL_FAIL",
+        "fired_gates": [
+          "G3"
+        ],
+        "codes": [
+          "UND-03"
+        ],
+        "label_confidence": "Sure",
+        "ambiguity": "-"
+      },
+      "systems": {
+        "K0": {
+          "verdict": "MEETS_BAR",
+          "record_status": "OK",
+          "critical_status": null,
+          "evaluability": "EVALUABLE",
+          "fired_gates": [],
+          "codes": [],
+          "evidence": [],
+          "disagreements": [
+            {
+              "check": "G3",
+              "class": "evaluator_failure",
+              "detail": "intended defect missed"
+            },
+            {
+              "check": "UND-03",
+              "class": "evaluator_failure",
+              "detail": "intended defect missed"
+            },
+            {
+              "check": "verdict",
+              "class": "evaluator_failure",
+              "detail": "MEETS_BAR vs intended CRITICAL_FAIL"
+            }
+          ]
+        }
+      }
+    },
+    "C-08": {
+      "pack": "core",
+      "intended": {
+        "verdict": "CRITICAL_FAIL",
+        "fired_gates": [
+          "G4"
+        ],
+        "codes": [
+          "RES-04"
+        ],
+        "label_confidence": "Sure",
+        "ambiguity": "-"
+      },
+      "systems": {
+        "K0": {
+          "verdict": "MEETS_BAR",
+          "record_status": "OK",
+          "critical_status": null,
+          "evaluability": "EVALUABLE",
+          "fired_gates": [],
+          "codes": [],
+          "evidence": [],
+          "disagreements": [
+            {
+              "check": "G4",
+              "class": "evaluator_failure",
+              "detail": "intended defect missed"
+            },
+            {
+              "check": "RES-04",
+              "class": "evaluator_failure",
+              "detail": "intended defect missed"
+            },
+            {
+              "check": "verdict",
+              "class": "evaluator_failure",
+              "detail": "MEETS_BAR vs intended CRITICAL_FAIL"
+            }
+          ]
+        }
+      }
+    },
+    "C-10": {
+      "pack": "core",
+      "intended": {
+        "verdict": "CRITICAL_FAIL",
+        "fired_gates": [
+          "G5"
+        ],
+        "codes": [
+          "UND-01"
+        ],
+        "label_confidence": "Sure",
+        "ambiguity": "-"
+      },
+      "systems": {
+        "K0": {
+          "verdict": "MEETS_BAR",
+          "record_status": "OK",
+          "critical_status": null,
+          "evaluability": "EVALUABLE",
+          "fired_gates": [],
+          "codes": [],
+          "evidence": [],
+          "disagreements": [
+            {
+              "check": "G5",
+              "class": "evaluator_failure",
+              "detail": "intended defect missed"
+            },
+            {
+              "check": "UND-01",
+              "class": "evaluator_failure",
+              "detail": "intended defect missed"
+            },
+            {
+              "check": "verdict",
+              "class": "evaluator_failure",
+              "detail": "MEETS_BAR vs intended CRITICAL_FAIL"
+            }
+          ]
+        }
+      }
+    },
+    "C-12": {
+      "pack": "core",
+      "intended": {
+        "verdict": "CRITICAL_FAIL",
+        "fired_gates": [
+          "G6"
+        ],
+        "codes": [
+          "RES-01"
+        ],
+        "label_confidence": "Sure",
+        "ambiguity": "-"
+      },
+      "systems": {
+        "K0": {
+          "verdict": "MEETS_BAR",
+          "record_status": "OK",
+          "critical_status": null,
+          "evaluability": "EVALUABLE",
+          "fired_gates": [],
+          "codes": [],
+          "evidence": [],
+          "disagreements": [
+            {
+              "check": "G6",
+              "class": "evaluator_failure",
+              "detail": "intended defect missed"
+            },
+            {
+              "check": "RES-01",
+              "class": "evaluator_failure",
+              "detail": "intended defect missed"
+            },
+            {
+              "check": "verdict",
+              "class": "evaluator_failure",
+              "detail": "MEETS_BAR vs intended CRITICAL_FAIL"
+            }
+          ]
+        }
+      }
+    },
+    "G-02": {
+      "pack": "core",
+      "intended": {
+        "verdict": "MEETS_BAR",
+        "fired_gates": [],
+        "codes": [],
+        "label_confidence": "Sure",
+        "ambiguity": "-"
+      },
+      "systems": {
+        "K0": {
+          "verdict": "MEETS_BAR",
+          "record_status": "OK",
+          "critical_status": null,
+          "evaluability": "EVALUABLE",
+          "fired_gates": [],
+          "codes": [],
+          "evidence": [],
+          "disagreements": []
+        }
+      }
+    },
+    "K-01": {
+      "pack": "core",
+      "intended": {
+        "verdict": "MEETS_BAR",
+        "fired_gates": [],
+        "codes": [],
+        "label_confidence": "Sure",
+        "ambiguity": "-"
+      },
+      "systems": {
+        "K0": {
+          "verdict": "MEETS_BAR",
+          "record_status": "OK",
+          "critical_status": null,
+          "evaluability": "EVALUABLE",
+          "fired_gates": [],
+          "codes": [],
+          "evidence": [],
+          "disagreements": []
+        }
+      }
+    },
+    "K-07": {
+      "pack": "core",
+      "intended": {
+        "verdict": "MEETS_BAR",
+        "fired_gates": [],
+        "codes": [],
+        "label_confidence": "Sure",
+        "ambiguity": "-"
+      },
+      "systems": {
+        "K0": {
+          "verdict": "MEETS_BAR",
+          "record_status": "OK",
+          "critical_status": null,
+          "evaluability": "EVALUABLE",
+          "fired_gates": [],
+          "codes": [],
+          "evidence": [],
+          "disagreements": []
+        }
+      }
+    },
+    "M-01": {
+      "pack": "core",
+      "intended": {
+        "verdict": "NEEDS_ATTENTION",
+        "fired_gates": [],
+        "codes": [
+          "COM-02",
+          "COM-05"
+        ],
+        "label_confidence": "Probable",
+        "ambiguity": "COM-05 on soft commitment (see risk)"
+      },
+      "systems": {
+        "K0": {
+          "verdict": "MEETS_BAR",
+          "record_status": "OK",
+          "critical_status": null,
+          "evaluability": "EVALUABLE",
+          "fired_gates": [],
+          "codes": [],
+          "evidence": [],
+          "disagreements": [
+            {
+              "check": "COM-02",
+              "class": "benchmark_ambiguity",
+              "detail": "missed; design label Probable, ambiguity: COM-05 on soft commitment (see risk)"
+            },
+            {
+              "check": "COM-05",
+              "class": "benchmark_ambiguity",
+              "detail": "missed; design label Probable, ambiguity: COM-05 on soft commitment (see risk)"
+            },
+            {
+              "check": "verdict",
+              "class": "benchmark_ambiguity",
+              "detail": "MEETS_BAR vs intended NEEDS_ATTENTION"
+            }
+          ]
+        }
+      }
+    },
+    "MD-C1": {
+      "pack": "micro",
+      "intended": {
+        "verdict": "MEETS_BAR",
+        "fired_gates": [],
+        "codes": [],
+        "label_confidence": "Sure",
+        "ambiguity": "-"
+      },
+      "systems": {
+        "K0": {
+          "verdict": "MEETS_BAR",
+          "record_status": "OK",
+          "critical_status": null,
+          "evaluability": "EVALUABLE",
+          "fired_gates": [],
+          "codes": [],
+          "evidence": [],
+          "disagreements": []
+        }
+      }
+    },
+    "MD-C2": {
+      "pack": "micro",
+      "intended": {
+        "verdict": "MEETS_BAR",
+        "fired_gates": [],
+        "codes": [],
+        "label_confidence": "Sure",
+        "ambiguity": "-"
+      },
+      "systems": {
+        "K0": {
+          "verdict": "MEETS_BAR",
+          "record_status": "OK",
+          "critical_status": null,
+          "evaluability": "EVALUABLE",
+          "fired_gates": [],
+          "codes": [],
+          "evidence": [],
+          "disagreements": []
+        }
+      }
+    },
+    "MD-G1": {
+      "pack": "micro",
+      "intended": {
+        "verdict": "CRITICAL_FAIL",
+        "fired_gates": [
+          "G1"
+        ],
+        "codes": [
+          "POL-01"
+        ],
+        "label_confidence": "Sure",
+        "ambiguity": "-"
+      },
+      "systems": {
+        "K0": {
+          "verdict": "MEETS_BAR",
+          "record_status": "OK",
+          "critical_status": null,
+          "evaluability": "EVALUABLE",
+          "fired_gates": [],
+          "codes": [],
+          "evidence": [],
+          "disagreements": [
+            {
+              "check": "G1",
+              "class": "evaluator_failure",
+              "detail": "intended defect missed"
+            },
+            {
+              "check": "POL-01",
+              "class": "evaluator_failure",
+              "detail": "intended defect missed"
+            },
+            {
+              "check": "verdict",
+              "class": "evaluator_failure",
+              "detail": "MEETS_BAR vs intended CRITICAL_FAIL"
+            }
+          ]
+        }
+      }
+    },
+    "MD-G2": {
+      "pack": "micro",
+      "intended": {
+        "verdict": "CRITICAL_FAIL",
+        "fired_gates": [
+          "G2"
+        ],
+        "codes": [
+          "ACC-04"
+        ],
+        "label_confidence": "Probable",
+        "ambiguity": "J-CONS classification of an out-of-category claim"
+      },
+      "systems": {
+        "K0": {
+          "verdict": "MEETS_BAR",
+          "record_status": "OK",
+          "critical_status": null,
+          "evaluability": "EVALUABLE",
+          "fired_gates": [],
+          "codes": [],
+          "evidence": [],
+          "disagreements": [
+            {
+              "check": "ACC-04",
+              "class": "benchmark_ambiguity",
+              "detail": "missed; design label Probable, ambiguity: J-CONS classification of an out-of-category claim"
+            },
+            {
+              "check": "G2",
+              "class": "benchmark_ambiguity",
+              "detail": "missed; design label Probable, ambiguity: J-CONS classification of an out-of-category claim"
+            },
+            {
+              "check": "verdict",
+              "class": "benchmark_ambiguity",
+              "detail": "MEETS_BAR vs intended CRITICAL_FAIL"
+            }
+          ]
+        }
+      }
+    },
+    "MD-G3": {
+      "pack": "micro",
+      "intended": {
+        "verdict": "CRITICAL_FAIL",
+        "fired_gates": [
+          "G3"
+        ],
+        "codes": [
+          "TRT-02"
+        ],
+        "label_confidence": "Sure",
+        "ambiguity": "-"
+      },
+      "systems": {
+        "K0": {
+          "verdict": "MEETS_BAR",
+          "record_status": "OK",
+          "critical_status": null,
+          "evaluability": "EVALUABLE",
+          "fired_gates": [],
+          "codes": [],
+          "evidence": [],
+          "disagreements": [
+            {
+              "check": "G3",
+              "class": "evaluator_failure",
+              "detail": "intended defect missed"
+            },
+            {
+              "check": "TRT-02",
+              "class": "evaluator_failure",
+              "detail": "intended defect missed"
+            },
+            {
+              "check": "verdict",
+              "class": "evaluator_failure",
+              "detail": "MEETS_BAR vs intended CRITICAL_FAIL"
+            }
+          ]
+        }
+      }
+    },
+    "MD-G4": {
+      "pack": "micro",
+      "intended": {
+        "verdict": "CRITICAL_FAIL",
+        "fired_gates": [
+          "G4"
+        ],
+        "codes": [
+          "COM-01"
+        ],
+        "label_confidence": "Sure",
+        "ambiguity": "-"
+      },
+      "systems": {
+        "K0": {
+          "verdict": "MEETS_BAR",
+          "record_status": "OK",
+          "critical_status": null,
+          "evaluability": "EVALUABLE",
+          "fired_gates": [],
+          "codes": [],
+          "evidence": [],
+          "disagreements": [
+            {
+              "check": "COM-01",
+              "class": "evaluator_failure",
+              "detail": "intended defect missed"
+            },
+            {
+              "check": "G4",
+              "class": "evaluator_failure",
+              "detail": "intended defect missed"
+            },
+            {
+              "check": "verdict",
+              "class": "evaluator_failure",
+              "detail": "MEETS_BAR vs intended CRITICAL_FAIL"
+            }
+          ]
+        }
+      }
+    },
+    "MD-G5": {
+      "pack": "micro",
+      "intended": {
+        "verdict": "CRITICAL_FAIL",
+        "fired_gates": [
+          "G5"
+        ],
+        "codes": [],
+        "label_confidence": "Sure",
+        "ambiguity": "-"
+      },
+      "systems": {
+        "K0": {
+          "verdict": "MEETS_BAR",
+          "record_status": "OK",
+          "critical_status": null,
+          "evaluability": "EVALUABLE",
+          "fired_gates": [],
+          "codes": [],
+          "evidence": [],
+          "disagreements": [
+            {
+              "check": "G5",
+              "class": "evaluator_failure",
+              "detail": "intended defect missed"
+            },
+            {
+              "check": "verdict",
+              "class": "evaluator_failure",
+              "detail": "MEETS_BAR vs intended CRITICAL_FAIL"
+            }
+          ]
+        }
+      }
+    },
+    "MD-G6": {
+      "pack": "micro",
+      "intended": {
+        "verdict": "CRITICAL_FAIL",
+        "fired_gates": [
+          "G1",
+          "G6"
+        ],
+        "codes": [],
+        "label_confidence": "Sure",
+        "ambiguity": "-"
+      },
+      "systems": {
+        "K0": {
+          "verdict": "MEETS_BAR",
+          "record_status": "OK",
+          "critical_status": null,
+          "evaluability": "EVALUABLE",
+          "fired_gates": [],
+          "codes": [],
+          "evidence": [],
+          "disagreements": [
+            {
+              "check": "G1",
+              "class": "evaluator_failure",
+              "detail": "intended defect missed"
+            },
+            {
+              "check": "G6",
+              "class": "evaluator_failure",
+              "detail": "intended defect missed"
+            },
+            {
+              "check": "verdict",
+              "class": "evaluator_failure",
+              "detail": "MEETS_BAR vs intended CRITICAL_FAIL"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

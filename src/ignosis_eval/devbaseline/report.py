@@ -23,7 +23,8 @@ REFERENCE = "frozen DEV design intent (bench/public blueprint and case cards), N
 
 def build_report(run_dir: Path, design: DevDesign, public_dir: Path, *, quote_match_min: float,
                  evaluator_configuration: dict[str, Any], not_executed: dict[str, str] | None = None,
-                 prices: tuple[float, float] | None = None) -> dict[str, Any]:
+                 prices: tuple[float, float] | None = None, consistency: dict[str, Any] | None = None
+                 ) -> dict[str, Any]:
     manifest, by_system = load_run(run_dir)
     items = list(manifest["items"]["executed"])
     refs = build_reference(design, public_dir, items)
@@ -60,7 +61,7 @@ def build_report(run_dir: Path, design: DevDesign, public_dir: Path, *, quote_ma
                                       "intended_G7": refs[i].gates.get("G7")} for i in items},
                      "pending_steps": sorted({s for i in items for s in fe[i]["steps_pending"]})},
         "systems": systems, "summary_table": summary_rows(systems), "comparison": compare_systems(by_system, refs),
-        "disagreement_counts": counts, "per_item": rows,
+        "disagreement_counts": counts, "consistency_smoke": consistency, "per_item": rows,
     }
 
 
@@ -142,6 +143,18 @@ def render_markdown(r: dict[str, Any]) -> str:
     add(f"Front-end steps still pending sign-off or not built: {', '.join(fe['pending_steps'])}\n")
     add("Excluded from the call-level baseline: " + "; ".join(f"{k} ({v})" for k, v in run["items_excluded"].items())
         + "\n")
+    cs = r.get("consistency_smoke")
+    add("## Reproducibility smoke run\n")
+    if cs:
+        n_fe = sum(v == 1 for v in cs["frontend_distinct_input_hashes"].values())
+        recs = {s: f"{sum(n == 1 for n in d.values())}/{len(d)}" for s, d in
+                cs["record_distinct_content_hashes"].items()}
+        add(f"Run `{cs['run_id']}`, {cs['repetitions']} repetitions under the same settings: front-end input hash "
+            f"stable on {n_fe}/{len(cs['frontend_distinct_input_hashes'])} items; record content hash stable per "
+            f"system: {recs}; overall stable: **{cs['stable']}**. System configurations, prompt hashes and component "
+            "versions are captured in the run's `draft_run.json`.\n")
+    else:
+        add("Not run.\n")
     add("## A vs A+ vs B\n")
     cmp_ = r["comparison"]
     if len(cmp_["systems"]) < 2:
