@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ignosis_eval.contracts.canonical_input import NormalizedInput
+from ignosis_eval.contracts.evidence_aliases import canonical_elements
 from ignosis_eval.contracts.registries import Registries
 from ignosis_eval.golddrv.capability import CapabilityTable, perception_allowed
 from ignosis_eval.metrics.alignment import NO_MAJORITY_COLUMN, SD06, SD06_COLUMNS, SD06_ROWS, eval_column, gold_row
@@ -362,7 +363,7 @@ def sd14(ctx: ScoreCtx, units: list[UnitCtx], sv: SystemView) -> dict[str, Any]:
         missing_gold += len(missing)
         if not req:
             continue
-        sat, n = completeness(turns, header, req, elements)
+        sat, n = completeness(turns, header, req, canonical_elements(check, elements)[0])  # BD-05 names
         scores.append(sat / n)
     return {"n_findings": len(scores), "mean": round(sum(scores) / len(scores), 4) if scores else None,
             "share_complete": rate(sum(s == 1.0 for s in scores), len(scores), clustered=True),

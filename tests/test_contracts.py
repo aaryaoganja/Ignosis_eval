@@ -80,6 +80,16 @@ def test_registries():
     with pytest.raises(ValidationError):
         Registries.model_validate({"controls": [{"item_id": "ZZ-A1", "target_gates": ["G3"]},
                                                 {"item_id": "ZZ-A2", "target_gates": []}]})
+    pair = {"pair_id": "P", "clean_item": "ZZ-A1", "violating_item": "ZZ-A2", "target_check": "COM-02"}
+    ok = Registries.model_validate({"pairs": [{**pair, "incidental_differences": [
+        {"aspect": "borrower_context", "where": "B4", "basis": "BD-03"},
+        {"aspect": "call_start_ts_header", "where": "G7", "basis": "BD-04"}]}]})  # BD-03 / BD-04 pair metadata
+    assert [d.basis for d in ok.pairs[0].incidental_differences] == ["BD-03", "BD-04"]
+    for bad in ({"aspect": "borrower_context", "where": "COM-02", "basis": "BD-03"},  # never the pair target
+                {"aspect": "borrower_context", "where": "B4", "basis": "SC-04"},     # basis must be a BD id
+                {"aspect": "tone", "where": "B4", "basis": "BD-03"}):
+        with pytest.raises(ValidationError):
+            Registries.model_validate({"pairs": [{**pair, "incidental_differences": [bad]}]})
 
 
 def _manifest(**over):

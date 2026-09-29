@@ -16,8 +16,8 @@ and what is still pending.
      This is enforced statically and transitively by `tests/test_architecture_boundaries.py`.
    - At runtime systems run inside `ProtectedPathGuard`, which blocks gold, case cards, manifests, registries,
      the private registry, the whole results tree (runs, blinding, views, scoring), and blocks subprocesses.
-   - Systems see only a random per-run unit alias (`u_xxxxxxxx`, P-17 / SC-05). Item ids, pair ids, pack/split names
-     and source file names never reach them; the runner's pre-run payload test fails the run otherwise.
+   - Systems see only a random per-run unit alias (`u_xxxxxxxx`, P-17 / SC-05). Item ids, pair ids, benchmark labels
+     and source file names never reach them; the runner's pre-run identity-leak test fails the run otherwise.
 2. **Gold is never derived from evaluator output.**
    - `GoldProvenance.derived_from_evaluator_output` is the literal `false`.
    - Holdout and red-team gold is labelled blind.

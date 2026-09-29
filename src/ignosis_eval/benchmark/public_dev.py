@@ -41,10 +41,9 @@ import re
 from dataclasses import dataclass, field
 from datetime import time
 from pathlib import Path
-from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import ValidationError
 
 from ignosis_eval.benchmark.case_card_rules import RuleIssue
 from ignosis_eval.canonical import sha256_bytes
@@ -59,8 +58,10 @@ from ignosis_eval.contracts.enums import (
     UnitMode,
     Verdict,
 )
+from ignosis_eval.contracts.blueprint import Blueprint, BlueprintFinding, BlueprintItem, SchemaFile
 from ignosis_eval.contracts.gold_label import AttributionFacts
-from ignosis_eval.contracts.registries import ControlEntry, PairEntry, Registries
+from ignosis_eval.contracts.evidence_aliases import NON_ELEMENT_EVIDENCE, canonical_element
+from ignosis_eval.contracts.registries import ControlEntry, IncidentalDifference, PairEntry, Registries
 from ignosis_eval.golddrv.capability import CapabilityTable
 from ignosis_eval.golddrv.derive import derive_attribution
 from ignosis_eval.spec.loader import Spec
@@ -74,6 +75,13 @@ BLUEPRINT_VERSION = "bench-a1/1.0"
 FREEZE_PUBLIC = "FREEZE-public.md"
 FREEZE_HANDOFF = "FREEZE-HANDOFF.md"
 STAGE5_LOG = "STAGE5-ADJUDICATION-LOG.md"
+CLARIFICATIONS = "bd-changelog.md"  # docs/bd-changelog.md: post-freeze BD-xx clarifications (frozen files unedited)
+# Pair metadata: declared incidental differences that do not define the pair target (BD-03, BD-04).
+PAIR_INCIDENTAL: dict[str, tuple[IncidentalDifference, ...]] = {
+    "MP-01": (IncidentalDifference(aspect="borrower_context", where="B4", basis="BD-03"),
+              IncidentalDifference(aspect="call_start_ts_header", where="G7", basis="BD-04")),
+    "MP-10": (IncidentalDifference(aspect="call_start_ts_header", where="G7", basis="BD-04"),),
+}
 MATRIX_COLUMNS = (
     "item_id", "pack", "split", "scenario", "category", "target_code", "secondary_code", "severity", "action_type",
     "intended_agent_behavior", "intended_customer_behavior_context", "expected_verdict", "expected_gate_status",
@@ -186,71 +194,7 @@ def _check_files(public_dir: Path, spec: Spec, freeze_dir: Path) -> list[RuleIss
 
 
 # ============================================================================================ blueprint
-class _Strict(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-
-class BlueprintGate(_Strict):
-    status: Literal["PASS", "FAIL", "NA", "INCONCLUSIVE", "INCONCLUSIVE+trigger", "OUT_OF_SCOPE"]
-    label_type: str
-
-
-class BlueprintFinding(_Strict):
-    code: str
-    severity: str
-    action: str
-    anchor_beat: str
-    evidence_elements: str
-    attribution_T: str
-    label_type: str
-    note: str
-
-
-class BlueprintOutcome(_Strict):
-    dispositions: str
-    positive: bool
-    outcome_attribution: str
-
-
-class BlueprintItem(_Strict):
-    item_id: str
-    pack: str
-    split: str
-    modes: str
-    header: str | None
-    gates: dict[str, BlueprintGate] | Literal["n/a"]
-    findings: list[BlueprintFinding]
-    verdict: str
-    evaluability: str
-    outcome: BlueprintOutcome
-    dangerous_win: str
-    clean_loss: bool
-    attribution_summary: str
-    control_target_gates: list[str]
-    abstention_targets: list[Any]
-    contested: bool
-    label_confidence: str
-    ambiguity_notes: str
-    rule_basis: list[str]  # contract §0 decision ids the item's intent rests on (e.g. SC-04)
-    external_dependencies: list[str]  # implementation-blockers B-xx the item waits on (external human input)
-
-
-class BlueprintSchema(_Strict):
-    gold_blueprint_version: str
-    principle: str
-    anchors: str
-    per_item_fields: dict[str, str]
-    label_type_legend: dict[str, str]
-    mode_derivation: str
-
-
-class Blueprint(_Strict):
-    schema_block: BlueprintSchema = Field(alias="schema")
-    items: list[BlueprintItem]
-
-
-class SchemaFile(_Strict):
-    schema_block: BlueprintSchema = Field(alias="schema")
+# The blueprint models are the versioned repository contract `contracts/blueprint.py` (gold_blueprint/1.1.0).
 
 
 # ============================================================================================ case cards
@@ -563,6 +507,11 @@ def frozen_dev(contract_md: str) -> FrozenDev:
     return FrozenDev(frozenset(ids), pairs, frozenset(renders), decisions, tuple(problems))
 
 
+def clarification_ids(changelog_md: str) -> frozenset[str]:
+    """BD-xx ids of the post-freeze clarification changelog (docs/bd-changelog.md)."""
+    return frozenset(re.findall(r"^\| (BD-\d{2}) \|", changelog_md, re.M))
+
+
 def blocker_ids(blockers_md: str) -> frozenset[str]:
     """implementation-blockers.md B-xx ids (the only genuinely external dependencies)."""
     return frozenset(re.findall(r"^\| \*\*(B-\d{2})\*\* \|", blockers_md, re.M))
@@ -615,7 +564,8 @@ class DevDesign:
         for pid, members in sorted(by_pair.items()):
             v = members["violating"]
             pairs.append(PairEntry(pair_id=pid, clean_item=members["clean"].item_id, violating_item=v.item_id,
-                                   target_check=v.targets[0][0]))
+                                   target_check=v.targets[0][0],
+                                   incidental_differences=list(PAIR_INCIDENTAL.get(pid, ()))))
         controls = [ControlEntry(item_id=it.item_id, target_gates=it.control_target_gates)  # type: ignore[arg-type]
                     for it in sorted(self.items.values(), key=lambda x: x.item_id) if it.control_target_gates]
         return Registries(controls=controls, pairs=pairs)
@@ -645,6 +595,7 @@ class _V:
         self.spec = spec
         self.issues: list[RuleIssue] = []
         self.decisions: frozenset[str] = frozenset()
+        self.clarifications: frozenset[str] = frozenset()
         self.blockers: frozenset[str] = frozenset()
         self.raw = {c["id"]: c for c in spec.rubric["gates"] + spec.rubric["codes"] + spec.rubric["platform_signals"]}
         self.table = CapabilityTable.from_rubric(spec.rubric)
@@ -694,7 +645,8 @@ def _registered(note: str) -> bool:
 
 
 def validate_public_dev(public_dir: str | Path, spec: Spec, *, contract_md: str | None = None,
-                        freeze_dir: str | Path | None = None) -> PublicDevReport:
+                        freeze_dir: str | Path | None = None,
+                        clarifications_path: str | Path | None = None) -> PublicDevReport:
     public_dir = Path(public_dir)
     fdir = Path(freeze_dir) if freeze_dir is not None else default_freeze_dir(spec)
     rep = PublicDevReport()
@@ -705,6 +657,9 @@ def validate_public_dev(public_dir: str | Path, spec: Spec, *, contract_md: str 
     contract_md = contract_md if contract_md is not None else \
         (spec.spec_dir / "frozen-contract.md").read_text(encoding="utf-8")
     v.blockers = blocker_ids((spec.spec_dir / "implementation-blockers.md").read_text(encoding="utf-8"))
+    cpath = clarifications_path if clarifications_path is not None else spec.spec_dir.parent / CLARIFICATIONS
+    v.clarifications = clarification_ids(Path(cpath).read_text(encoding="utf-8")) if Path(cpath).exists() \
+        else frozenset()
     try:
         text = {k: (public_dir / n).read_bytes().decode("utf-8") for k, n in DATA_FILES.items()}
         blueprint = Blueprint.model_validate(yaml.safe_load(text["blueprint"]))
@@ -719,17 +674,23 @@ def validate_public_dev(public_dir: str | Path, spec: Spec, *, contract_md: str 
     except (PublicDevError, ValidationError, yaml.YAMLError, UnicodeDecodeError, csv.Error) as exc:
         rep.issues.append(RuleIssue("PD002", "error", f"{type(exc).__name__}: {exc}"))
         return rep
-    v.decisions = frozen.decision_ids
+    v.decisions = frozen.decision_ids | v.clarifications
+    for pid, diffs in sorted(PAIR_INCIDENTAL.items()):
+        for d in diffs:
+            if d.basis not in v.clarifications:
+                v.err("PD005", f"pair {pid}: incidental difference {d.aspect} {d.where} cites {d.basis}, which is not "
+                               f"recorded in docs/{CLARIFICATIONS}")
     for problem in frozen.redaction_problems:
         v.err("PD019", f"frozen-contract §12 (SC-06): {problem}")
     # ---------------------------------------------------------------- schema file
     if blueprint.schema_block != schema_file.schema_block:
         v.err("PD017", "the blueprint's schema block differs from gold-blueprint-schema.yaml")
     meta = schema_file.schema_block.per_item_fields.get("meta", "")
-    for fld in ("rule_basis", "external_dependencies"):
-        if fld not in meta:
-            v.warn("PD018", f"blueprint items carry `{fld}` but gold-blueprint-schema.yaml per_item_fields.meta names "
-                            f"only {meta!r} (frozen-package inconsistency; the item fields are used)")
+    if "BD-05" not in v.clarifications:  # BD-05: rule_basis / external_dependencies supersede the schema's depends_on
+        for fld in ("rule_basis", "external_dependencies"):
+            if fld not in meta:
+                v.warn("PD018", f"blueprint items carry `{fld}` but gold-blueprint-schema.yaml per_item_fields.meta "
+                                f"names only {meta!r} and no BD-05 clarification is recorded")
     if schema_file.schema_block.gold_blueprint_version != BLUEPRINT_VERSION:
         v.err("PD017", f"gold_blueprint_version {schema_file.schema_block.gold_blueprint_version} != "
                        f"{BLUEPRINT_VERSION}")
@@ -976,7 +937,9 @@ def _check_item(v: _V, it: DesignItem, b: BlueprintItem, items: dict[str, Design
                 v.err("PD013", f"{f.code}: beat B{n} is not in the beat sheet", iid)
         rubric_els = {e["name"]: e for e in v.elements(f.code)}
         for name, ns in els.items():
-            spec_el = rubric_els.get(name)
+            if (f.code, name) in NON_ELEMENT_EVIDENCE:  # BD-05: a non-element-specific evidence requirement
+                continue
+            spec_el = rubric_els.get(canonical_element(f.code, name))  # BD-05: blueprint alias -> rubric name
             if spec_el is None:
                 v.warn("PD014", f"{f.code}: evidence element {name!r} is not a rubric required_evidence_element "
                                 f"({sorted(rubric_els)}); SD-14 completeness needs rubric names — reconcile before "
@@ -1121,7 +1084,10 @@ def _constraint4(v: _V, pid: str, clean: DesignItem, viol: DesignItem, cards: di
     if not 1 <= len(agent) <= 3 or len(agent) + len(unknown) > 3:
         v.warn("PD011", f"pair {pid}: the declared edit set has agent beats {agent} (unlabelled {unknown}); "
                         "authoring constraint 4 allows 1–3 edited agent turns")
+    declared = {d.where for d in PAIR_INCIDENTAL.get(pid, ()) if d.aspect == "borrower_context"}
     for n in customer:
+        if f"B{n}" in declared:  # BD-03: declared incidental borrower context, not the pair target
+            continue
         if n - 1 not in edited or n - 1 not in agent:
             v.warn("PD011", f"pair {pid}: {viol.item_id} B{n} (customer side) is inside the declared edit set but does "
                             f"not directly react to an edited agent beat (B{n - 1} is "
@@ -1164,7 +1130,14 @@ def _check_pairs(v: _V, items: dict[str, DesignItem], frozen: FrozenDev, matrix:
             continue
         # non-target gate differences: declared ones are named in the risk notes
         declared = matrix[viol.item_id]["benchmark_risk_notes"] + " " + matrix[clean.item_id]["benchmark_risk_notes"]
+        incidental = {d.where for d in PAIR_INCIDENTAL.get(pid, ()) if d.aspect == "call_start_ts_header"}
+        for d in PAIR_INCIDENTAL.get(pid, ()):
+            if d.aspect == "call_start_ts_header" and (clean.has_header == viol.has_header
+                                                       or clean.gates[d.where] == viol.gates[d.where]):
+                v.warn("PD011", f"pair {pid}: declared incidental difference {d.where} ({d.basis}) is not present")
         for g in GATES:
+            if g in incidental and clean.has_header != viol.has_header:
+                continue  # BD-04: the header asymmetry is incidental metadata for pair analysis
             if g != target and clean.gates[g] != viol.gates[g] and g not in declared:
                 why = " (the header differs: one member carries call_start_ts)" if g == "G7" else ""
                 v.warn("PD011", f"pair {pid}: {g} differs ({clean.item_id} {clean.gates[g]} vs {viol.item_id} "

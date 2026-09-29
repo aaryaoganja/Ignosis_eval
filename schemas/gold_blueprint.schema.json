@@ -1,0 +1,311 @@
+{
+  "$defs": {
+    "BlueprintFinding": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "title": "Action",
+          "type": "string"
+        },
+        "anchor_beat": {
+          "title": "Anchor Beat",
+          "type": "string"
+        },
+        "attribution_T": {
+          "title": "Attribution T",
+          "type": "string"
+        },
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "evidence_elements": {
+          "title": "Evidence Elements",
+          "type": "string"
+        },
+        "label_type": {
+          "title": "Label Type",
+          "type": "string"
+        },
+        "note": {
+          "title": "Note",
+          "type": "string"
+        },
+        "severity": {
+          "title": "Severity",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "severity",
+        "action",
+        "anchor_beat",
+        "evidence_elements",
+        "attribution_T",
+        "label_type",
+        "note"
+      ],
+      "title": "BlueprintFinding",
+      "type": "object"
+    },
+    "BlueprintGate": {
+      "additionalProperties": false,
+      "properties": {
+        "label_type": {
+          "title": "Label Type",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "PASS",
+            "FAIL",
+            "NA",
+            "INCONCLUSIVE",
+            "INCONCLUSIVE+trigger",
+            "OUT_OF_SCOPE"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "label_type"
+      ],
+      "title": "BlueprintGate",
+      "type": "object"
+    },
+    "BlueprintItem": {
+      "additionalProperties": false,
+      "properties": {
+        "abstention_targets": {
+          "items": {},
+          "title": "Abstention Targets",
+          "type": "array"
+        },
+        "ambiguity_notes": {
+          "title": "Ambiguity Notes",
+          "type": "string"
+        },
+        "attribution_summary": {
+          "title": "Attribution Summary",
+          "type": "string"
+        },
+        "clean_loss": {
+          "title": "Clean Loss",
+          "type": "boolean"
+        },
+        "contested": {
+          "title": "Contested",
+          "type": "boolean"
+        },
+        "control_target_gates": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Control Target Gates",
+          "type": "array"
+        },
+        "dangerous_win": {
+          "title": "Dangerous Win",
+          "type": "string"
+        },
+        "evaluability": {
+          "title": "Evaluability",
+          "type": "string"
+        },
+        "external_dependencies": {
+          "items": {
+            "pattern": "^B-\\d{2}$",
+            "type": "string"
+          },
+          "title": "External Dependencies",
+          "type": "array"
+        },
+        "findings": {
+          "items": {
+            "$ref": "#/$defs/BlueprintFinding"
+          },
+          "title": "Findings",
+          "type": "array"
+        },
+        "gates": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/BlueprintGate"
+              },
+              "type": "object"
+            },
+            {
+              "const": "n/a",
+              "type": "string"
+            }
+          ],
+          "title": "Gates"
+        },
+        "header": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Header"
+        },
+        "item_id": {
+          "title": "Item Id",
+          "type": "string"
+        },
+        "label_confidence": {
+          "title": "Label Confidence",
+          "type": "string"
+        },
+        "modes": {
+          "title": "Modes",
+          "type": "string"
+        },
+        "outcome": {
+          "$ref": "#/$defs/BlueprintOutcome"
+        },
+        "pack": {
+          "title": "Pack",
+          "type": "string"
+        },
+        "rule_basis": {
+          "items": {
+            "pattern": "^(R|AJ|SC|BD)-\\d{2}$",
+            "type": "string"
+          },
+          "title": "Rule Basis",
+          "type": "array"
+        },
+        "split": {
+          "title": "Split",
+          "type": "string"
+        },
+        "verdict": {
+          "title": "Verdict",
+          "type": "string"
+        }
+      },
+      "required": [
+        "item_id",
+        "pack",
+        "split",
+        "modes",
+        "header",
+        "gates",
+        "findings",
+        "verdict",
+        "evaluability",
+        "outcome",
+        "dangerous_win",
+        "clean_loss",
+        "attribution_summary",
+        "control_target_gates",
+        "abstention_targets",
+        "contested",
+        "label_confidence",
+        "ambiguity_notes",
+        "rule_basis",
+        "external_dependencies"
+      ],
+      "title": "BlueprintItem",
+      "type": "object"
+    },
+    "BlueprintOutcome": {
+      "additionalProperties": false,
+      "properties": {
+        "dispositions": {
+          "title": "Dispositions",
+          "type": "string"
+        },
+        "outcome_attribution": {
+          "title": "Outcome Attribution",
+          "type": "string"
+        },
+        "positive": {
+          "title": "Positive",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "dispositions",
+        "positive",
+        "outcome_attribution"
+      ],
+      "title": "BlueprintOutcome",
+      "type": "object"
+    },
+    "BlueprintSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "anchors": {
+          "title": "Anchors",
+          "type": "string"
+        },
+        "gold_blueprint_version": {
+          "title": "Gold Blueprint Version",
+          "type": "string"
+        },
+        "label_type_legend": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Label Type Legend",
+          "type": "object"
+        },
+        "mode_derivation": {
+          "title": "Mode Derivation",
+          "type": "string"
+        },
+        "per_item_fields": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Per Item Fields",
+          "type": "object"
+        },
+        "principle": {
+          "title": "Principle",
+          "type": "string"
+        }
+      },
+      "required": [
+        "gold_blueprint_version",
+        "principle",
+        "anchors",
+        "per_item_fields",
+        "label_type_legend",
+        "mode_derivation"
+      ],
+      "title": "BlueprintSchema",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The whole `dev-gold-blueprint.yaml` (its `schema:` block plus the items).",
+  "properties": {
+    "items": {
+      "items": {
+        "$ref": "#/$defs/BlueprintItem"
+      },
+      "title": "Items",
+      "type": "array"
+    },
+    "schema": {
+      "$ref": "#/$defs/BlueprintSchema"
+    }
+  },
+  "required": [
+    "schema",
+    "items"
+  ],
+  "title": "Blueprint",
+  "type": "object",
+  "x-schema-version": "gold_blueprint/1.1.0"
+}

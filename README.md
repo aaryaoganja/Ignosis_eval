@@ -28,9 +28,9 @@ adjudication log) are in [`docs/freeze/`](docs/freeze/). The earlier 1.1 adjudic
 | Spec pack | `docs/spec/` (the 6 frozen 1.2.0 files, verbatim; hashes committed in `docs/freeze/FREEZE-HANDOFF.md` and verified by every `bench check`). `ignosis-eval spec pending` lists the pending items. |
 | Contracts, front end, engine, K0 / A / A+ / B interfaces, gold derivation, scorer, runner, lock, blinding | Implemented and tested (`python -m pytest`). |
 | B extraction contract (rubric 1.2 `extraction_schema`) + verifier, adjudicated deterministic rules (G1, G2, G3 categories, G4, G5 table, ACC-03u, ACC-05, TRT-06, SC-01 terminal trigger) | Implemented and tested as a library (`engine/rules.py`); not yet wired as B's default rule engine. |
-| Opaque unit aliases (P-17, SC-05) | Random `u_xxxxxxxx` alias per unit per run, private mapping, audio renamed before ASR, pre-run payload test that fails the run. |
+| Opaque unit aliases (P-17, SC-05) | Random `u_xxxxxxxx` alias per unit per run, private mapping, audio renamed before ASR, pre-run identity-leak test that fails the run (identity tokens only; ordinary words pass). |
 | Full B rule engine, deterministic normalizer, DC-02 / DC-LANG / DC-01-audio, diarization turn threshold, timing signals | Next phase / pending sign-off (see the reconciliation doc §5). |
-| Frozen DEV design (Stage 5) | `bench/public/`: 25 DEV case cards (functional beats), master matrix and gold blueprint, verbatim; committed by `docs/freeze/FREEZE-public.md`; validated by `ignosis-eval bench public-check` (0 errors, 14 documented warnings; see `docs/benchmark-authoring.md`). DEV only. |
+| Frozen DEV design (Stage 5) | `bench/public/`: 25 DEV case cards (functional beats), master matrix and gold blueprint, verbatim; committed by `docs/freeze/FREEZE-public.md`; validated by `ignosis-eval bench public-check` (0 errors, 6 PD015 authoring-rule warnings; clarifications BD-03..BD-05 in `docs/bd-changelog.md`). DEV only. |
 | Transcripts, gold, registries | **Empty.** Written and labeled by humans (B-01..B-03); the blueprint is intent, not gold. |
 | Results | **None.** |
 

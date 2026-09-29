@@ -4,17 +4,19 @@
      mapping is stored only in BENCH_PRIVATE_DIR and in the run's private area (runner/aliases.py).
   2. No bench-a1 item ID, pair ID, pack name, split name or source filename may appear in any evaluator input.
   3. Rendered audio is renamed to its alias before any ASR or evaluator step (pipeline/normalize.py).
-  4. A pre-run test fails the run if any evaluator-bound payload matches the item-ID pattern
-     `^(G|M|K|C|R|P|J|X|A|AB|E|S|MI|MC|MD|SN|RT|CAL)-` or contains a pack/split word.
+  4. A pre-run test fails the run if an evaluator-bound payload carries benchmark identity.
 
-Scope of rule 4 (convention, docs/spec-reconciliation.md §3/§4): the test runs on the *item-dependent* payload —
-every string value of the NormalizedInput (turn text, header, metadata fields; schema keys are fixed and excluded)
-and the file path handed to ASR (renamed to the alias). The rubric/prompt template text is identical for every unit
-and itself contains the pack word "language" (frozen rubric text), so it cannot be in scope without failing every
-run. The item-ID pattern is applied at every token start (a position not
-preceded by a letter or digit), case-sensitive as written; pack/split words are matched as whole words, any case.
-Both are deliberately broad (fail closed): ordinary words such as "E-mail", "X-ray", "language" or the name "Dev"
-in a transcript fail the run.
+Scope of rule 4 (implementation safety rule, docs/spec-reconciliation.md §3.35, docs/bd-changelog.md): the test
+targets benchmark *identity*, never ordinary vocabulary. It flags
+  * bench-a1 item ids in their canonical shape, built from the P-17 prefixes
+    `^(G|M|K|C|R|P|J|X|A|AB|E|S|MI|MC|MD|SN|RT|CAL)-` (e.g. C-08, MI-G1-01, MD-G5, SN-D01, G-02-N5, C-04-EN), any case;
+  * pair and twin ids (MP-01, CP-01, AP-01, TW-01);
+  * rubric check ids (G1..G9 with sub-rules, UND/ACC/RES/COM/TRT/POL/PLT/EXE-nn) in free text (transcript turns and
+    header values; the front-end metadata legitimately names G7 / POL-01);
+  * benchmark-specific labels and aliases (bench-a1, holdout, redteam, language_twin, tuning_only, SYS-n blind aliases,
+    BD-nn benchmark decision ids);
+  * the unit's own source identifiers (item id, item directory, artifact file names), passed in by the runner.
+Ordinary words ("language", "email", "E-mail", "X-ray", "dev", "core", "micro", "calibration", …) are not leaks.
 """
 
 from __future__ import annotations
@@ -23,19 +25,20 @@ import re
 import secrets
 from collections.abc import Iterable
 
-from ignosis_eval.contracts.enums import Pack, Split
-
 UNIT_ALIAS_PATTERN = r"^u_[0-9a-f]{8}$"
-ITEM_ID_PATTERN = re.compile(r"^(G|M|K|C|R|P|J|X|A|AB|E|S|MI|MC|MD|SN|RT|CAL)-")  # P-17 rule 4, verbatim
-PAIR_ID_PATTERN = re.compile(r"^(MP|CP|AP|TW)-\d")  # §12 pair / twin ids (P-17 rule 2)
-_TOKEN_START = re.compile(r"(?<![A-Za-z0-9])(?=[A-Z])")
-
-# Pack and split names: this implementation's enums plus the §12 spellings ("Red team", "Language pack").
-PACK_SPLIT_WORDS: tuple[str, ...] = tuple(sorted(
-    {p.value for p in Pack} | {s.value for s in Split} | {"red team", "red-team", "red_team", "language"}))
-_WORDS = re.compile(r"(?<![A-Za-z0-9])(?:" + "|".join(re.escape(w) for w in
-                                                         sorted(PACK_SPLIT_WORDS, key=len, reverse=True))
-                    + r")(?![A-Za-z0-9])", re.IGNORECASE)
+ITEM_ID_PREFIX_PATTERN = "^(G|M|K|C|R|P|J|X|A|AB|E|S|MI|MC|MD|SN|RT|CAL)-"  # P-17 rule 4, verbatim
+_B = r"(?<![A-Za-z0-9])"
+_E = r"(?![A-Za-z0-9])"
+# canonical bench-a1 id shapes for every P-17 prefix (frozen-contract §12)
+ITEM_ID_TOKEN = re.compile(
+    _B + r"(?:(?:G|M|K|C|R|P|J|X|A|E|S)-\d{2}|AB-\d{2}|MC-\d{2}|MI-G\d-\d{2}|MD-[GC]\d|SN-[DH]\d{2}|RT-\d{2}"
+    r"|CAL-\d{2})(?:-[A-Z0-9]+)*(?:@audio)?" + _E, re.IGNORECASE)
+PAIR_ID_TOKEN = re.compile(_B + r"(?:MP|CP|AP|TW)-\d{2}" + _E, re.IGNORECASE)
+CHECK_ID_TOKEN = re.compile(_B + r"(?:G[1-9][a-c]?|(?:UND|ACC|RES|COM|TRT|POL|PLT|EXE)-\d{2}[a-z]?)" + _E)
+BENCHMARK_LABELS: tuple[str, ...] = ("bench-a1", "bench_a1", "holdout", "redteam", "red_team", "language_twin",
+                                     "tuning_only")
+LABEL_TOKEN = re.compile(_B + r"(?:" + "|".join(re.escape(w) for w in BENCHMARK_LABELS) + r"|SYS-\d+|BD-\d{2})" + _E,
+                         re.IGNORECASE)
 
 
 def new_unit_alias() -> str:
@@ -43,16 +46,29 @@ def new_unit_alias() -> str:
     return "u_" + secrets.token_hex(4)
 
 
-def payload_violations(text: str) -> list[str]:
-    """P-17 rule 4 on one payload string: item-ID-pattern hits (at any token start), pair ids and pack/split words."""
-    out: list[str] = []
-    for m in _TOKEN_START.finditer(text):
-        tail = text[m.start(): m.start() + 12]
-        hit = ITEM_ID_PATTERN.match(tail) or PAIR_ID_PATTERN.match(tail)
-        if hit:
-            out.append(f"identifier-pattern {text[m.start(): m.start() + len(hit.group(0)) + 4]!r}")
-    out += [f"pack/split word {m.group(0)!r}" for m in _WORDS.finditer(text)]
+def payload_violations(text: str, *, free_text: bool = True, own_tokens: Iterable[str] = ()) -> list[str]:
+    """P-17 rule 4 on one payload string. `free_text` adds rubric check ids (transcript turns, header values);
+    `own_tokens` are the unit's own source identifiers (item id, directory, file names), matched in any case."""
+    out = [f"item id {m.group(0)!r}" for m in ITEM_ID_TOKEN.finditer(text)]
+    out += [f"pair/twin id {m.group(0)!r}" for m in PAIR_ID_TOKEN.finditer(text)]
+    out += [f"benchmark label {m.group(0)!r}" for m in LABEL_TOKEN.finditer(text)]
+    if free_text:
+        out += [f"check id {m.group(0)!r}" for m in CHECK_ID_TOKEN.finditer(text)]
+    low = text.lower()
+    out += [f"source identifier {t!r}" for t in own_tokens if t and t.lower() in low]
     return out
+
+
+def evaluator_payload(ni_json: dict) -> tuple[list[str], list[str]]:
+    """(free-text strings: turn texts and header values, metadata strings: every other string value)."""
+    free: list[str] = []
+    turns = []
+    for t in ni_json.get("turns", []):
+        free += [t[k] for k in ("text", "supplied_text", "asr_text") if isinstance(t.get(k), str)]
+        turns.append({k: v for k, v in t.items() if k not in ("text", "supplied_text", "asr_text")})
+    free += [v for v in (ni_json.get("header") or {}).values() if isinstance(v, str)]
+    rest = {k: v for k, v in ni_json.items() if k not in ("turns", "header")}
+    return free, list(strings_of(rest)) + list(strings_of(turns))
 
 
 def strings_of(obj: object) -> Iterable[str]:
@@ -68,5 +84,6 @@ def strings_of(obj: object) -> Iterable[str]:
         yield obj
 
 
-__all__ = ["ITEM_ID_PATTERN", "PACK_SPLIT_WORDS", "PAIR_ID_PATTERN", "UNIT_ALIAS_PATTERN", "new_unit_alias",
-           "payload_violations", "strings_of"]
+__all__ = ["BENCHMARK_LABELS", "CHECK_ID_TOKEN", "ITEM_ID_PREFIX_PATTERN", "ITEM_ID_TOKEN", "LABEL_TOKEN",
+           "PAIR_ID_TOKEN", "UNIT_ALIAS_PATTERN", "evaluator_payload", "new_unit_alias", "payload_violations",
+           "strings_of"]

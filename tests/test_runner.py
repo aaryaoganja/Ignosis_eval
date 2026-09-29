@@ -22,7 +22,7 @@ from ignosis_eval.integrity.freeze import IntegrityError
 from ignosis_eval.pipeline.normalize import build_normalized_input
 from ignosis_eval.contracts.unit_alias import payload_violations
 from ignosis_eval.runner.aliases import (
-    ITEM_ID_PATTERN,
+    ITEM_ID_PREFIX_PATTERN,
     OpaqueAliasViolation,
     load_unit_alias_mapping,
     prerun_payload_check,
@@ -240,50 +240,76 @@ def test_reproducible_records(layout, spec, tmp_path):
     assert aliases[0].isdisjoint(aliases[1])  # P-17: a fresh random alias per unit per run
 
 
-P17_LINES = ["stub agent line about the E-mail", "stub agent line X-ray", "stub agent line holdout",
-             "stub agent line in any language", "stub agent line for Dev"]
+P17_LEAKS = ["stub agent line MI-G1-01", "stub agent line sn-d01", "stub agent line TW-01",
+             "stub agent line UND-01", "stub agent line holdout", "stub agent line bench-a1", "stub agent line SYS-2"]
+P17_ORDINARY = ["stub agent line about the E-mail", "stub agent line X-ray", "stub agent line in any language",
+                "stub agent line for Dev", "stub agent line email kar dijiye", "stub agent line dev core micro",
+                "stub agent line calibration snippet modality abstention"]
 
 
-@pytest.mark.parametrize("line", P17_LINES)
-def test_p17_words_are_caught_at_authoring_time(layout, spec, line):
-    """Bench check B017 applies the P-17 payload test to transcripts, so such an item cannot even be frozen."""
+@pytest.mark.parametrize("line", P17_LEAKS)
+def test_p17_identifier_leaks_are_caught_at_authoring_time(layout, spec, line):
+    """Bench check B017 applies the P-17 payload test to transcripts, so a leaking item cannot even be frozen."""
     turns = F.STUB_TURNS[:2] + (("AGENT", line),) + F.STUB_TURNS[3:]
     F.add_item(layout, "ZZ-R01", transcript=F.stub_transcript(turns))
     with pytest.raises(IntegrityError, match="B017"):
         F.freeze(layout, spec)
 
 
-@pytest.mark.parametrize("line", P17_LINES)
-def test_p17_prerun_payload_test_fails_the_run(layout, spec, tmp_path, monkeypatch, line):
-    """experiment-protocol P-17 rule 4 in the runner: any evaluator-bound payload matching the item-ID pattern or
-    containing a pack/split word fails the run before any system is called (deliberately broad; see
-    contracts/unit_alias.py). The leaking payload is injected after the bench froze cleanly."""
+def _run_with_turn3(layout, spec, tmp_path, monkeypatch, line):
     import ignosis_eval.runner.experiment as ex
 
     replay = _setup(layout, spec, tmp_path)
     real = ex.build_normalized_input
 
-    def leaky(meta, item_dir, mode, sp, asr=None, *, unit_alias=None):
+    def patched(meta, item_dir, mode, sp, asr=None, *, unit_alias=None):
         ni = real(meta, item_dir, mode, sp, asr, unit_alias=unit_alias)
         turns = [t.model_copy(update={"text": line}) if t.turn == 3 else t for t in ni.turns]
         return ni.model_copy(update={"turns": turns})
 
-    monkeypatch.setattr(ex, "build_normalized_input", leaky)
+    monkeypatch.setattr(ex, "build_normalized_input", patched)
     calls: list = []
     spy = Spy(KeywordFloorK0(), calls, "K0")
+    return calls, lambda: run_experiment(_cfg(layout, tmp_path, replay, [System.K0]), systems_override={System.K0: spy})
+
+
+@pytest.mark.parametrize("line", P17_LEAKS)
+def test_p17_identifier_leak_fails_the_run(layout, spec, tmp_path, monkeypatch, line):
+    """P-17 rule 4 in the runner: a true identity leak fails the run before any system is called. The payload is
+    injected after the bench froze cleanly."""
+    calls, run = _run_with_turn3(layout, spec, tmp_path, monkeypatch, line)
     with pytest.raises(OpaqueAliasViolation, match="P-17"):
-        run_experiment(_cfg(layout, tmp_path, replay, [System.K0]), systems_override={System.K0: spy})
+        run()
     assert calls == [] and not (tmp_path / "results" / "runs").exists()
 
 
+@pytest.mark.parametrize("line", P17_ORDINARY)
+def test_p17_ordinary_words_pass(layout, spec, tmp_path, monkeypatch, line):
+    """P-17 targets benchmark identity, not vocabulary: ordinary words never fail a run or a freeze."""
+    assert payload_violations(line) == []
+    calls, run = _run_with_turn3(layout, spec, tmp_path, monkeypatch, line)
+    assert run().completion.status == "completed" and calls
+
+
+def test_p17_ordinary_words_freeze_cleanly(layout, spec):
+    for i, line in enumerate(P17_ORDINARY):
+        turns = F.STUB_TURNS[:2] + (("AGENT", line),) + F.STUB_TURNS[3:]
+        F.add_item(layout, f"ZZ-R{i + 10:02d}", transcript=F.stub_transcript(turns))
+    F.freeze(layout, spec)  # no B017
+
+
 def test_p17_payload_check_scope():
-    assert ITEM_ID_PATTERN.pattern == "^(G|M|K|C|R|P|J|X|A|AB|E|S|MI|MC|MD|SN|RT|CAL)-"
-    for ok in ("stub agent line alpha", "POL-01b", "SPAN_UNRELIABLE", "A+T-platform", "T-asr",
-               "2026-09-28T14:05:00+05:30", "DC-02", "B-06/B-11", "SC-03", "u_7f3a91c2", "score", "device", "micron"):
+    assert ITEM_ID_PREFIX_PATTERN == "^(G|M|K|C|R|P|J|X|A|AB|E|S|MI|MC|MD|SN|RT|CAL)-"
+    for ok in ("stub agent line alpha", "A+T-platform", "T-asr", "2026-09-28T14:05:00+05:30", "DC-02", "B-06/B-11",
+               "SC-03", "u_7f3a91c2", "score", "device", "micron", "language", "E-mail", "X-ray", "A-1", "Dev", "dev",
+               "core", "micro", "red team", "calibration", "abstention", "modality", "snippet"):
         assert payload_violations(ok) == [], ok
-    for bad in ("G-02", "see AB-06 now", "(MI-G1-01)", "SN-D01", "RT-11", "CAL-01", "TW-01", "CP-01", "dev", "HOLDOUT",
-                "core", "Micro", "red team", "redteam", "calibration", "abstention", "modality", "snippet"):
+    for bad in ("G-02", "see AB-06 now", "(MI-G1-01)", "SN-D01", "RT-11", "CAL-01", "C-04-EN", "G-02-N5", "c-08",
+                "G-02@audio", "TW-01", "CP-01", "MP-10", "HOLDOUT", "redteam", "language_twin", "bench-a1", "SYS-1",
+                "BD-02", "UND-01", "ACC-03u", "POL-01b", "G5"):
         assert payload_violations(bad), bad
+    # check ids are item-dependent only in free text: the front end's own metadata names G7 / POL-01
+    assert payload_violations("G7", free_text=False) == [] and payload_violations("POL-01", free_text=False) == []
 
 
 def test_p17_prerun_check_includes_the_units_own_source_names(spec):

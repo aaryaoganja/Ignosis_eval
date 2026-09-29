@@ -20,16 +20,29 @@ class ControlEntry(Contract):
     target_gates: list[GateId] = Field(min_length=1)
 
 
+class IncidentalDifference(Contract):
+    """A declared difference between pair members that does not define the pair target (BD-03, BD-04;
+    docs/bd-changelog.md). `aspect` borrower_context: a customer-side context turn (`where` = design beat, e.g. B4);
+    call_start_ts_header: the header is present on one member only (`where` = the check it moves, G7)."""
+
+    aspect: Literal["borrower_context", "call_start_ts_header"]
+    where: NonEmptyStr
+    basis: str = Field(pattern=r"^BD-\d{2}$")
+
+
 class PairEntry(Contract):
     pair_id: NonEmptyStr
     clean_item: ItemId
     violating_item: ItemId
     target_check: NonEmptyStr  # a gate id or an MVP code
+    incidental_differences: list[IncidentalDifference] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _distinct(self) -> "PairEntry":
         if self.clean_item == self.violating_item:
             raise ValueError(f"{self.pair_id}: clean and violating items must differ")
+        if any(d.where == self.target_check for d in self.incidental_differences):
+            raise ValueError(f"{self.pair_id}: an incidental difference cannot be the pair target {self.target_check}")
         return self
 
 
@@ -40,7 +53,7 @@ class TwinEntry(Contract):
 
 
 class Registries(Contract):
-    schema_version: Literal["registries/1.0.0"] = REGISTRIES_SCHEMA
+    schema_version: Literal["registries/1.1.0"] = REGISTRIES_SCHEMA
     controls: list[ControlEntry] = Field(default_factory=list)
     pairs: list[PairEntry] = Field(default_factory=list)
     twins: list[TwinEntry] = Field(default_factory=list)

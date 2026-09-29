@@ -140,9 +140,9 @@ def test_sc04_sd08_admits_na():
 def test_sc05_opaque_aliases_in_protocol():
     p17 = _section(PROTOCOL, "## P-17")
     assert "u_7f3a91c2" in p17 and "^(G|M|K|C|R|P|J|X|A|AB|E|S|MI|MC|MD|SN|RT|CAL)-" in p17
-    from ignosis_eval.runner.aliases import ITEM_ID_PATTERN
+    from ignosis_eval.runner.aliases import ITEM_ID_PREFIX_PATTERN
 
-    assert ITEM_ID_PATTERN.pattern == "^(G|M|K|C|R|P|J|X|A|AB|E|S|MI|MC|MD|SN|RT|CAL)-"
+    assert ITEM_ID_PREFIX_PATTERN == "^(G|M|K|C|R|P|J|X|A|AB|E|S|MI|MC|MD|SN|RT|CAL)-"
 
 
 def test_sc06_contract_section_12_carries_no_holdout_intent():

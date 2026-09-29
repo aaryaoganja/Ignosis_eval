@@ -21,7 +21,8 @@ into `schemas/` (`ignosis-eval schemas export`; `tests/test_contracts.py` keeps 
 | GoldLabel | `gold_label/2.1.0` | `contracts/gold_label.py` | Content-level gold per item (SD-01). Mode gold is derived by `golddrv/`, never stored. No gold critical status (AJ-12) |
 | CaseCard | `case_card/2.2.0` | `contracts/case_card.py` | Author intent (B-01); 2.2.0 adds the SC-01 reason code to its enum |
 | ItemMeta | `item_meta/1.1.0` | `contracts/benchmark.py` | `item.json`: split, pack, language, unit modes, artifacts, synthetic flag, `tuning_only` (e.g. G-02-N5: never scored) |
-| Registries | `registries/1.0.0` | `contracts/registries.py` | Controls, pairs, twins (SD-01) |
+| Registries | `registries/1.1.0` | `contracts/registries.py` | Controls, pairs, twins (SD-01); a pair may declare `incidental_differences` (BD-03, BD-04) that never define its target |
+| Blueprint | `gold_blueprint/1.1.0` | `contracts/blueprint.py` | The frozen DEV `dev-gold-blueprint.yaml` (design intent, not gold): items with `rule_basis` and `external_dependencies`; `depends_on` rejected (BD-05) |
 | BenchManifest / GoldManifest | `bench_manifest/2.1.0`, `gold_manifest/2.0.0` | `contracts/benchmark.py` | Hash lists of a scope (dev or private) |
 | RunManifest / RunCompletion | `run_manifest/3.0.0` | `contracts/run_manifest.py` | §17 run artifacts, lock rules, system configs (P-3); `unit_alias_mapping_sha256` and `p17_payload_strings_checked` (P-17) |
 | BlindViewManifest | `blind_view/1.0.0` | `contracts/run_manifest.py` | P-10 aliased scoring view |
@@ -41,8 +42,9 @@ into `schemas/` (`ignosis-eval schemas export`; `tests/test_contracts.py` keeps 
 - **NormalizedInput.**
   - `unit_alias` matches `^u_[0-9a-f]{8}$`; anything else (an item id, a file name, an old `in-` alias) is a schema
     error. The runner assigns it per unit per run (P-17); `input_sha256` excludes it, so replay fixtures are stable.
-  - Before any system is called, the runner applies the P-17 payload test to every string value of every unit's
-    input (item-ID pattern, pair ids, pack/split words, the unit's own source names) and fails the run on a hit.
+  - Before any system is called, the runner applies the P-17 identity test to every unit's input (bench-a1 item ids,
+    pair / twin ids, rubric check ids in free text, benchmark labels, the unit's own source names) and fails the run
+    on a hit. Ordinary words are not leaks.
   - `AudioRef` carries `sha256` and `format` only; the front end resolves the file privately.
   - The front end fails closed (`NormalizationError`) if the evaluated text contains the item id, the item directory
     name, a non-generic artifact file stem or a pair id.

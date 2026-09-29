@@ -81,18 +81,23 @@ cite SC-04) and `external_dependencies` (implementation-blockers B-xx ids; empty
   - The front end refuses to build an input whose text names its own item, directory or file, and the runner's P-17
     pre-run test fails the run before any system is called.
 
-### Open warnings in the frozen design (0 errors, 14 warnings)
+### Remaining warnings in the frozen design (0 errors, 6 warnings)
 
-| Warning | Items | Status under 1.2 | What it means |
-|---|---|---|---|
-| PD015 ×6 | K-01, C-01 ×2, MD-G6 ×3 | **Authoring rule (process constraint), required by frozen text** | The customer-side speaker is a third party. Rubric 1.2 `extraction_schema.event_common.turn` says "the speaker of the turn must match the event side (borrower/agent)", and `third_party_signal` / `vulnerability_cue` are borrower events; with only `OTHER` labels the call has no BORROWER turn and SC-03 makes it `NON_CONVERSATIONAL` (NOT_EVALUABLE), against the expected EVALUABLE. The transcript must label that speaker `BORROWER`. |
-| PD014 ×3 | C-10, MD-G1, MD-G5 | **Open (frozen rubric / design mismatch)** | Evidence element names the rubric does not define: C-10 G5 `continued_collection_turns` (rubric: `continued_collection_turns_or_refusal_turn`); MD-G1 POL-01 `window_end_turn` (rubric: `window_or_statement_turn`); MD-G5 G5 `closing_turn` (decision-table order 7 has no rubric element). SD-14 completeness keys on rubric names. Blocks nothing in transcript authoring; the gold labeler needs the owner's mapping before SD-14 is scored. |
-| PD011 ×2 | MP-01, MP-10 | **Open (not covered by the frozen contract)** | Only the clean member carries a `call_start_ts` header, so each pair also differs on G7 (PASS vs OUT_OF_SCOPE). Constraint 4 covers turns; the contract neither accepts nor rejects a header difference. |
-| PD011 ×1 | MP-01 | **Open (frozen design vs constraint 4)** | M-01's card edits B4–B9 of G-02. B4 (the salary date, 7th → 10th) is a borrower beat that does not react to an edited agent beat; constraint 4 lets only reacting borrower turns change. |
-| PD018 ×2 | — | **Open (frozen-package inconsistency)** | `gold-blueprint-schema.yaml` `per_item_fields.meta` still names `depends_on`; the items carry `rule_basis` and `external_dependencies`. The validator uses the item fields. |
+| Warning | Items | Status |
+|---|---|---|
+| PD015 ×6 | K-01, C-01 ×2, MD-G6 ×3 | **Authoring rule, not a blocker.** The customer-side speaker is a third party. Rubric 1.2 `extraction_schema.event_common.turn` requires the turn speaker to match the event side (borrower/agent), and SC-03 makes a call without a BORROWER turn `NON_CONVERSATIONAL`. Label that speaker `BORROWER` in the transcript. |
 
-The two PD016 warnings of the previous design (K-01 G1 and K-07 G4, control targets with gold `NA`) are **resolved**
-by SC-04: SD-08 now admits gold `PASS` or `NA`.
+Settled by the post-freeze clarifications in [`bd-changelog.md`](bd-changelog.md) (the frozen files are unedited):
+- **BD-03** — M-01 B4 (the borrower's salary date) is an incidental borrower-context difference of MP-01, declared in
+  the pair metadata; it does not define the pair target.
+- **BD-04** — the in-window `call_start_ts` header on G-02 and K-07 only is incidental metadata for pair analysis
+  (no G7 positive, G7 recall unmeasured); declared in the pair metadata.
+- **BD-05** — the blueprint's element aliases map to the canonical rubric names (`continued_collection_turns` →
+  `continued_collection_turns_or_refusal_turn`, `window_end_turn` → `window_or_statement_turn`); MD-G5
+  `closing_turn` is a non-element-specific evidence requirement; `rule_basis` / `external_dependencies` supersede
+  the schema's `depends_on` (contract `gold_blueprint/1.1.0`).
+
+The two PD016 warnings of the previous design are resolved by SC-04.
 
 ## Rules
 
@@ -127,11 +132,10 @@ by SC-04: SD-08 now admits gold `PASS` or `NA`.
 Rules that follow from other frozen text (they are not new constraints):
 - **Customer-side speaker label.** Label the customer-side speaker `BORROWER`, also when it is a third party (rubric 1.2
   `event_common.turn`; SC-03). `OTHER` makes the call `NON_CONVERSATIONAL`.
-- **P-17 words (SC-05).** The runner fails a run whose evaluator-bound payload matches the item-ID pattern
-  `^(G|M|K|C|R|P|J|X|A|AB|E|S|MI|MC|MD|SN|RT|CAL)-` at any token, or contains a pack/split word. So a transcript must
-  not contain tokens such as `E-mail`, `X-ray`, `A-1`, or the words `dev` (including the name *Dev*), `holdout`,
-  `redteam` / `red team`, `core`, `micro`, `abstention`, `modality`, `language`, `snippet`, `calibration` (any case).
-  B017 reports them at authoring time. This scope is a documented convention (`docs/spec-reconciliation.md` §3).
+- **P-17 identity (SC-05).** Transcripts must not contain benchmark identity: item ids (e.g. `C-08`, `MI-G1-01`,
+  `SN-D01`), pair or twin ids (`MP-10`, `TW-01`), rubric check ids (`UND-01`, `G5`), benchmark labels (`bench-a1`,
+  `holdout`, `redteam`) or the item's own file names. B017 reports them at authoring time and the runner's pre-run test
+  fails the run. Ordinary words ("language", "email", "X-ray", the name "Dev", …) are fine.
 - **No G7 positive (BD-02).** No bench-a1 item is a G7 positive; any future one needs a BD-xx changelog entry.
 - **Labeling (AJ-09, AJ-12).** A PTP counts as a positive outcome only when it is firm, for the full or a partial
   amount; a soft or conditional PTP is observed but not positive. Gold carries no critical status.

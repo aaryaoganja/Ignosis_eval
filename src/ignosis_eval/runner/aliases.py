@@ -16,7 +16,12 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 
 from ignosis_eval.contracts.canonical_input import NormalizedInput
-from ignosis_eval.contracts.unit_alias import ITEM_ID_PATTERN, new_unit_alias, payload_violations, strings_of
+from ignosis_eval.contracts.unit_alias import (
+    ITEM_ID_PREFIX_PATTERN,
+    evaluator_payload,
+    new_unit_alias,
+    payload_violations,
+)
 from ignosis_eval.integrity.freeze import IntegrityError
 from ignosis_eval.integrity.hashing import file_canonical_sha256
 from ignosis_eval.runner.storage import ResultsLayout, write_json_once
@@ -66,16 +71,17 @@ def load_unit_alias_mapping(results: ResultsLayout, run_id: str, expected_sha256
 
 
 def prerun_payload_check(nis: Mapping[str, NormalizedInput], item_tokens: Mapping[str, Iterable[str]]) -> int:
-    """P-17 rule 4 on every unit's evaluator-bound payload. `item_tokens` (unit_id -> item id, source file names)
-    adds the unit's own identifiers, matched case-insensitively. Returns the number of payload strings checked."""
+    """P-17 rule 4 on every unit's evaluator-bound payload (identity only; contracts/unit_alias.py for the scope).
+    `item_tokens` (unit_id -> item id, directory, source file names) adds the unit's own identifiers. Returns the
+    number of payload strings checked; any hit fails the run before a system is called."""
     checked = 0
     problems: list[str] = []
     for uid, ni in nis.items():
         own = [t for t in item_tokens.get(uid, ()) if t]
-        for s in strings_of(ni.to_json_dict()):
+        free, meta = evaluator_payload(ni.to_json_dict())
+        for s, is_free in [(x, True) for x in free] + [(x, False) for x in meta]:
             checked += 1
-            hits = payload_violations(s)
-            hits += [f"source identifier {t!r}" for t in own if t.lower() in s.lower()]
+            hits = payload_violations(s, free_text=is_free, own_tokens=own)
             if hits:
                 problems.append(f"unit {ni.unit_alias}: " + "; ".join(sorted(set(hits))))
     if problems:
@@ -83,5 +89,5 @@ def prerun_payload_check(nis: Mapping[str, NormalizedInput], item_tokens: Mappin
     return checked
 
 
-__all__ = ["ITEM_ID_PATTERN", "OpaqueAliasViolation", "PRIVATE_ALIAS_DIR", "UNIT_ALIAS_MAPPING_FILE",
+__all__ = ["ITEM_ID_PREFIX_PATTERN", "OpaqueAliasViolation", "PRIVATE_ALIAS_DIR", "UNIT_ALIAS_MAPPING_FILE",
            "assign_unit_aliases", "load_unit_alias_mapping", "prerun_payload_check", "write_unit_alias_mapping"]

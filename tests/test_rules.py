@@ -25,6 +25,7 @@ from ignosis_eval.engine.rules import (
     acc03u,
     acc05,
     commitment_turn,
+    commitment_turn_undetermined,
     g1,
     g2_g3,
     g4,
@@ -490,3 +491,24 @@ def test_trt06_measurement_basis(n_words, start, end, basis, fires):
     assert bool(out.findings) is fires
     if fires:
         assert out.findings[0].measurement_basis is basis and out.findings[0].code == "TRT-06"
+
+
+# ================================================================================ commitment turn safety rule (§3.38)
+def test_payment_claim_alone_never_sets_the_commitment_turn():
+    x = ex(ev("E1", "payment_claim", 4))
+    assert commitment_turn(x) is None and commitment_turn_undetermined(x)
+    assert not commitment_turn_undetermined(ex())                      # no commitment of any kind
+    assert not commitment_turn_undetermined(ex(ev("E1", "payment_claim", 4),
+                                               commitments=[Commitment(id="k1", confirmed_turn=6)]))
+
+
+def test_acc05_repair_is_not_granted_when_the_commitment_turn_is_undetermined():
+    values = [sv("V1", "payable_total", 1, 5000), sv("V2", "payable_total", 3, 6000), sv("V3", "payable_total", 5, 5000)]
+    after_claim = ex(ev("E1", "payment_claim", 4), ev("E2", "correction", 5, corrects="V2", new_value_id="V3"),
+                     agent_stated_values=values)
+    (f,) = acc05(after_claim, roles_ni(*SEVEN), SP).findings
+    assert f.repair_status is RepairStatus.UNREPAIRED  # the claim may have been an in-call payment: do not guess
+    before_claim = ex(ev("E2", "correction", 5, corrects="V2", new_value_id="V3"), ev("E1", "payment_claim", 6),
+                      agent_stated_values=values)
+    (f,) = acc05(before_claim, roles_ni(*SEVEN), SP).findings
+    assert f.repair_status is RepairStatus.REPAIRED    # precedes every possible commitment turn

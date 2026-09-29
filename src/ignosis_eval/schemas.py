@@ -8,6 +8,7 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from ignosis_eval.contracts.benchmark import BenchManifest, GoldManifest, ItemMeta
+from ignosis_eval.contracts.blueprint import Blueprint
 from ignosis_eval.contracts.canonical_input import NormalizedInput
 from ignosis_eval.contracts.case_card import CaseCard
 from ignosis_eval.contracts.evaluation_record import EvaluationRecord
@@ -37,6 +38,7 @@ CONTRACTS: dict[str, type[BaseModel]] = {
     "run_completion": RunCompletion,
     "blind_view_manifest": BlindViewManifest,
     "scoring_manifest": ScoringManifest,
+    "gold_blueprint": Blueprint,
 }
 
 

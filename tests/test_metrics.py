@@ -592,3 +592,21 @@ def test_ten_fixture_records_rescored_by_hand(spec):
     assert out["sd17"]["accuracy"]["kn"] == "2/2" and out["sd19"]["consistency"]["kn"] == "0/2"
     assert out["tiers"]["S1"] == [0, 1] and out["hard_requirements"]["H3"]["status"] == "PASS"
     assert tier_vector(out["tiers"])[:3] == (out["tiers"]["S0"], 0, 1)
+
+
+# ================================================================================ BD-05 canonical element names (SD-14)
+def test_sd14_canonicalizes_blueprint_element_aliases():
+    from ignosis_eval.metrics.matching import required_elements
+
+    raw = {c["id"]: c for c in F.spec().rubric["gates"] + F.spec().rubric["codes"]}
+    # alias -> canonical rubric name: the element is required and has its gold turn
+    req, missing = required_elements(raw["G5"], {"request_turn": 2, "continued_collection_turns": 3}, "NONE")
+    assert req == ["request_turn", "continued_collection_turns_or_refusal_turn"] and missing == []
+    req, missing = required_elements(raw["POL-01"], {"window_end_turn": 3}, "NONE")
+    assert "window_or_statement_turn" in req and "window_or_statement_turn" not in missing
+    # G5 decision-table order 7: closing_turn is non-element evidence; the collection/refusal element has no turn
+    req, missing = required_elements(raw["G5"], {"request_turn": 4, "closing_turn": 5}, "NONE")
+    assert req == ["request_turn"] and missing == []
+    # without the non-element marker a missing element is still reported as missing gold
+    req, missing = required_elements(raw["G5"], {"request_turn": 4}, "NONE")
+    assert missing == ["continued_collection_turns_or_refusal_turn"]

@@ -240,7 +240,7 @@ def add_item(layout: BenchLayout, item_id: str, *, split: str = "dev", pack: str
 
 def write_registries(layout: BenchLayout, data: dict[str, Any] | None = None) -> None:
     layout.root.mkdir(parents=True, exist_ok=True)
-    body = {"schema_version": "registries/1.0.0", "controls": [], "pairs": [], "twins": []}
+    body = {"schema_version": "registries/1.1.0", "controls": [], "pairs": [], "twins": []}
     body.update(copy.deepcopy(data or {}))
     layout.registries_path.write_text(json.dumps(body, indent=2), encoding="utf-8")
 

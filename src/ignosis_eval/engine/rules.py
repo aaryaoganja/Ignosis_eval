@@ -339,8 +339,10 @@ def acc03u(ex: ExtractionOutput, ni: NormalizedInput, spec: Spec) -> RuleOutput:
 # ---------------------------------------------------------------------------------------------------- ACC-05 (AJ-07/08)
 def commitment_turn(ex: ExtractionOutput) -> int | None:
     """outcome_model.commitment_turn: commitment.confirmed_turn, else the offer acceptance turn, else the
-    payment-in-call claim turn. The 1.2 extraction schema has no field that tells an in-call payment claim from an
-    already-paid one, so the third fallback is not derivable from extraction (docs/spec-reconciliation.md §4)."""
+    payment-in-call claim turn. Implementation safety rule (docs/spec-reconciliation.md §3.38): the turn is set only
+    from evidence of an actual commitment (a confirmed commitment or an accepted offer). A payment claim alone never
+    sets it: the 1.2 extraction schema cannot tell an in-call payment claim from an already-paid one, so that case
+    stays null (see `commitment_turn_undetermined`) rather than guessed."""
     confirmed = sorted(c.confirmed_turn for c in ex.commitments if c.confirmed_turn is not None)
     if confirmed:
         return confirmed[0]
@@ -348,18 +350,30 @@ def commitment_turn(ex: ExtractionOutput) -> int | None:
     return accepted[0] if accepted else None
 
 
+def commitment_turn_undetermined(ex: ExtractionOutput) -> bool:
+    """True when commitment_turn is null only because the fallback (payment-in-call claim) cannot be resolved: no
+    confirmed commitment, no accepted offer, but at least one payment_claim event."""
+    return commitment_turn(ex) is None and any(e.type == "payment_claim" for e in ex.events)
+
+
 def _repair(values: list[StatedValue], ex: ExtractionOutput) -> RepairStatus:
     """repair_rules.major_to_minor_when (AJ-08): a correction event by the agent that corrects the conflicting value,
     with correction.turn < commitment_turn, and the borrower does not contest it.
-    Conventions (docs/spec-reconciliation.md §3): "does not contest" = no dispute_amount event after the correction
-    and at or before the commitment turn; with no commitment turn in the call the "before the commitment turn"
-    condition holds."""
+    Conventions (docs/spec-reconciliation.md §3.38): "does not contest" = no dispute_amount event after the correction
+    and at or before the commitment turn. With no commitment of any kind in the call the "before the commitment turn"
+    condition holds. When the commitment turn is undetermined (only payment claims, which may be in-call payments),
+    the condition holds only if the correction precedes every payment claim; otherwise the repair is not granted."""
     ids = {v.value_id for v in values}
     ct = commitment_turn(ex)
+    claims = sorted(e.turn for e in ex.events if e.type == "payment_claim")
+    undetermined = commitment_turn_undetermined(ex)
     for c in sorted((e for e in ex.events if e.type == "correction"), key=lambda e: e.turn):
         if c.corrects not in ids or (ct is not None and c.turn >= ct):
             continue
-        contested = any(e.type == "dispute_amount" and e.turn > c.turn and (ct is None or e.turn <= ct)
+        if undetermined and c.turn >= claims[0]:  # cannot show it precedes a possible in-call payment claim
+            continue
+        horizon = ct if ct is not None else (claims[0] if undetermined else None)
+        contested = any(e.type == "dispute_amount" and e.turn > c.turn and (horizon is None or e.turn <= horizon)
                         for e in ex.events)
         if not contested:
             return RepairStatus.REPAIRED

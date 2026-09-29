@@ -23,7 +23,7 @@ from ignosis_eval.benchmark.layout import BenchLayout
 from ignosis_eval.benchmark.public_dev import validate_public_dev
 from ignosis_eval.contracts.benchmark import ItemMeta
 from ignosis_eval.contracts.canonical_input import AudioRef, NormalizedInput
-from ignosis_eval.contracts.unit_alias import payload_violations, strings_of
+from ignosis_eval.contracts.unit_alias import evaluator_payload, payload_violations
 from ignosis_eval.evaluators.base import input_sha256
 from ignosis_eval.contracts.enums import UnitMode
 from ignosis_eval.contracts.gold_label import GoldProvenance
@@ -87,7 +87,9 @@ def test_evaluator_inputs_receive_opaque_unit_aliases(tmp_path):
     for ni in (ni_c, ni_k):
         blob = json.dumps(ni.to_json_dict())
         assert _leaks(blob, _forbidden(tmp_path)) == []
-        assert [v for s in strings_of(ni.to_json_dict()) for v in payload_violations(s)] == []  # P-17 rule 4
+        free, meta = evaluator_payload(ni.to_json_dict())  # P-17 rule 4
+        assert [v for s in free for v in payload_violations(s)] == []
+        assert [v for s in meta for v in payload_violations(s, free_text=False)] == []
 
 
 def test_runner_assigned_alias_is_used(tmp_path):

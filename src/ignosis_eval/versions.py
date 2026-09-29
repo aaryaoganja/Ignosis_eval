@@ -22,13 +22,14 @@ EVALUATION_RECORD_SCHEMA: Final = "evaluation_record/3.0.0"
 GOLD_LABEL_SCHEMA: Final = "gold_label/2.1.0"
 CASE_CARD_SCHEMA: Final = "case_card/2.2.0"
 ITEM_META_SCHEMA: Final = "item_meta/1.1.0"
-REGISTRIES_SCHEMA: Final = "registries/1.0.0"
+REGISTRIES_SCHEMA: Final = "registries/1.1.0"
 BENCH_MANIFEST_SCHEMA: Final = "bench_manifest/2.1.0"
 GOLD_MANIFEST_SCHEMA: Final = "gold_manifest/2.0.0"
 RUN_MANIFEST_SCHEMA: Final = "run_manifest/3.0.0"
 SCORING_MANIFEST_SCHEMA: Final = "scoring_manifest/2.0.0"
 BLIND_VIEW_SCHEMA: Final = "blind_view/1.0.0"
 EXTRACTION_SCHEMA: Final = "extraction/2.0.0"
+GOLD_BLUEPRINT_SCHEMA: Final = "gold_blueprint/1.1.0"  # 1.0.0 = frozen schema file wording (depends_on)
 
 # Components.
 SCORER_VERSION = "scorer/1.2.0"

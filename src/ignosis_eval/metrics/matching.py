@@ -8,6 +8,7 @@ from typing import Any
 
 from ignosis_eval.contracts.canonical_input import NormalizedInput
 from ignosis_eval.contracts.evaluation_record import Evidence
+from ignosis_eval.contracts.evidence_aliases import canonical_elements
 from ignosis_eval.contracts.evidence import quote_score
 from ignosis_eval.metrics.alignment import FindingObs, RepObs
 
@@ -108,7 +109,11 @@ def required_elements(rubric_check: dict[str, Any], gold_elements: dict[str, int
     `only_for` elements only when their condition holds in gold (dangerous_win: gold DW != NONE; a sub-rule
     such as G1b: the labeler recorded that element), and sub-rule elements for the sub-rules whose elements
     the labeler recorded. Header elements (role none, G7) need no gold turn.
+    Gold element names are canonicalized first (BD-05, contracts/evidence_aliases.py): a blueprint alias maps to the
+    rubric name, and a non-element-specific requirement (G5 order 7 `closing_turn`) marks the rubric element that has
+    no turn in that case, which is then neither required nor counted as missing.
     Returns (scorable required names, required names missing a gold turn)."""
+    gold_elements, absent = canonical_elements(str(rubric_check.get("id", "")), gold_elements)
     names: list[str] = []
     for e in rubric_check.get("required_evidence_elements") or []:
         if e.get("absence_allowed"):
@@ -128,6 +133,7 @@ def required_elements(rubric_check: dict[str, Any], gold_elements: dict[str, int
             if any(e["name"] in gold_elements for e in els):
                 names.extend(e["name"] for e in els)
     header = {e["name"] for e in rubric_check.get("required_evidence_elements") or [] if e.get("role") == "none"}
+    names = [n for n in names if n not in absent]
     with_turn = [n for n in names if n in gold_elements or n in header]
     return with_turn, [n for n in names if n not in with_turn]
 

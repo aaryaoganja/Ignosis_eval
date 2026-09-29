@@ -40,6 +40,37 @@
       "title": "GateId",
       "type": "string"
     },
+    "IncidentalDifference": {
+      "additionalProperties": false,
+      "description": "A declared difference between pair members that does not define the pair target (BD-03, BD-04;\ndocs/bd-changelog.md). `aspect` borrower_context: a customer-side context turn (`where` = design beat, e.g. B4);\ncall_start_ts_header: the header is present on one member only (`where` = the check it moves, G7).",
+      "properties": {
+        "aspect": {
+          "enum": [
+            "borrower_context",
+            "call_start_ts_header"
+          ],
+          "title": "Aspect",
+          "type": "string"
+        },
+        "basis": {
+          "pattern": "^BD-\\d{2}$",
+          "title": "Basis",
+          "type": "string"
+        },
+        "where": {
+          "minLength": 1,
+          "title": "Where",
+          "type": "string"
+        }
+      },
+      "required": [
+        "aspect",
+        "where",
+        "basis"
+      ],
+      "title": "IncidentalDifference",
+      "type": "object"
+    },
     "PairEntry": {
       "additionalProperties": false,
       "properties": {
@@ -47,6 +78,13 @@
           "pattern": "^[A-Z][A-Z0-9]*(-[A-Z0-9]+)+$",
           "title": "Clean Item",
           "type": "string"
+        },
+        "incidental_differences": {
+          "items": {
+            "$ref": "#/$defs/IncidentalDifference"
+          },
+          "title": "Incidental Differences",
+          "type": "array"
         },
         "pair_id": {
           "minLength": 1,
@@ -118,8 +156,8 @@
       "type": "array"
     },
     "schema_version": {
-      "const": "registries/1.0.0",
-      "default": "registries/1.0.0",
+      "const": "registries/1.1.0",
+      "default": "registries/1.1.0",
       "title": "Schema Version",
       "type": "string"
     },

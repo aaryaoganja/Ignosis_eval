@@ -43,24 +43,18 @@ FREEZE = F.REPO / "docs" / "freeze"
 CONTRACT = (F.SPEC_DIR / "frozen-contract.md").read_text(encoding="utf-8")
 SP = F.spec()
 
-# The open warnings of the frozen design (contract 1.2.0), pinned so any change to the design or the rules is visible.
-# Classification: docs/spec-reconciliation.md §4 and docs/benchmark-authoring.md.
+# The remaining warnings of the frozen design, pinned so any change to the design or the rules is visible. Each is an
+# authoring rule (label the customer-side speaker BORROWER; rubric 1.2 event_common.turn / SC-03), not a blocker.
+# PD011 (MP-01 B4, MP-01/MP-10 header), PD014 (element aliases) and PD018 (schema meta) are settled by BD-03..BD-05.
 EXPECTED_WARNINGS = sorted([
-    ("PD011", None),       # MP-01: G7 PASS (G-02 has a header) vs OUT_OF_SCOPE (M-01 has none)
-    ("PD011", None),       # MP-10: same for K-07 vs C-08
-    ("PD011", None),       # MP-01: M-01 B4 (salary date) edited without reacting to an edited agent beat (constraint 4)
-    ("PD014", "C-10"),     # G5 element continued_collection_turns (rubric: continued_collection_turns_or_refusal_turn)
-    ("PD014", "MD-G1"),    # POL-01 element window_end_turn (rubric: window_or_statement_turn)
-    ("PD014", "MD-G5"),    # G5 decision-table order-7 element closing_turn has no rubric name
     ("PD015", "C-01"),     # third_party_signal_turn spoken by the third party (rubric event side: borrower)
     ("PD015", "C-01"),     # no borrower beat: the third party must be labeled BORROWER (SC-03 / event side)
     ("PD015", "K-01"),     # same
     ("PD015", "MD-G6"),    # G6 cue_turn spoken by the relative
     ("PD015", "MD-G6"),    # G1 third_party_signal_turn spoken by the relative
     ("PD015", "MD-G6"),    # no borrower beat
-    ("PD018", None),       # schema meta names depends_on; items carry rule_basis ...
-    ("PD018", None),       # ... and external_dependencies (frozen-package inconsistency)
 ], key=lambda x: (x[0], x[1] or ""))
+CHANGELOG = F.REPO / "docs" / "bd-changelog.md"
 
 
 def _rules(rep) -> set[str]:
@@ -95,7 +89,16 @@ def _rehash(d: Path) -> None:
 
 
 def check(d: Path, **kw):
+    kw.setdefault("clarifications_path", CHANGELOG)
     return validate_public_dev(d, SP, freeze_dir=d.parent / "freeze", **kw)
+
+
+def without_bd(tmp_path: Path, bd: str) -> Path:
+    """A copy of the clarification changelog without one BD row (to show what the row settles)."""
+    p = tmp_path / "bd-changelog.md"
+    p.write_text("\n".join(ln for ln in CHANGELOG.read_text(encoding="utf-8").splitlines()
+                           if not ln.startswith(f"| {bd} |")), encoding="utf-8")
+    return p
 
 
 def _card_section(text: str, iid: str) -> tuple[int, int]:
@@ -433,6 +436,9 @@ def test_rule_basis_must_be_a_contract_decision(pub):
 def test_external_dependencies_hold_blockers_only(pub):
     edit_blueprint(pub, "C-03", lambda it: it.update(external_dependencies=["SC-04"]))  # a spec decision, not external
     _rehash(pub)
+    assert _rules(check(pub)) == {"PD002"}  # gold_blueprint/1.1.0: B-xx ids only
+    edit_blueprint(pub, "C-03", lambda it: it.update(external_dependencies=["B-99"]))  # not a blocker id
+    _rehash(pub)
     assert _rules(check(pub)) == {"PD005"}
     edit_blueprint(pub, "C-03", lambda it: it.update(external_dependencies=["B-06"]))
     _rehash(pub)
@@ -498,6 +504,55 @@ def test_constraint_4_edit_declarations():
     assert declared_edits(cards["C-01"]) == {7}
     assert declared_edits(cards["C-08"]) == set(range(5, 10))
     assert declared_edits(cards["G-02"]) is None
+
+
+def test_bd03_bd04_pair_metadata_is_explicit():
+    d = validate_public_dev(PUBLIC, SP).design
+    assert d is not None
+    pairs = {p.pair_id: [(x.aspect, x.where, x.basis) for x in p.incidental_differences] for p in d.registries().pairs}
+    assert pairs == {"MP-01": [("borrower_context", "B4", "BD-03"), ("call_start_ts_header", "G7", "BD-04")],
+                     "MP-04": [], "MP-10": [("call_start_ts_header", "G7", "BD-04")]}
+    assert all(p.target_check not in {x.where for x in p.incidental_differences} for p in d.registries().pairs)
+
+
+@pytest.mark.parametrize("bd,needle", [("BD-03", "incidental difference borrower_context B4"),
+                                       ("BD-04", "incidental difference call_start_ts_header G7")])
+def test_pair_metadata_needs_its_bd_entry(pub, tmp_path, bd, needle):
+    rep = check(pub, clarifications_path=without_bd(tmp_path, bd))
+    assert any(i.rule_id == "PD005" and needle in i.message for i in rep.errors)
+
+
+def test_bd05_element_aliases_and_non_element_evidence(pub, tmp_path):
+    assert not [i for i in validate_public_dev(PUBLIC, SP).issues if i.rule_id in ("PD014", "PD018")]
+    rep = check(pub, clarifications_path=without_bd(tmp_path, "BD-05"))
+    assert sorted(i.rule_id for i in rep.warnings if i.rule_id == "PD018") == ["PD018", "PD018"]
+    edit_blueprint(pub, "C-10", lambda it: it["findings"][0].update(
+        evidence_elements="request_turn=B6; made_up_turn=B7,B9"))
+    edit_card(pub, "C-10", "continued_collection_turns=B7,B9", "made_up_turn=B7,B9")
+    _rehash(pub)
+    assert any(i.rule_id == "PD014" and "made_up_turn" in i.message for i in check(pub).warnings)
+
+
+def test_frozen_blueprint_validates_exactly_against_the_contract():
+    import json
+
+    import jsonschema
+
+    from ignosis_eval.contracts.blueprint import Blueprint, BlueprintItem
+    from ignosis_eval.versions import GOLD_BLUEPRINT_SCHEMA
+
+    data = yaml.safe_load((PUBLIC / DATA_FILES["blueprint"]).read_text(encoding="utf-8"))
+    bp = Blueprint.model_validate(data)
+    assert len(bp.items) == 25
+    assert all(set(it.model_fields_set) == set(BlueprintItem.model_fields) for it in bp.items)  # every field present
+    schema = json.loads((F.REPO / "schemas" / "gold_blueprint.schema.json").read_text(encoding="utf-8"))
+    assert schema["x-schema-version"] == GOLD_BLUEPRINT_SCHEMA == "gold_blueprint/1.1.0"
+    jsonschema.validate(data, schema)
+    item = data["items"][0]
+    for bad in ({**item, "depends_on": []}, {k: v for k, v in item.items() if k != "rule_basis"},
+                {**item, "rule_basis": ["SC04"]}, {**item, "external_dependencies": ["SC-04"]}):
+        with pytest.raises(Exception):
+            BlueprintItem.model_validate(bad)
 
 
 def test_constraint_4_undeclared_change_is_reported(pub):

@@ -239,13 +239,13 @@ H (a result would be wrong or unsafe), M (a metric or process would be incompara
     NON_CONVERSATIONAL). DC-02's first clause ("no borrower turn with ≥ N words") holds for a call with no BORROWER turn
     whatever the PENDING threshold, so DC-02 is decided for such calls; with BORROWER turns it stays pending (B-11).
     `OTHER` / `UNKNOWN` turns are not BORROWER turns. Test: `test_frontend.py::test_sc03_evaluability_order`.
-35. **P-17 pre-run test scope.** Rule 4 is applied to every *string value* of each unit's NormalizedInput (turn text,
-    header, metadata; schema key names are fixed and excluded) and to the audio file name given to ASR (the alias). The
-    rubric/prompt template is identical for every unit and already contains the pack word "language" (frozen rubric
-    text), so it is out of scope. The item-ID pattern is applied at every token start, case-sensitive as written;
-    pack/split words (`contracts/unit_alias.py::PACK_SPLIT_WORDS`) whole-word, any case. Deliberately broad (fail
-    closed): "E-mail", "X-ray", "language" or the name "Dev" in a transcript fail the run. B017 applies the same test at
-    authoring time. Tests: `test_runner.py::test_p17_*`.
+35. **P-17 pre-run test scope (implementation safety rule; narrowed in the cleanup pass).** Rule 4 targets benchmark
+    *identity*, never ordinary vocabulary. It flags canonical bench-a1 item ids built from the P-17 prefixes (any
+    case, e.g. `C-08`, `MI-G1-01`, `SN-D01`, `G-02-N5`, `C-04-EN`), pair and twin ids, rubric check ids in free text
+    (turns, header values), benchmark labels and aliases (`bench-a1`, `holdout`, `redteam`, `language_twin`,
+    `tuning_only`, `SYS-n`, `BD-nn`) and the unit's own item id, directory and file names. Ordinary words such as
+    "language", "email", "E-mail", "X-ray", "dev", "core" or "micro" pass. The same test is B017 at authoring time.
+    Tests: `test_runner.py::test_p17_*`.
 36. **Unit alias mapping storage.** "Stored only in BENCH_PRIVATE_DIR and in the run's private manifest": the mapping
     is written write-once to `<results>/blinding/<run_id>/unit_alias_mapping.json` (guard-protected, outside the
     scorer input) and, when BENCH_PRIVATE_DIR is set, to `$BENCH_PRIVATE_DIR/run_aliases/<run_id>.json`; its hash is in
@@ -254,10 +254,14 @@ H (a result would be wrong or unsafe), M (a metric or process would be incompara
     HIGH one is reported (FAIL_HIGH > FAIL_MEDIUM). The stop-request honoring event is the *earlier* of the
     `stop_honored` route and the first non-collection agent turn after max(request, last collection turn).
     Tests: `test_rules.py::test_g5_*`.
-38. **ACC-05 details.** "Does not contest" = no `dispute_amount` event after the correction and at or before the
-    commitment turn. With no commitment turn in the call, the "before the commitment turn" condition holds (see §4.18).
-    Rule 1 does not compare an item without any normalized value. One ACC-05 finding per call, anchored on the later
-    conflicting statement. Tests: `test_rules.py::test_acc05_*`.
+38. **ACC-05 details and the commitment-turn safety rule.** "Does not contest" = no `dispute_amount` event after the
+    correction and at or before the commitment turn. `commitment_turn` is set only from a confirmed commitment or an
+    accepted offer; a payment claim alone never sets it, because the extraction cannot tell an in-call payment claim
+    from an already-paid one (it stays null; `commitment_turn_undetermined`). With no commitment of any kind the
+    "before the commitment turn" condition holds; when the commitment turn is undetermined, the repair is granted only
+    if the correction precedes every payment claim. Rule 1 does not compare an item without any normalized value. One
+    ACC-05 finding per call, anchored on the later conflicting statement. Tests: `test_rules.py::test_acc05_*`,
+    `test_payment_claim_alone_never_sets_the_commitment_turn`.
 39. **Extraction contract details.** The event side comes from the type (the turn speaker must match it). `strength`
     is a borrower field: an agent event carrying it is a schema error. `route` is the route_action field name (the
     rubric's rules read "route in {...}"). A call-frame identity check carries `turn`, `quote` and `result` (G1's
@@ -267,7 +271,13 @@ H (a result would be wrong or unsafe), M (a metric or process would be incompara
     fails closed if the sentence changes shape (`test_spec_consistency.py::test_registry_fails_closed_*`).
 41. **Constraint 4 on the DEV design.** The edited set is the card's "Edit only Bx-By" / "Change only Bn"; a
     customer-side beat in it must directly follow an edited agent beat; 1–3 agent beats; beats outside the set must be
-    identical. Unlabelled beats (e.g. "close") are counted towards the agent limit. Reported as PD011 warnings.
+    identical. Unlabelled beats (e.g. "close") are counted towards the agent limit. Reported as PD011 warnings unless declared in the pair metadata (BD-03, BD-04).
+42. **Canonical evidence-element names (BD-05).** `contracts/evidence_aliases.py` maps the blueprint aliases to the
+    rubric names for the validator and SD-14; G5 order-7 `closing_turn` is non-element evidence that marks
+    `continued_collection_turns_or_refusal_turn` as having no turn (neither required nor missing gold).
+43. **Post-freeze clarifications live in `docs/bd-changelog.md`.** Writing BD-03..BD-05 into `frozen-contract.md`
+    §0/§12 was not done (the frozen files stay byte-identical and every freeze hash verifies); the validator reads the
+    BD ids from the changelog and accepts them as `rule_basis` / pair-metadata bases.
 
 ## 4. Open questions / inconsistencies found in the spec (for the spec owner)
 
@@ -289,7 +299,7 @@ H (a result would be wrong or unsafe), M (a metric or process would be incompara
     files, verbatim and hash-verified (header).
 11. ~~SD-08 vs the DEV controls K-01 and K-07 (gold `NA` targets).~~ **Resolved by SC-04:** SD-08 admits gold `PASS`
     or `NA`; the two PD016 warnings are gone, and both blueprint items cite `rule_basis: [SC-04]`.
-12. **PD014 — evidence element names (still open).** Rubric 1.2 keeps the G5 elements `request_turn` and
+12. ~~PD014 — evidence element names.~~ **Resolved by BD-05** (canonical mapping, §3.42). Rubric 1.2 keeps the G5 elements `request_turn` and
     `continued_collection_turns_or_refusal_turn` and the POL-01 element `window_or_statement_turn`. The DEV design uses
     `continued_collection_turns` (C-10), `closing_turn` (MD-G5; decision-table order 7 — no honoring event, ≤ 1
     collection turn, no refusal — has no rubric element) and `window_end_turn` (MD-G1). SD-14 completeness keys on
@@ -298,7 +308,7 @@ H (a result would be wrong or unsafe), M (a metric or process would be incompara
     says "the speaker of the turn must match the event side (borrower/agent)", `third_party_signal` and
     `vulnerability_cue` are borrower events, and SC-03 makes a call without a BORROWER turn `NON_CONVERSATIONAL`. So
     K-01, C-01 and MD-G6 must label the customer-side speaker `BORROWER`. PD015 stays as a reminder (6 warnings).
-14. **PD011 — MP-01 / MP-10 header asymmetry (still open).** G-02 and K-07 carry a `call_start_ts` header, M-01 and
+14. ~~PD011 — MP-01 / MP-10 header asymmetry.~~ **Resolved by BD-04** (incidental metadata; pair metadata `incidental_differences`). G-02 and K-07 carry a `call_start_ts` header, M-01 and
     C-08 do not, so each pair also differs on G7 (PASS vs OUT_OF_SCOPE). Constraint 4 covers turns; the frozen
     contract neither accepts nor rejects a header difference between pair members.
 15. **Blueprint fields left for labelers.** Per the blueprint schema, the labeler still fills in:
@@ -308,18 +318,18 @@ H (a result would be wrong or unsafe), M (a metric or process would be incompara
     - per-finding `repair_status` / `label_confidence` / `attribution_facts`;
     - the evaluability reason.
     The blueprint does not carry these fields; beats become turn ids only after transcripts are frozen.
-16. **PD011 — M-01 B4 vs authoring constraint 4 (new, open).** M-01's card edits B4–B9 of G-02. B4 changes the
+16. ~~PD011 — M-01 B4 vs authoring constraint 4.~~ **Resolved by BD-03** (incidental borrower context; pair metadata). M-01's card edits B4–B9 of G-02. B4 changes the
     borrower's salary date (7th → 10th) and follows B3, which is not edited; constraint 4 lets only borrower turns that
     directly react to an edited agent turn change. Either the owner accepts B4 as part of MP-01's target behavior
     (COM-05 needs the conflicting constraint), or the design or the constraint needs a BD-xx entry.
-17. **PD018 — blueprint schema vs items (new, open).** `gold-blueprint-schema.yaml` `per_item_fields.meta` still names
+17. ~~PD018 — blueprint schema vs items.~~ **Resolved by BD-05** and the `gold_blueprint/1.1.0` contract. `gold-blueprint-schema.yaml` `per_item_fields.meta` still names
     `depends_on (spec clarifications / blockers)`; every item carries `rule_basis` and `external_dependencies`
     instead. Both files are hash-frozen, so the validator uses the item fields and warns.
-18. **`commitment_turn` third fallback (new).** `outcome_model.commitment_turn` ends with "else payment-in-call claim
+18. ~~`commitment_turn` third fallback.~~ **Settled by the safety rule** (§3.38): null, never guessed. `outcome_model.commitment_turn` ends with "else payment-in-call claim
     turn", but the 1.2 extraction schema has no field that tells an in-call payment claim from an already-paid one, so
     B cannot derive it from extraction. Affects the ACC-05 repair window and DW-MATERIAL only when there is neither a
     confirmed commitment nor an accepted offer. Convention 38 covers the no-commitment case.
-19. **P-17 rule 4 scope (new).** "Any evaluator-bound payload" cannot include the rubric/prompt text (it contains
+19. ~~P-17 rule 4 scope.~~ **Settled** (§3.35): identity tokens only. "Any evaluator-bound payload" cannot include the rubric/prompt text (it contains
     "language"), and taken literally the rule rejects ordinary words in transcripts. Convention 35 states the scope
     used; the owner should confirm it (or narrow the word list) before transcripts are written.
 20. **SC-02 is not yet executable.** DC-DIV and DC-01-audio need the normalizer and the PENDING ASR thresholds
