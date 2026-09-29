@@ -139,7 +139,7 @@ class APlusDeriver:
 
 
 class EvaluatorB(_LLMSystem):
-    system, version = System.B, "0.2.0"
+    system, version = System.B, "0.2.1"
     PROMPTS = B_PROMPTS
 
     def __init__(self, client: LLMClient, spec: Spec, *, rule_engine: RuleEngine | None = None, **kw):

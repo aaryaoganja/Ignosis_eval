@@ -15,12 +15,22 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# The review app (src/ignosis_eval/app): `pip install -e ".[web]"`; the evaluator itself needs none of these.
+web = [
+  "fastapi>=0.115,<1",
+  "uvicorn>=0.30",
+  "python-multipart>=0.0.9",
+]
 dev = [
   "pytest>=8",
   "jsonschema>=4.20",
   "ruff>=0.4",
   "mypy>=1.8",
   "types-PyYAML",
+  "fastapi>=0.115,<1",
+  "uvicorn>=0.30",
+  "python-multipart>=0.0.9",
+  "httpx>=0.27",  # fastapi.testclient
 ]
 
 [project.scripts]
@@ -30,7 +40,7 @@ ignosis-eval = "ignosis_eval.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-ignosis_eval = ["evaluators/prompts/*.md"]
+ignosis_eval = ["evaluators/prompts/*.md", "app/demo_calls.json", "app/static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

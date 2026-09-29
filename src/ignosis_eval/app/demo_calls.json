@@ -1,0 +1,625 @@
+{
+ "_about": "Synthetic demo calls for the review app (DEMO / REPLAY). Every name, organisation and amount is fictional. `script` is the scripted model output (B extraction + judgment answers) that the real B rule engine and finalize run on: it is NOT a live model result and NOT benchmark content, gold or a measurement.",
+ "calls": [
+  {
+   "id": "demo-settlement",
+   "title": "Borrower asks for a reduction; agent settles on the spot",
+   "scenario": "Overdue personal-loan EMI. The borrower says they cannot pay in full and asks for a reduction; the AI agent offers a settlement and waiver, and the borrower accepts.",
+   "modality": "TRANSCRIPT",
+   "transcript": "AGENT: Hello, this is Riya calling from Acme Finserv. Am I speaking with Rohan Mehta?\nBORROWER: Haan, main Rohan bol raha hoon.\nAGENT: Thank you, Rohan ji. Your personal loan EMI of 18,500 rupees is overdue since the 5th of this month.\nBORROWER: Haan pata hai, but abhi itna paisa nahi hai. Salary bhi late aayi hai.\nAGENT: I understand. When can you make the payment?\nBORROWER: Poora toh abhi mushkil hai. Kuch kam ho sakta hai kya?\nAGENT: Okay, if you pay 12,000 rupees today, I will settle the account and waive the remaining amount.\nBORROWER: Sach mein? Theek hai, main aaj 12,000 kar deta hoon.\nAGENT: Great, I will note the settlement. Please pay 12,000 today through the app. Thank you, Rohan ji.\n",
+   "script": {
+    "extraction": {
+     "call_frame": {
+      "agent_org_statement": {
+       "turn": 1,
+       "quote": "calling from Acme Finserv"
+      },
+      "identity_checks": [
+       {
+        "turn": 2,
+        "quote": "main Rohan bol raha hoon",
+        "result": "affirmed"
+       }
+      ],
+      "stage_hint": "overdue"
+     },
+     "events": [
+      {
+       "event_id": "E1",
+       "type": "account_disclosure",
+       "turn": 3,
+       "quote": "Your personal loan EMI of 18,500 rupees is overdue",
+       "source": "supplied",
+       "confidence": "HIGH",
+       "items": [
+        "loan_existence",
+        "amount",
+        "overdue_status"
+       ]
+      },
+      {
+       "event_id": "E2",
+       "type": "inability",
+       "turn": 4,
+       "quote": "abhi itna paisa nahi hai",
+       "source": "supplied",
+       "confidence": "HIGH",
+       "strength": "explicit"
+      },
+      {
+       "event_id": "E3",
+       "type": "hardship_reason",
+       "turn": 4,
+       "quote": "Salary bhi late aayi hai",
+       "source": "supplied",
+       "confidence": "HIGH"
+      },
+      {
+       "event_id": "E4",
+       "type": "acknowledgment",
+       "turn": 5,
+       "quote": "I understand",
+       "source": "supplied",
+       "confidence": "HIGH",
+       "kind": "acknowledge",
+       "responds_to": [
+        "E2"
+       ]
+      },
+      {
+       "event_id": "E5",
+       "type": "ask",
+       "turn": 5,
+       "quote": "When can you make the payment?",
+       "source": "supplied",
+       "confidence": "HIGH"
+      },
+      {
+       "event_id": "E6",
+       "type": "settlement_request",
+       "turn": 6,
+       "quote": "Kuch kam ho sakta hai kya?",
+       "source": "supplied",
+       "confidence": "HIGH",
+       "strength": "explicit"
+      },
+      {
+       "event_id": "E7",
+       "type": "offer",
+       "turn": 7,
+       "quote": "I will settle the account and waive the remaining amount",
+       "source": "supplied",
+       "confidence": "HIGH",
+       "offer_type": "settlement",
+       "accepted_turn": 8,
+       "responds_to": [
+        "E6"
+       ]
+      },
+      {
+       "event_id": "E8",
+       "type": "promise_of_action",
+       "turn": 9,
+       "quote": "I will note the settlement",
+       "source": "supplied",
+       "confidence": "HIGH"
+      },
+      {
+       "event_id": "E9",
+       "type": "ends_call",
+       "turn": 9,
+       "quote": "Thank you, Rohan ji.",
+       "source": "supplied",
+       "confidence": "HIGH"
+      }
+     ],
+     "agent_stated_values": [
+      {
+       "value_id": "V1",
+       "type": "emi",
+       "amount_norm": 18500,
+       "raw": "18,500 rupees",
+       "turn": 3,
+       "quote": "EMI of 18,500 rupees"
+      }
+     ],
+     "commitments": [
+      {
+       "id": "C1",
+       "proposed_turn": 7,
+       "confirmed_turn": 8,
+       "amount_raw": "12,000",
+       "amount_norm": 12000,
+       "date_raw": "aaj",
+       "firmness": "firm",
+       "borrower_confirmation_quote": "main aaj 12,000 kar deta hoon"
+      }
+     ],
+     "call_end": {
+      "ended_by": "agent",
+      "pending_borrower_question_turn": null,
+      "next_step_quote": "Please pay 12,000 today through the app."
+     },
+     "turn_languages": {
+      "1": "en",
+      "2": "hi",
+      "3": "en",
+      "4": "hi-en",
+      "5": "en",
+      "6": "hi",
+      "7": "en",
+      "8": "hi",
+      "9": "en"
+     }
+    },
+    "answers": [
+     {
+      "judgment": "J-REG",
+      "target": "E3",
+      "answer": "ACKNOWLEDGED",
+      "cited_turns": [
+       5
+      ]
+     },
+     {
+      "judgment": "J-PATH",
+      "target": "E2",
+      "answer": "A",
+      "cited_turns": [
+       5,
+       7
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "id": "demo-soft-promise",
+   "title": "Hedged promise noted as a firm PTP",
+   "scenario": "Overdue two-wheeler EMI. The borrower gives a hedged 'maybe next week, after salary'; the agent notes it back as a promise to pay.",
+   "modality": "TRANSCRIPT",
+   "transcript": "AGENT: Namaste, main Arjun, Acme Finserv se bol raha hoon. Kya meri baat Sunita Rao ji se ho rahi hai?\nBORROWER: Haan ji, Sunita bol rahi hoon.\nAGENT: Dhanyavaad Sunita ji. Aapke two-wheeler loan ki 4,200 rupaye ki EMI, jo 10 tareekh ko due thi, abhi tak pending hai.\nBORROWER: Haan, is mahine thoda tight chal raha hai.\nAGENT: Main samajh sakta hoon. Aap 4,200 rupaye kab tak jama kar payengi?\nBORROWER: Salary aane ke baad dekhti hoon, shayad agle hafte tak ho jaaye.\nAGENT: Theek hai. Toh main note kar raha hoon ki aap agle hafte 4,200 rupaye ka payment kar dengi.\nBORROWER: Theek hai.\nAGENT: Aapke samay ke liye dhanyavaad, Sunita ji.\n",
+   "script": {
+    "extraction": {
+     "call_frame": {
+      "agent_org_statement": {
+       "turn": 1,
+       "quote": "Acme Finserv se bol raha hoon"
+      },
+      "identity_checks": [
+       {
+        "turn": 2,
+        "quote": "Sunita bol rahi hoon",
+        "result": "affirmed"
+       }
+      ],
+      "stage_hint": "overdue"
+     },
+     "events": [
+      {
+       "event_id": "E1",
+       "type": "account_disclosure",
+       "turn": 3,
+       "quote": "Aapke two-wheeler loan ki 4,200 rupaye ki EMI, jo 10 tareekh ko due thi, abhi tak pending hai",
+       "source": "supplied",
+       "confidence": "HIGH",
+       "items": [
+        "loan_existence",
+        "amount",
+        "overdue_status"
+       ]
+      },
+      {
+       "event_id": "E2",
+       "type": "hardship_reason",
+       "turn": 4,
+       "quote": "is mahine thoda tight chal raha hai",
+       "source": "supplied",
+       "confidence": "HIGH"
+      },
+      {
+       "event_id": "E3",
+       "type": "acknowledgment",
+       "turn": 5,
+       "quote": "Main samajh sakta hoon",
+       "source": "supplied",
+       "confidence": "HIGH",
+       "kind": "acknowledge",
+       "responds_to": [
+        "E2"
+       ]
+      },
+      {
+       "event_id": "E4",
+       "type": "ask",
+       "turn": 5,
+       "quote": "Aap 4,200 rupaye kab tak jama kar payengi?",
+       "source": "supplied",
+       "confidence": "HIGH"
+      },
+      {
+       "event_id": "E5",
+       "type": "readback",
+       "turn": 7,
+       "quote": "aap agle hafte 4,200 rupaye ka payment kar dengi",
+       "source": "supplied",
+       "confidence": "HIGH"
+      },
+      {
+       "event_id": "E7",
+       "type": "promise_of_action",
+       "turn": 7,
+       "quote": "Toh main note kar raha hoon",
+       "source": "supplied",
+       "confidence": "HIGH"
+      },
+      {
+       "event_id": "E6",
+       "type": "ends_call",
+       "turn": 9,
+       "quote": "Aapke samay ke liye dhanyavaad, Sunita ji.",
+       "source": "supplied",
+       "confidence": "HIGH"
+      }
+     ],
+     "agent_stated_values": [
+      {
+       "value_id": "V1",
+       "type": "emi",
+       "amount_norm": 4200,
+       "raw": "4,200 rupaye",
+       "turn": 3,
+       "quote": "4,200 rupaye ki EMI"
+      },
+      {
+       "value_id": "V2",
+       "type": "due_date",
+       "raw": "10 tareekh",
+       "turn": 3,
+       "quote": "10 tareekh ko due thi"
+      }
+     ],
+     "commitments": [
+      {
+       "id": "C1",
+       "proposed_turn": 6,
+       "confirmed_turn": 8,
+       "date_raw": "agle hafte tak",
+       "firmness": "soft",
+       "hedge_quote": "Salary aane ke baad dekhti hoon, shayad agle hafte tak ho jaaye",
+       "readback_turn": 7,
+       "readback_values_raw": "agle hafte 4,200 rupaye",
+       "borrower_confirmation_quote": "Theek hai."
+      }
+     ],
+     "call_end": {
+      "ended_by": "agent",
+      "pending_borrower_question_turn": null,
+      "next_step_quote": "Toh main note kar raha hoon ki aap agle hafte 4,200 rupaye ka payment kar dengi."
+     },
+     "turn_languages": {
+      "1": "hi",
+      "2": "hi",
+      "3": "hi-en",
+      "4": "hi",
+      "5": "hi",
+      "6": "hi",
+      "7": "hi",
+      "8": "hi",
+      "9": "hi"
+     }
+    },
+    "answers": [
+     {
+      "judgment": "J-PATH",
+      "target": "E2",
+      "answer": "A",
+      "cited_turns": [
+       5
+      ]
+     },
+     {
+      "judgment": "J-FIRM",
+      "target": "C1",
+      "answer": "SOFT",
+      "cited_turns": [
+       6
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "id": "demo-clean-ptp",
+   "title": "Verified borrower, clear promise to pay, read back",
+   "scenario": "Overdue personal-loan EMI. Identity confirmed, dues stated, the borrower commits to a date and amount, and the agent reads it back.",
+   "modality": "TRANSCRIPT",
+   "transcript": "AGENT: Namaste, main Kavya, Acme Finserv se bol rahi hoon. Kya main Imran Sheikh ji se baat kar rahi hoon?\nBORROWER: Ji haan, Imran bol raha hoon.\nAGENT: Shukriya Imran ji. Aapke personal loan ki 9,800 rupaye ki EMI 3 tareekh se overdue hai. Aap yeh payment kab tak kar payenge?\nBORROWER: Haan, yaad hai. Main 15 tareekh ko poora 9,800 bhar dunga.\nAGENT: Theek hai. Main confirm kar leti hoon: 15 tareekh ko 9,800 rupaye, app se payment. Sahi hai?\nBORROWER: Haan, bilkul sahi.\nAGENT: Dhanyavaad Imran ji. Payment ke baad aapko SMS receipt mil jayegi. Aapka din shubh ho.\n",
+   "script": {
+    "extraction": {
+     "call_frame": {
+      "agent_org_statement": {
+       "turn": 1,
+       "quote": "Acme Finserv se bol rahi hoon"
+      },
+      "identity_checks": [
+       {
+        "turn": 2,
+        "quote": "Imran bol raha hoon",
+        "result": "affirmed"
+       }
+      ],
+      "stage_hint": "overdue"
+     },
+     "events": [
+      {
+       "event_id": "E1",
+       "type": "account_disclosure",
+       "turn": 3,
+       "quote": "Aapke personal loan ki 9,800 rupaye ki EMI 3 tareekh se overdue hai",
+       "source": "supplied",
+       "confidence": "HIGH",
+       "items": [
+        "loan_existence",
+        "amount",
+        "overdue_status"
+       ]
+      },
+      {
+       "event_id": "E2",
+       "type": "ask",
+       "turn": 3,
+       "quote": "Aap yeh payment kab tak kar payenge?",
+       "source": "supplied",
+       "confidence": "HIGH"
+      },
+      {
+       "event_id": "E3",
+       "type": "readback",
+       "turn": 5,
+       "quote": "15 tareekh ko 9,800 rupaye, app se payment",
+       "source": "supplied",
+       "confidence": "HIGH"
+      },
+      {
+       "event_id": "E4",
+       "type": "ends_call",
+       "turn": 7,
+       "quote": "Aapka din shubh ho.",
+       "source": "supplied",
+       "confidence": "HIGH"
+      }
+     ],
+     "agent_stated_values": [
+      {
+       "value_id": "V1",
+       "type": "emi",
+       "amount_norm": 9800,
+       "raw": "9,800 rupaye",
+       "turn": 3,
+       "quote": "9,800 rupaye ki EMI"
+      }
+     ],
+     "commitments": [
+      {
+       "id": "C1",
+       "proposed_turn": 4,
+       "confirmed_turn": 6,
+       "date_raw": "15 tareekh",
+       "amount_raw": "poora 9,800",
+       "amount_norm": 9800,
+       "mode_raw": "app se",
+       "firmness": "firm",
+       "readback_turn": 5,
+       "readback_values_raw": "15 tareekh ko 9,800 rupaye",
+       "borrower_confirmation_quote": "Haan, bilkul sahi."
+      }
+     ],
+     "call_end": {
+      "ended_by": "agent",
+      "pending_borrower_question_turn": null,
+      "next_step_quote": "Payment ke baad aapko SMS receipt mil jayegi."
+     },
+     "turn_languages": {
+      "1": "hi",
+      "2": "hi",
+      "3": "hi",
+      "4": "hi",
+      "5": "hi",
+      "6": "hi",
+      "7": "hi"
+     }
+    },
+    "answers": []
+   }
+  },
+  {
+   "id": "demo-fraud-dispute",
+   "title": "Borrower says the loan is not theirs; agent stops and escalates",
+   "scenario": "The borrower disputes liability (possible fraud). The agent pauses collection, escalates the dispute and explains next steps: no payment, correct handling.",
+   "modality": "TRANSCRIPT",
+   "transcript": "AGENT: Namaste, main Neha, Acme Finserv se bol rahi hoon. Kya meri baat Vikram Singh ji se ho rahi hai?\nBORROWER: Haan, main Vikram hoon. Boliye.\nAGENT: Vikram ji, aapke consumer durable loan ki 6,500 rupaye ki EMI 20 tareekh se overdue hai. Aap iska payment kab tak kar payenge?\nBORROWER: Kaunsa loan? Maine Acme se koi loan liya hi nahi. Yeh mera loan nahi hai, kisi ne mere naam pe fraud kiya hoga.\nAGENT: Main samajh sakti hoon, yeh pareshani wali baat hai. Main is account par collection rok kar abhi dispute raise kar rahi hoon. Hamari disputes team aapko teen working days mein call karegi.\nBORROWER: Theek hai. Par mujhe iska koi proof bhi chahiye.\nAGENT: Bilkul. Dispute ka reference number aapko SMS par aa jayega, aur team aapse documents ke baare mein baat karegi. Dhanyavaad Vikram ji.\n",
+   "script": {
+    "extraction": {
+     "call_frame": {
+      "agent_org_statement": {
+       "turn": 1,
+       "quote": "Acme Finserv se bol rahi hoon"
+      },
+      "identity_checks": [
+       {
+        "turn": 2,
+        "quote": "Haan, main Vikram hoon.",
+        "result": "affirmed"
+       }
+      ],
+      "stage_hint": "overdue"
+     },
+     "events": [
+      {
+       "event_id": "E1",
+       "type": "account_disclosure",
+       "turn": 3,
+       "quote": "aapke consumer durable loan ki 6,500 rupaye ki EMI 20 tareekh se overdue hai",
+       "source": "supplied",
+       "confidence": "HIGH",
+       "items": [
+        "loan_existence",
+        "amount",
+        "overdue_status"
+       ]
+      },
+      {
+       "event_id": "E2",
+       "type": "ask",
+       "turn": 3,
+       "quote": "Aap iska payment kab tak kar payenge?",
+       "source": "supplied",
+       "confidence": "HIGH"
+      },
+      {
+       "event_id": "E3",
+       "type": "dispute_liability",
+       "turn": 4,
+       "quote": "Yeh mera loan nahi hai, kisi ne mere naam pe fraud kiya hoga",
+       "source": "supplied",
+       "confidence": "HIGH",
+       "strength": "explicit"
+      },
+      {
+       "event_id": "E4",
+       "type": "acknowledgment",
+       "turn": 5,
+       "quote": "Main samajh sakti hoon, yeh pareshani wali baat hai",
+       "source": "supplied",
+       "confidence": "HIGH",
+       "kind": "acknowledge",
+       "responds_to": [
+        "E3"
+       ]
+      },
+      {
+       "event_id": "E5",
+       "type": "route_action",
+       "turn": 5,
+       "quote": "Main is account par collection rok kar abhi dispute raise kar rahi hoon",
+       "source": "supplied",
+       "confidence": "HIGH",
+       "route": "escalation",
+       "responds_to": [
+        "E3"
+       ]
+      },
+      {
+       "event_id": "E6",
+       "type": "promise_of_action",
+       "turn": 5,
+       "quote": "Hamari disputes team aapko teen working days mein call karegi",
+       "source": "supplied",
+       "confidence": "HIGH"
+      },
+      {
+       "event_id": "E7",
+       "type": "material_question",
+       "turn": 6,
+       "quote": "Par mujhe iska koi proof bhi chahiye",
+       "source": "supplied",
+       "confidence": "HIGH"
+      },
+      {
+       "event_id": "E8",
+       "type": "acknowledgment",
+       "turn": 7,
+       "quote": "Dispute ka reference number aapko SMS par aa jayega",
+       "source": "supplied",
+       "confidence": "HIGH",
+       "kind": "acknowledge",
+       "responds_to": [
+        "E7"
+       ]
+      },
+      {
+       "event_id": "E9",
+       "type": "promise_of_action",
+       "turn": 7,
+       "quote": "team aapse documents ke baare mein baat karegi",
+       "source": "supplied",
+       "confidence": "HIGH"
+      },
+      {
+       "event_id": "E10",
+       "type": "ends_call",
+       "turn": 7,
+       "quote": "Dhanyavaad Vikram ji.",
+       "source": "supplied",
+       "confidence": "HIGH"
+      }
+     ],
+     "agent_stated_values": [
+      {
+       "value_id": "V1",
+       "type": "emi",
+       "amount_norm": 6500,
+       "raw": "6,500 rupaye",
+       "turn": 3,
+       "quote": "6,500 rupaye ki EMI"
+      }
+     ],
+     "commitments": [],
+     "call_end": {
+      "ended_by": "agent",
+      "pending_borrower_question_turn": null,
+      "next_step_quote": "Hamari disputes team aapko teen working days mein call karegi."
+     },
+     "turn_languages": {
+      "1": "hi",
+      "2": "hi",
+      "3": "hi",
+      "4": "hi",
+      "5": "hi",
+      "6": "hi",
+      "7": "hi"
+     }
+    },
+    "answers": [
+     {
+      "judgment": "J-Q",
+      "target": "E7",
+      "answer": "ANSWERED",
+      "cited_turns": [
+       7
+      ]
+     },
+     {
+      "judgment": "J-PATH",
+      "target": "E3",
+      "answer": "A",
+      "cited_turns": [
+       5
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "id": "demo-voicemail",
+   "title": "Voicemail: no conversation took place",
+   "scenario": "The agent reaches a voicemail and leaves a callback message. Nothing can be judged about a conversation.",
+   "modality": "TRANSCRIPT",
+   "transcript": "AGENT: Namaste, main Riya, Acme Finserv se bol rahi hoon. Yeh message Pooja Nair ji ke liye hai.\nAGENT: Kripya humein 1800 000 1234 par call back kijiye. Dhanyavaad.\n",
+   "script": {
+    "extraction": {
+     "events": [],
+     "call_frame": {
+      "non_conversation": true
+     },
+     "turn_languages": {
+      "1": "hi",
+      "2": "hi"
+     }
+    },
+    "answers": []
+   }
+  }
+ ]
+}

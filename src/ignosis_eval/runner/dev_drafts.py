@@ -49,7 +49,12 @@ from ignosis_eval.contracts.run_manifest import (
 )
 from ignosis_eval.evaluators.base import EvaluationContext, TraceSink, input_sha256
 from ignosis_eval.evaluators.builder import failed_record
-from ignosis_eval.evaluators.llm import LLMUnavailableError, ProviderConfigError, backend_family
+from ignosis_eval.evaluators.llm import (
+    LLMUnavailableError,
+    ProviderConfigError,
+    ProviderRequestError,
+    backend_family,
+)
 from ignosis_eval.evaluators.pipelines import APlusDeriver, a_final_raw_output
 from ignosis_eval.evaluators.registry import build_systems
 from ignosis_eval.integrity.guard import ProtectedPathGuard, ProtectedPathViolation
@@ -190,7 +195,7 @@ def run_dev_drafts(cfg: DraftRunConfig, *, systems_override: dict[System, Any] |
                                                     replay_dir=cfg.replay_dir, model_id=cfg.model_id,
                                                     max_tokens=cfg.max_tokens)
     except ProviderConfigError as exc:
-        raise DraftRunError(f"PROVIDER PENDING (B-05): {exc}") from exc
+        raise DraftRunError(f"PROVIDER NOT CONFIGURED: {exc}") from exc
     configs = [systems[s].config() for s in cfg.systems]
 
     # ------------------------------------------------------------------ front end once per unit (P-2, P-17)
@@ -257,7 +262,7 @@ def run_dev_drafts(cfg: DraftRunConfig, *, systems_override: dict[System, Any] |
         ni = nis[iid]
         d = rep_dir(system, iid, r)
         write_json_once(d / NORMALIZED_INPUT_FILE, ni.to_json_dict())
-        trace, errors = TraceSink(), []
+        trace, errors = TraceSink(), list[dict[str, Any]]()
         t_start, t0 = time.perf_counter(), datetime.now(timezone.utc)
         record: EvaluationRecord | None = None
         try:
@@ -267,6 +272,12 @@ def run_dev_drafts(cfg: DraftRunConfig, *, systems_override: dict[System, Any] |
         except LLMUnavailableError as exc:
             errors.append({"stage": "llm_transport", "type": type(exc).__name__, "message": str(exc)})
             record = failed_record(ni, spec, systems[system].system_info(), f"transport failure: {exc}", 0)
+        except ProviderRequestError as exc:  # never a verdict: EVALUATION_FAILED; a config error stops the run
+            errors.append({"stage": "llm_provider", "type": type(exc).__name__, "message": str(exc),
+                           "http_status": exc.status})
+            record = failed_record(ni, spec, systems[system].system_info(), f"provider error: {exc}", 0)
+            if exc.is_config_error:
+                failure = f"provider configuration error on {iid} rep {r}: {exc}"
         except ProtectedPathViolation as exc:
             errors.append({"stage": "evaluate", "type": type(exc).__name__, "message": str(exc)})
             failure = f"{system.value} attempted a forbidden operation on {iid} rep {r}: {exc}"
@@ -352,30 +363,38 @@ def frontend_stability(cfg: DraftRunConfig, reps: int) -> dict[str, int]:
 
 
 def evaluator_configuration(spec: Spec, llm_backend: str | None, model_id: str | None) -> dict[str, Any]:
-    """The evaluator configuration a DEV baseline is (or would be) run with; provider fields stay PENDING until the
-    owner pins a non-Claude snapshot (B-05)."""
-    import os
-
-    from ignosis_eval.contracts.run_manifest import TransportRetryPolicy
+    """The evaluator configuration a DEV baseline is (or would be) run with. Provider fields come from the central
+    provider config (evaluators/provider_config.py); the key is never included, only whether it is configured."""
+    from ignosis_eval.evaluators import provider_config
     from ignosis_eval.evaluators.k0 import KeywordFloorK0
     from ignosis_eval.evaluators.pipelines import EvaluatorA, EvaluatorB
     from ignosis_eval.evaluators.prompts import A_PROMPTS, B_PROMPTS, prompt_hashes
 
-    configured = llm_backend in ("openai",) and bool(os.environ.get("OPENAI_API_KEY")) and bool(model_id)
+    pc = provider_config.describe()
+    backend = llm_backend or provider_config.PROVIDER
     short = {k: v[:12] for k, v in {**prompt_hashes(A_PROMPTS, spec), **prompt_hashes(B_PROMPTS, spec)}.items()}
+    if backend == provider_config.PROVIDER:
+        provider = f"{provider_config.PROVIDER} ({pc['provider_label']})"
+        key = ("configured (runtime env GEMINI_API_KEY)" if pc["api_key_configured"] else
+               "MISSING: GEMINI_API_KEY is not set in the runtime environment; A / A+ / B cannot run")
+        model = model_id or pc["model_id"]
+    else:
+        provider, key, model = backend, "n/a", model_id or "n/a"
     return {
-        "provider": llm_backend if configured else "PENDING (B-05): no non-Claude provider is configured in this "
-                    "environment (OPENAI_API_KEY absent); implemented backend: openai (OpenAI-compatible, stdlib)",
-        "model": model_id if configured else "PENDING (B-05): a dated, pinned snapshot is required",
-        "model family rule": "must differ from the drafts' assisting family (anthropic-claude): authoring constraint 1",
+        "provider": provider,
+        "model": model,
+        "API key": key,
+        "model family rule": f"{pc['family']} must differ from the drafts' assisting family (anthropic-claude): "
+                             "authoring constraint 1",
         "evaluator versions": {"K0": KeywordFloorK0.version, "A": EvaluatorA.version, "A+": APlusDeriver.version,
                                "B": EvaluatorB.version, "engine": ENGINE_VERSION, "frontend": FRONTEND_VERSION},
         "prompt version": f"{PROMPT_TEMPLATE_VERSION} (instruction text: UNOPTIMIZED STUB, not tuned)",
         "prompt hashes (sha256, 12)": short,
-        "settings": {"temperature": 0.0, "seed": "sent when set; OpenAI support is best-effort",
-                     "structured output": "JSON mode + contract validation, 1 schema retry",
-                     "transport retries": TransportRetryPolicy().max_retries, "consistency re-run": "disabled"},
-        "ASR mode": "none: TRANSCRIPT units only (ASR / diarization is B-06)",
+        "settings": {"temperature": pc["temperature"], "seed": pc["seed"], "max_output_tokens": pc["max_output_tokens"],
+                     "timeout_s": pc["timeout_s"], "structured output": pc["structured_output"],
+                     "transport retries": pc["transport_retry"], "consistency re-run": "disabled (R-05)"},
+        "input modality": f"{pc['input_modality']} (ASR / diarization is B-06)",
+        "locked-run pin": "B-05 stays PENDING_HUMAN_SIGNOFF for locked runs (spec-reconciliation §3.48)",
     }
 
 

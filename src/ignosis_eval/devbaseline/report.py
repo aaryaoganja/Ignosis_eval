@@ -17,7 +17,9 @@ from ignosis_eval.devbaseline.metrics import (
     system_metrics,
 )
 
-REPORT_VERSION = "dev-baseline/1.0.0"
+REPORT_VERSION = "dev-baseline/1.1.0"
+LABEL = "DEV ENGINEERING MEASUREMENT — NOT FINAL RELIABILITY EVIDENCE"
+FINAL_VALIDATION = "FINAL RELIABILITY VALIDATION: PENDING"
 REFERENCE = "frozen DEV design intent (bench/public blueprint and case cards), NOT gold"
 
 
@@ -42,8 +44,8 @@ def build_report(run_dir: Path, design: DevDesign, public_dir: Path, *, quote_ma
     counts = {s: dict(Counter(d["class"] for r in rows.values() for d in r["systems"].get(s, {})
                               .get("disagreements", []))) for s in by_system}
     return {
-        "report": "dev-baseline", "report_version": REPORT_VERSION, "notice": manifest["notice"],
-        "reference": REFERENCE, "not_reliability_evidence": True,
+        "report": "dev-baseline", "report_version": REPORT_VERSION, "label": LABEL, "notice": manifest["notice"],
+        "reference": REFERENCE, "not_reliability_evidence": True, "final_reliability_validation": "PENDING",
         "transcripts": {"status": "DRAFT", "human_review_pending": manifest["drafts"]["human_review_pending"],
                         "assisting_families": manifest["drafts"]["assisting_families"],
                         "provenance_sha256": manifest["drafts"]["provenance_sha256"]},
@@ -92,10 +94,15 @@ def summary_rows(systems: dict[str, Any]) -> list[dict[str, str]]:
     return rows
 
 
+def _tags(dw: str | None, cl: bool | None) -> str:
+    return ", ".join(([f"DW {dw}"] if dw and dw != "NONE" else []) + (["Clean Loss"] if cl else []))
+
+
 def render_markdown(r: dict[str, Any]) -> str:
     out: list[str] = []
     add = out.append
-    add("# DEV draft baseline\n")
+    add(f"# {LABEL}\n")
+    add(f"DEV draft baseline · **{FINAL_VALIDATION}** (no gold, no holdout, drafts pending human review)\n")
     add(f"> **{r['notice']}**\n>\n> Reference: {r['reference']}. Transcripts: **{r['transcripts']['status']}**, "
         f"human review pending: **{r['transcripts']['human_review_pending']}**. This is the first DEV baseline, not "
         "a validation of the evaluator.\n")
@@ -126,6 +133,7 @@ def render_markdown(r: dict[str, Any]) -> str:
         add(f"**{name}** · defect precision {_pct(m['defect_precision'])} · defect recall {_pct(m['defect_recall'])} "
             f"· evidence faithfulness {_pct(m['evidence_faithfulness'])} · attribution agreement "
             f"{_pct(m['attribution_agreement'])} · dangerous-win agreement {_pct(m['dangerous_win_agreement'])} · "
+            f"clean-loss agreement {_pct(m['clean_loss_agreement'])} · "
             f"evaluability agreement {_pct(m['abstention']['evaluability_agreement'])} · consistency "
             f"{m['consistency'].get('value', m['consistency'])} · gate false fires {m['gate_false_fires'] or 'none'} · "
             f"tokens {m['tokens']} · cost note: {m['cost']['note']}\n")
@@ -184,10 +192,13 @@ def render_markdown(r: dict[str, Any]) -> str:
                 cells.append("-")
                 continue
             got = sorted(set(sr["fired_gates"]) | set(sr["codes"]))
+            tags = _tags(sr.get("dangerous_win"), sr.get("clean_loss"))
             cells.append(f"{sr['verdict']}{' ' + sr['critical_status'] if sr['critical_status'] else ''}"
-                         f"{' · ' + ', '.join(got) if got else ''}")
+                         f"{' · ' + ', '.join(got) if got else ''}{' · ' + tags if tags else ''}")
         intended = sorted(set(row["intended"]["fired_gates"]) | set(row["intended"]["codes"]))
-        add(f"| {iid} | {row['intended']['verdict']} | {', '.join(intended) or '-'} | " + " | ".join(cells) + " |")
+        itags = _tags(row["intended"].get("dangerous_win"), row["intended"].get("clean_loss"))
+        add(f"| {iid} | {row['intended']['verdict']}{' · ' + itags if itags else ''} | {', '.join(intended) or '-'} | "
+            + " | ".join(cells) + " |")
     add("\n### Evidence, confidence and attribution (first repetition)\n")
     for iid, row in r["per_item"].items():
         for s, sr in row["systems"].items():
@@ -204,4 +215,4 @@ def render_markdown(r: dict[str, Any]) -> str:
     return "\n".join(out) + "\n"
 
 
-__all__ = ["REPORT_VERSION", "build_report", "render_markdown", "summary_rows"]
+__all__ = ["FINAL_VALIDATION", "LABEL", "REPORT_VERSION", "build_report", "render_markdown", "summary_rows"]

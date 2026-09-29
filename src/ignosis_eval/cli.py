@@ -12,7 +12,8 @@
     score --run-id ID [--suffix S] [--human-checks F]
     reveal --run-id ID --scoring-id S --report-sha256 H
     schemas export
-    dev run [--systems K0,A,A+,B] [--llm-backend openai --model M] [--reps k]   DEV draft run (not a protocol run)
+    dev run [--systems K0,A,A+,B] [--llm-backend gemini] [--reps k]   DEV draft run (not a protocol run; needs
+                                                   GEMINI_API_KEY at runtime for A / B)
     dev report --run-id ID [--out DIR] [--price-in USD --price-out USD]           intent-referenced baseline report
     dev consistency [--items ...] [--reps 3] [--systems K0]                        reproducibility smoke run
 """
@@ -152,7 +153,6 @@ def cmd_dev_run(args) -> int:
 
 def cmd_dev_report(args) -> int:
     import json
-    import os
 
     from ignosis_eval.benchmark.public_dev import validate_public_dev
     from ignosis_eval.devbaseline.report import build_report, render_markdown
@@ -161,9 +161,12 @@ def cmd_dev_report(args) -> int:
     spec = _spec(args)
     run_dir = Path(args.results_root) / DRAFT_RUNS_DIR / args.run_id
     manifest = json.loads((run_dir / "draft_run.json").read_text(encoding="utf-8"))
+    from ignosis_eval.evaluators import provider_config
+
     llm = manifest.get("llm") or {}
-    pending = None if os.environ.get("OPENAI_API_KEY") else (
-        "PROVIDER PENDING (B-05): no non-Claude provider configured (OPENAI_API_KEY absent)")
+    pending = None if provider_config.api_key_configured() else (
+        f"PROVIDER KEY MISSING: {provider_config.API_KEY_ENV} is not set in the runtime environment, so the "
+        f"{provider_config.PROVIDER} evaluator ({provider_config.settings().model_id}) could not run")
     not_executed = {s: pending or "not requested in this run" for s in ("A", "A+", "B")}
     design = validate_public_dev(_layout(args).public_dir, spec).design
     if design is None:
@@ -401,7 +404,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--repetitions", type=int, default=5)
     p.add_argument("--base-seed", type=int, required=True)
     p.add_argument("--results-root", default=".")
-    p.add_argument("--llm-backend", choices=["mock_replay", "openai", "anthropic"], default="mock_replay")
+    p.add_argument("--llm-backend", choices=["mock_replay", "gemini", "openai", "anthropic"], default="mock_replay")
     p.add_argument("--replay-dir", default=None)
     p.add_argument("--model-id", default=None)
     p.add_argument("--max-tokens", type=int, default=None)
@@ -443,8 +446,9 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--reps", type=int, default=reps)
         p.add_argument("--seed", type=int, default=0)
         p.add_argument("--results-root", default=".")
-        p.add_argument("--llm-backend", choices=["mock_replay", "openai", "anthropic"], default="mock_replay")
-        p.add_argument("--model", default=None, help="pinned, dated model snapshot (B-05)")
+        p.add_argument("--llm-backend", choices=["gemini", "mock_replay", "openai", "anthropic"], default="gemini",
+                       help="gemini: key from the runtime env GEMINI_API_KEY only")
+        p.add_argument("--model", default=None, help="pinned model id (default: evaluators/provider_config.py)")
         p.add_argument("--replay-dir", default=None)
         p.add_argument("--max-tokens", type=int, default=None)
         p.add_argument("--items", nargs="+", default=None)

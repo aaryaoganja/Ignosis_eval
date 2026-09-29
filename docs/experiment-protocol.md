@@ -2,8 +2,8 @@
 
 **The normative protocol is [`docs/spec/experiment-protocol.md`](spec/experiment-protocol.md).** This page maps
 each clause to code and lists the commands. Nothing produced by these commands today is a result: the benchmark
-has no frozen transcripts or gold (B-01/B-02), the LLM provider is pending (B-05; `openai` client implemented,
-unconfigured) and the ASR is a cache replay (B-06). DEV draft runs (`ignosis-eval dev ...`) are outside the protocol
+has no frozen transcripts or gold (B-01/B-02), the locked-run model pin is pending (B-05; DEV runs and the review app
+use Gemini, live only with `GEMINI_API_KEY` in the runtime environment) and the ASR is a cache replay (B-06). DEV draft runs (`ignosis-eval dev ...`) are outside the protocol
 (docs/dev-baseline.md).
 
 | Clause | Implementation |

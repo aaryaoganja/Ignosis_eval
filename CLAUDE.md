@@ -15,7 +15,9 @@ and what is still pending.
      `contracts.case_card`, `integrity.freeze`, `benchmark`, `scoring`, `metrics`, `golddrv` or `runner`.
      This is enforced statically and transitively by `tests/test_architecture_boundaries.py`.
    - At runtime systems run inside `ProtectedPathGuard`, which blocks gold, case cards, manifests, registries,
-     the private registry, the whole results tree (runs, blinding, views, scoring), and blocks subprocesses.
+     the private registry, the whole results tree (runs, blinding, views, scoring), and blocks subprocesses. The
+     review app (`app/`) runs B the same way and never imports gold, card, freeze, scorer, runner or
+     design-validation modules.
    - Systems see only a random per-run unit alias (`u_xxxxxxxx`, P-17 / SC-05). Item ids, pair ids, benchmark labels
      and source file names never reach them; the runner's pre-run identity-leak test fails the run otherwise.
 2. **Gold is never derived from evaluator output.**
@@ -58,12 +60,22 @@ and what is still pending.
 
 The reconciliation with the frozen spec is complete. **Do not**, without an explicit request:
 - optimize or rewrite evaluator prompts (`evaluators/prompts/*.md` are unoptimized stubs);
-- tune A / A+ / B, or pick the evaluator provider / snapshot (B-05: the `openai` client is implemented but inert
-  without a key and a pinned snapshot; a Claude evaluator is refused on the Claude-assisted DEV drafts);
+- tune A / A+ / B, or change the evaluator provider / model. The owner chose Gemini for DEV engineering runs and
+  the app (2026-09-29, `evaluators/provider_config.py`, reconciliation §3.48). The locked-run pin stays B-05. A
+  Claude evaluator is refused on the Claude-assisted DEV drafts;
 - author benchmark cases, registries entries, gold labels or red-team items;
 - run official (locked) holdout or red-team experiments;
 - choose values the spec marks `PENDING_HUMAN_SIGNOFF` (`ignosis-eval spec pending`);
-- build a UI.
+- add auth, billing or admin to the review app, or let it read gold, design intent or run trees.
+
+## Secrets
+
+- The Gemini key exists only as the runtime environment variable `GEMINI_API_KEY`, read by
+  `provider_config.api_key()`.
+- Never put a key in source, config, tests, fixtures, docs, the Dockerfile, the frontend, logs, records or
+  commit messages.
+- `.env*` files are git-ignored except the empty `.env.example`.
+- The browser calls only the backend (`tests/test_secrets.py`, `tests/test_app.py`).
 
 ## Where things live
 
@@ -82,6 +94,8 @@ The reconciliation with the frozen spec is complete. **Do not**, without an expl
 | DEV transcript drafts | `bench/dev/transcripts/` (+ `provenance.yaml`, `REVIEW-CHECKLIST.md`); QC `benchmark/transcript_qc.py` |
 | B rule engine | `engine/code_rules.py` + `engine/rules.py`; `evaluators/judgement.py::SpecRuleEngine` |
 | DEV draft runs / baseline | `runner/dev_drafts.py` (runs), `devbaseline/` (intent-referenced metrics, report; scorer side) |
+| Evaluator provider (Gemini) | `evaluators/provider_config.py` (the only place for provider, model id, settings, key access); `evaluators/llm.py::GeminiClient` |
+| Review app (MVP) | `app/service.py` (intake → front end → B → result view), `app/server.py` (FastAPI), `app/static/`, `app/demo_calls.json`; `Dockerfile` (Railway) |
 | Opaque unit aliases (P-17) | `contracts/unit_alias.py`, `runner/aliases.py` |
 | Hash lists / gold freeze / guard | `integrity/` |
 | Run protocol, lock, blinding, storage | `runner/` |
@@ -97,6 +111,8 @@ ignosis-eval spec pending            # PENDING_HUMAN_SIGNOFF inventory
 ignosis-eval bench check --scope dev --require-gold   # includes bench/public (bench public-check alone)
 ignosis-eval bench transcript-qc <dir>               # TQ checks on draft DEV transcripts <ITEM_ID>.txt before freeze
 ignosis-eval dev run | report | consistency         # DEV draft baseline vs design intent (docs/dev-baseline.md)
+ignosis-eval dev run --systems K0,A,A+,B             # A / A+ / B need GEMINI_API_KEY at runtime
+python -m ignosis_eval.app                           # review app on $PORT (default 8000); pip install -e ".[web]"
 ignosis-eval bench manifest | gold freeze | run | blind | score | reveal   (see README)
 ```
 

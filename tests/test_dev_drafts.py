@@ -55,11 +55,16 @@ def test_family_guard_and_provider_pending(tmp_path, monkeypatch):
     with pytest.raises(DraftRunError, match="authoring constraint 1"):
         run_dev_drafts(_cfg(tmp_path, systems=[System.A], llm_backend="anthropic"))
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    with pytest.raises(DraftRunError, match="PROVIDER PENDING"):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_MODEL", raising=False)
+    with pytest.raises(DraftRunError, match="PROVIDER NOT CONFIGURED"):
         run_dev_drafts(_cfg(tmp_path, systems=[System.A, System.B], llm_backend="openai", model_id="m-2026-01-01"))
+    with pytest.raises(DraftRunError, match="PROVIDER NOT CONFIGURED: GEMINI_API_KEY is not set"):
+        run_dev_drafts(_cfg(tmp_path, systems=[System.A, System.A_PLUS, System.B], llm_backend="gemini"))
     assert not (tmp_path / "dev_draft_runs").exists()  # nothing half-written
     cfg = evaluator_configuration(SP, None, None)
-    assert cfg["provider"].startswith("PENDING (B-05)") and cfg["model"].startswith("PENDING (B-05)")
+    assert cfg["provider"].startswith("gemini") and cfg["model"] == "gemini-3.8-flash"
+    assert cfg["API key"].startswith("MISSING") and cfg["settings"]["temperature"] == 0.0
 
 
 def _replay(tmp_path: Path, items: list[str]) -> Path:

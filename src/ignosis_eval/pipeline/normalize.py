@@ -94,6 +94,36 @@ def _transcribe_as_alias(asr: ASRAdapter, audio_path: Path, sha: str, alias: str
         return asr.transcribe(aliased, sha)
 
 
+def supplied_turns(parsed: ParsedTranscript) -> list[Turn]:
+    """Turns of a supplied transcript (TRANSCRIPT, T-gold, A+T, A+T-platform units)."""
+    # DC-01 (AJ-05): an UNKNOWN-labeled turn is span-unreliable; it does not lower call-level role confidence
+    return [Turn(turn=i, role=pt.role, text=pt.text, supplied_text=pt.text, start_s=pt.start_s, end_s=pt.end_s,
+                 unreliable=pt.unreliable or pt.role is Role.UNKNOWN) for i, pt in enumerate(parsed.turns, start=1)]
+
+
+def audio_ref_from_bytes(data: bytes, fmt: str) -> AudioRef:
+    fmt = fmt.lower().lstrip(".")
+    if fmt not in ("wav", "mp3", "m4a"):
+        raise NormalizationError(f"unsupported audio format {fmt!r} (wav/mp3/m4a)")
+    return AudioRef(sha256=sha256_bytes(data), format=fmt)  # type: ignore[arg-type]
+
+
+def normalize_supplied(parsed: ParsedTranscript, mode: UnitMode, spec: Spec, *, audio: AudioRef | None = None,
+                       unit_alias: str | None = None) -> NormalizedInput:
+    """A supplied transcript that is not a benchmark item (the review app): TRANSCRIPT, or A+T with the audio's
+    fingerprint. Same turns and the same front end as `build_normalized_input`; there is no item id to screen."""
+    if mode not in (UnitMode.TRANSCRIPT, UnitMode.A_T):
+        raise NormalizationError(f"{mode.value} needs ASR (B-06): only TRANSCRIPT and A+T take a supplied transcript")
+    if (mode is UnitMode.A_T) != (audio is not None):
+        raise NormalizationError("A+T needs the audio file; TRANSCRIPT takes none")
+    turns = supplied_turns(parsed)
+    input_mode = UNIT_MODE_INPUT[mode]
+    frontend = run_frontend(turns, parsed.header, input_mode, spec, role_mapping_confidence=1.0, diarized=False)
+    return NormalizedInput(unit_alias=unit_alias or new_unit_alias(), input_mode=input_mode, unit_mode=mode,
+                           header=parsed.header, has_timestamps=parsed.has_timestamps, role_mapping_confidence=1.0,
+                           turns=turns, audio=audio, frontend=frontend)
+
+
 def build_normalized_input(meta: ItemMeta, item_dir: Path, mode: UnitMode, spec: Spec,
                            asr: ASRAdapter | None = None, *, unit_alias: str | None = None) -> NormalizedInput:
     """`unit_alias` is the run's opaque alias for this unit (P-17); a fresh random one when omitted."""
@@ -110,10 +140,7 @@ def build_normalized_input(meta: ItemMeta, item_dir: Path, mode: UnitMode, spec:
 
     if mode in (UnitMode.TRANSCRIPT, UnitMode.T_GOLD, UnitMode.A_T, UnitMode.A_T_PLATFORM):
         assert parsed is not None
-        for i, pt in enumerate(parsed.turns, start=1):
-            # DC-01 (AJ-05): an UNKNOWN-labeled turn is span-unreliable; it does not lower call-level role confidence
-            turns.append(Turn(turn=i, role=pt.role, text=pt.text, supplied_text=pt.text, start_s=pt.start_s,
-                              end_s=pt.end_s, unreliable=pt.unreliable or pt.role is Role.UNKNOWN))
+        turns = supplied_turns(parsed)
         has_ts = parsed.has_timestamps
     else:  # T-asr, A: evaluation text is our ASR
         if asr is None:

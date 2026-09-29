@@ -17,6 +17,7 @@ Per system, over its records (majority over repetitions where k > 1):
   abstention              EVALUATION_FAILED, NOT_EVALUABLE, PARTIAL counts; evaluability agreement with the design
   attribution_agreement   detected intended findings / gates: record attribution == design attribution (T)
   dangerous_win_agreement majority DW tag == intended DW
+  clean_loss_agreement    majority Clean Loss tag == intended Clean Loss (blueprint `clean_loss`)
   pair_accuracy           SD-20 on the design pairs: gate target -> violating fired and clean not fired; code target
                           -> violating emitted and clean not emitted (majority); inversions counted
   consistency             k > 1 only: items whose reps agree on the verdict, and whose record content hashes match
@@ -69,6 +70,7 @@ class ItemRef:
     label_confidence: str
     contested: bool
     ambiguity: str
+    clean_loss: bool = False
 
     @property
     def fired(self) -> set[str]:
@@ -91,7 +93,7 @@ def build_reference(design: DevDesign, public_dir: Path, items: list[str]) -> di
         gate_attr = {f.code: f.attribution_T for f in it.findings if f.code in gates}
         out[iid] = ItemRef(iid, it.pack.value, it.verdict, it.evaluability, gates, codes, gate_attr,
                            list(it.control_target_gates), it.pair, targets.get(it.pair[0]) if it.pair else None,
-                           it.dangerous_win, b.label_confidence, b.contested, b.ambiguity_notes)
+                           it.dangerous_win, b.label_confidence, b.contested, b.ambiguity_notes, b.clean_loss)
     return out
 
 
@@ -239,6 +241,9 @@ def system_metrics(refs: dict[str, ItemRef], units: dict[str, Unit], *, threshol
     dw = {i: majority([r.tags.dangerous_win.value if ok(r) and r.tags else "n/a" for r in units[i].records])
           for i in items}
     m["dangerous_win_agreement"] = ratio(sum(dw[i] == refs[i].dangerous_win for i in items), len(items))
+    cl = {i: majority([str(r.tags.clean_loss) if ok(r) and r.tags else "n/a" for r in units[i].records])
+          for i in items}
+    m["clean_loss_agreement"] = ratio(sum(cl[i] == str(refs[i].clean_loss) for i in items), len(items))
     m["pairs"] = pair_results(refs, fr, em)
     m["pair_accuracy"] = ratio(sum(p["both_correct"] for p in m["pairs"].values()), len(m["pairs"]))
     if m["repetitions"] > 1:
@@ -291,6 +296,8 @@ def per_item(refs: dict[str, ItemRef], by_system: dict[str, dict[str, Unit]]) ->
     for iid, ref in refs.items():
         row: dict[str, Any] = {"pack": ref.pack, "intended": {"verdict": ref.verdict, "fired_gates": sorted(ref.fired),
                                                              "codes": sorted(ref.codes),
+                                                             "dangerous_win": ref.dangerous_win,
+                                                             "clean_loss": ref.clean_loss,
                                                              "label_confidence": ref.label_confidence,
                                                              "ambiguity": ref.ambiguity}, "systems": {}}
         for sys_name, units in by_system.items():
@@ -304,6 +311,9 @@ def per_item(refs: dict[str, ItemRef], by_system: dict[str, dict[str, Unit]]) ->
                 "evaluability": rec.evaluability.status.value if rec.evaluability else None,
                 "fired_gates": sorted(majority_set([fired(r) for r in u.records])),
                 "codes": sorted(majority_set([emitted(r) for r in u.records])),
+                "dangerous_win": rec.tags.dangerous_win.value if ok(rec) and rec.tags else None,
+                "clean_loss": rec.tags.clean_loss if ok(rec) and rec.tags else None,
+                "unverified_commitments": len(rec.unverified_agent_commitments) if ok(rec) else None,
                 "evidence": evidence_rows(rec),
                 "disagreements": classify(ref, rec, u),
             }

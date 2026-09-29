@@ -404,7 +404,8 @@
             "none",
             "mock_replay",
             "anthropic",
-            "openai"
+            "openai",
+            "gemini"
           ],
           "title": "Llm Backend",
           "type": "string"
@@ -674,8 +675,8 @@
       "type": "string"
     },
     "schema_version": {
-      "const": "run_manifest/3.1.0",
-      "default": "run_manifest/3.1.0",
+      "const": "run_manifest/3.2.0",
+      "default": "run_manifest/3.2.0",
       "title": "Schema Version",
       "type": "string"
     },

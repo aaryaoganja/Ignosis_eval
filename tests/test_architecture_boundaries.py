@@ -23,6 +23,13 @@ EVALUATOR_FORBIDDEN = ["ignosis_eval.contracts.gold_label", "ignosis_eval.contra
                        "ignosis_eval.metrics", "ignosis_eval.golddrv", "ignosis_eval.runner"]
 SCORER_FORBIDDEN = ["ignosis_eval.evaluators", "ignosis_eval.engine", "ignosis_eval.pipeline", "ignosis_eval.runner",
                     "ignosis_eval.benchmark.checks", "ignosis_eval.benchmark.case_card_rules"]
+# The review app hosts Evaluator B (like the runner) but never touches gold, cards, the design intent, run trees or
+# the scorer; of the benchmark package it may use the layout only (protected paths for the guard).
+APP_FORBIDDEN = ["ignosis_eval.contracts.gold_label", "ignosis_eval.contracts.case_card", "ignosis_eval.integrity.freeze",
+                 "ignosis_eval.scoring", "ignosis_eval.metrics", "ignosis_eval.golddrv", "ignosis_eval.stats",
+                 "ignosis_eval.devbaseline", "ignosis_eval.runner", "ignosis_eval.benchmark.public_dev",
+                 "ignosis_eval.benchmark.checks", "ignosis_eval.benchmark.case_card_rules",
+                 "ignosis_eval.benchmark.transcript_qc", "ignosis_eval.benchmark.manifest"]
 FORBIDDEN = {
     "contracts": ["ignosis_eval.integrity", "ignosis_eval.benchmark", "ignosis_eval.stats", "ignosis_eval.metrics",
                   "ignosis_eval.scoring", "ignosis_eval.evaluators", "ignosis_eval.runner", "ignosis_eval.engine",
@@ -30,6 +37,7 @@ FORBIDDEN = {
     "evaluators": EVALUATOR_FORBIDDEN, "engine": EVALUATOR_FORBIDDEN, "pipeline": EVALUATOR_FORBIDDEN,
     "scoring": SCORER_FORBIDDEN, "metrics": SCORER_FORBIDDEN, "golddrv": SCORER_FORBIDDEN, "stats": SCORER_FORBIDDEN,
     "devbaseline": SCORER_FORBIDDEN,  # DEV draft baseline: scorer side (reads records, never the evaluator)
+    "app": APP_FORBIDDEN,
     "spec": ["ignosis_eval.evaluators", "ignosis_eval.engine", "ignosis_eval.pipeline", "ignosis_eval.scoring",
              "ignosis_eval.metrics", "ignosis_eval.golddrv", "ignosis_eval.runner", "ignosis_eval.contracts.gold_label"],
 }
@@ -72,6 +80,12 @@ def test_transitive_evaluator_side_never_loads_gold_or_scorer():
                             "ignosis_eval.evaluators.k0", "ignosis_eval.engine.finalize",
                             "ignosis_eval.pipeline.normalize"])
     bad = [m for m in loaded if any(m == b or m.startswith(b + ".") for b in EVALUATOR_FORBIDDEN)]
+    assert not bad, bad
+
+
+def test_transitive_app_never_loads_gold_design_or_scorer():
+    loaded = _loaded_after(["ignosis_eval.app.service", "ignosis_eval.app.server"])
+    bad = [m for m in loaded if any(m == b or m.startswith(b + ".") for b in APP_FORBIDDEN)]
     assert not bad, bad
 
 

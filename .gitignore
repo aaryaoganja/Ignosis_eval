@@ -22,13 +22,20 @@ htmlcov/
 # Cached ASR output of benchmark audio (derived from audio; same policy as audio)
 bench/asr_cache/
 
-# Secrets — never commit
+# Secrets — never commit. GEMINI_API_KEY lives only in the runtime environment (README "Deploy on Railway").
 .env
 .env.*
+!.env.example
+.envrc
 *.pem
 *.key
+*.p12
+*.pfx
 secrets*.json
 credentials*.json
+*service-account*.json
+*serviceaccount*.json
+.secrets/
 
 # Audio: real call audio must never be committed. Benchmark audio storage is a pending human decision
 # (see docs/benchmark-authoring.md). Only tiny synthetic test fixtures are whitelisted.

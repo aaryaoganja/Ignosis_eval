@@ -278,3 +278,11 @@ def test_parse_values():
     v = parse_values("5 October ko 4,500 rupaye")
     assert (v.amounts, v.days, v.months) == ((4500,), (5,), (10,))
     assert parse_values("saat October ko 8,400").days == ()  # number words need the B-04 numerals lexicon
+
+
+def test_promise_of_action_listed_as_unverified_commitment():
+    """EXE-03 is OUT_OF_SCOPE (EXTERNAL_DATA_REQUIRED); its MVP output lists the agent's promises, never a PASS."""
+    rec, _ = run(ex(ASK, E(91, "promise_of_action", 9)))
+    assert [(e.turn, e.quote, e.role.value, e.element) for e in rec.unverified_agent_commitments] == [
+        (9, "stub agent closes", "AGENT", "promise_of_action")]
+    assert run(ex(ASK))[0].unverified_agent_commitments == []

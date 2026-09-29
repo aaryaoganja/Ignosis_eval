@@ -24,7 +24,7 @@ into `schemas/` (`ignosis-eval schemas export`; `tests/test_contracts.py` keeps 
 | Registries | `registries/1.1.0` | `contracts/registries.py` | Controls, pairs, twins (SD-01); a pair may declare `incidental_differences` (BD-03, BD-04) that never define its target |
 | Blueprint | `gold_blueprint/1.1.0` | `contracts/blueprint.py` | The frozen DEV `dev-gold-blueprint.yaml` (design intent, not gold): items with `rule_basis` and `external_dependencies`; `depends_on` rejected (BD-05) |
 | BenchManifest / GoldManifest | `bench_manifest/2.1.0`, `gold_manifest/2.0.0` | `contracts/benchmark.py` | Hash lists of a scope (dev or private) |
-| RunManifest / RunCompletion | `run_manifest/3.1.0` | `contracts/run_manifest.py` | §17 run artifacts, lock rules, system configs (P-3; `llm_backend` adds `openai` in 3.1.0); `unit_alias_mapping_sha256` and `p17_payload_strings_checked` (P-17) |
+| RunManifest / RunCompletion | `run_manifest/3.2.0` | `contracts/run_manifest.py` | §17 run artifacts, lock rules, system configs (P-3; `llm_backend` adds `openai` in 3.1.0 and `gemini` in 3.2.0); `unit_alias_mapping_sha256` and `p17_payload_strings_checked` (P-17) |
 | BlindViewManifest | `blind_view/1.0.0` | `contracts/run_manifest.py` | P-10 aliased scoring view |
 | ScoringManifest | `scoring_manifest/2.0.0` | `contracts/run_manifest.py` | Scorer inputs and output hashes |
 | ProfileSpec | (structural) | `contracts/profile.py` | Structural check of `profile.yaml`. Values may be `PENDING_HUMAN_SIGNOFF` |

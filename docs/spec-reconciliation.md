@@ -80,7 +80,7 @@ H (a result would be wrong or unsafe), M (a metric or process would be incompara
 | **Evaluability and pre-checks** (AJ-04, AJ-05) | Heuristic evaluability (no content → inconclusive, no collections keyword → out_of_scope). | §9: reason codes; pre-checks G1c, G7, G8/G9 string parts, POL-01b before evaluability; call-level NOT_EVALUABLE; truncation only from the header or a marker; missing evidence never becomes PASS. | **Partly done.** `pipeline/prechecks.py`, in the SC-03 `evaluability_order`: DC-00 call-level role gate (`role_confidence_min` on the call-level mapping confidence, or no AGENT turn → ROLE_UNCERTAIN; AJ-05), then DC-02 for a call with no BORROWER turn → NON_CONVERSATIONAL, UNKNOWN turns span-unreliable, G7 (calling window, IST), G8/G9 (NA under the default profile), POL-01b, TRANSCRIPT_TRUNCATED from the header. **Pending sign-off:** DC-01-audio, DC-02, DC-03/G1c, DC-LANG (their thresholds and lexicons are PENDING). PARTIAL is derived by the verdict engine per V7 (AJ-04). **Pending sign-off:** the turn-level `diarization_turn_min_confidence` (B-11, AJ-05). **Not implemented:** the in-text truncation marker (no syntax in §2.3), DC-DIV. Every step's status is recorded in the normalized input and the run manifest. | M (pending by design) |
 | **LLM protocol** | Mock backend "mock"; a retry policy; `model_id` and temperature recorded. | P-3: one pinned snapshot (no "latest"), temperature 0, seed if supported, transport retries ≤ 3 not counted, 1 schema retry → EVALUATION_FAILED, structured output, consistency re-run off, English free text. | **Done.** `evaluators/llm.py` (`RecordingClient`, `structured_call`), `SystemConfig` rules. The real client still raises (B-05). The mock replays recorded fixtures only. | M (B-05 pending) |
 | **K0** | `heuristics.py`: regex lexicons written by the implementer against the test fixtures (e.g. `\bpolice\b`, `besharam`), with a contact-hours window. | §11: the keyword floor uses only the profile lexicon `terms`; deterministic; never tuned; `seed_candidates_unreviewed` are never used (§19). | **Done.** `evaluators/k0.py` uses `profile.lexicons.*.terms` only; all terms are empty until B-04, so K0 fires only the deterministic pre-checks. `heuristics.py` is unreferenced (§6). | H → resolved |
-| **Evaluator B** (AJ-03, AJ-07) | Per-gate LLM calls (`b_gate_check`, `b_defect_scan`, `b_outcome`). | §11: extraction (LLM #1) → verifier → rule engine → batched judgments (LLM #2, only if triggered) → attribution → verdict. `rubric.yaml › extraction_schema` (AJ-07). | **Interface done** (`EvaluatorB`, `JudgmentRequest/Answer`, `RuleEngine` ABC). The typed extraction contract follows the 1.2 `extraction_schema` (`contracts/extraction.py`, `extraction/2.0.0`, `schemas/extraction.schema.json`), and so does its evidence verifier (`engine/extraction.py`: the turn speaker must match the event side; invalid `responds_to` ids removed and logged). The adjudicated deterministic rules are implemented and tested as a library (`engine/rules.py`: G1, G2a/G2b, G3 prohibited categories, G4, the G5 decision table with the 1.2 honoring events + RES-06, ACC-03u, ACC-05 + repair, TRT-06, the SC-01 terminal-trigger rule). The full rule engine is B's default: `SpecRuleEngine` (`evaluators/judgement.py`) over `engine/code_rules.py` covers every MVP gate and code, asks the rubric's judgments in one batched call, and integrates the answers (§3.46). The stub prompts carry the generated output contracts (template 0.4.0). | Done (provider pending, B-05) |
+| **Evaluator B** (AJ-03, AJ-07) | Per-gate LLM calls (`b_gate_check`, `b_defect_scan`, `b_outcome`). | §11: extraction (LLM #1) → verifier → rule engine → batched judgments (LLM #2, only if triggered) → attribution → verdict. `rubric.yaml › extraction_schema` (AJ-07). | **Interface done** (`EvaluatorB`, `JudgmentRequest/Answer`, `RuleEngine` ABC). The typed extraction contract follows the 1.2 `extraction_schema` (`contracts/extraction.py`, `extraction/2.0.0`, `schemas/extraction.schema.json`), and so does its evidence verifier (`engine/extraction.py`: the turn speaker must match the event side; invalid `responds_to` ids removed and logged). The adjudicated deterministic rules are implemented and tested as a library (`engine/rules.py`: G1, G2a/G2b, G3 prohibited categories, G4, the G5 decision table with the 1.2 honoring events + RES-06, ACC-03u, ACC-05 + repair, TRT-06, the SC-01 terminal-trigger rule). The full rule engine is B's default: `SpecRuleEngine` (`evaluators/judgement.py`) over `engine/code_rules.py` covers every MVP gate and code, asks the rubric's judgments in one batched call, and integrates the answers (§3.46). The stub prompts carry the generated output contracts (template 0.4.0). Provider: Gemini (§3.48). | Done; no real model call yet (GEMINI_API_KEY absent in this environment); locked-run pin B-05 |
 | **Units, ordering, repetitions** | Optional item shuffle; per-rep seeds; one evaluator per run. | P-5 / P-6: unit = (item, mode); k = 5; `order_r = seeded_shuffle(units, BASE_SEED + r)`; `arch_order_r = rotate([A, B], r − 1)`; A+ derived right after A; K0 once before rep 1. | **Done.** `runner/experiment.py` (`seeded_order`, `arch_order`, several systems per run). The ordering algorithm id is recorded in the manifest. | M → resolved |
 | **Blind scoring** | None; the scorer read the evaluator name. | P-10: seeded alias mapping SYS-1..n; the mapping hashed into the manifest and stored outside the scorer input path; scorer and human checks use aliases; reveal after the report hash is committed. | **Done.** `runner/blind.py` (mapping at run start, aliased view with its own hash list, reveal gated on the report hash). The scorer reads `blinded/<run_id>/` only. | M → resolved |
 | **Storage** | `runs/<run_id>/<item>/rep_<k>/…`, write-once; `scoring/<run_id>/…`. | P-11: `runs/<run_id>/<system>/<item>__<mode>/rep_<k>/{7 files}`, A+ `derivation_log.json`, `scoring/<run_id>/{item_scores, metrics, discordance, human_checks}`; tuning runs `dev-<round>-<timestamp>`. | **Done.** `contracts/run_manifest.py::rep_dir`, `runner/storage.py`. | L → resolved |
@@ -327,6 +327,60 @@ H (a result would be wrong or unsafe), M (a metric or process would be incompara
     frozen design intent held in memory, never a gold file. The P-17 own-identifier test matches whole tokens, so
     the front end's step name `DC-01-...` is not an item `C-01` leak. Tests: `test_dev_drafts.py`,
     `test_runner.py::test_p17_prerun_check_includes_the_units_own_source_names`.
+48. **Evaluator provider: Gemini (owner decision for DEV engineering runs, 2026-09-29).** The owner chose Google
+    Gemini as the non-Claude provider. It is family `google-gemini`, so it passes authoring constraint 1 against the
+    Claude-assisted drafts. One file holds the provider, the model id and every call setting:
+    `evaluators/provider_config.py`.
+    - Default model `gemini-3.8-flash`, a stable (GA) model code. `GEMINI_MODEL` overrides it at runtime. A
+      `latest` / `preview` / `exp` alias is refused (P-3), and so is anything that is not a Gemini model code. The
+      served version (`modelVersion`) is recorded with each response.
+    - P-3 settings: temperature 0; seed 0, sent as `generationConfig.seed` and recorded; provider-default
+      `maxOutputTokens` (recorded as null); JSON mode (`responseMimeType: application/json`) plus contract
+      validation and 1 schema retry; transport retries ≤ 3 with backoff 1 s × 2; timeout 120 s.
+    - Temperature risk (low confidence: not checked against the official docs, which this environment could not
+      reach): some Gemini-3-generation guidance reportedly recommends keeping the provider's default
+      temperature, but P-3 fixes 0. Any degenerate output this causes surfaces as EVALUATION_FAILED, never
+      as a PASS.
+    - `GeminiClient` calls `models/{model}:generateContent` over stdlib HTTPS and shares `_post_json` (error mapping
+      and redaction) with the OpenAI-compatible client.
+      - The key is sent only in the `x-goog-api-key` header, never in the URL.
+      - HTTP 408 / 409 / 429 / 5xx, timeouts and connection errors are transport errors (retried).
+      - Any other HTTP error is a `ProviderRequestError`. On 401 / 403 / 404 or an invalid key it stops a DEV run;
+        otherwise that unit's record is EVALUATION_FAILED.
+      - A blocked prompt, no candidate or empty text gives empty content, which leads to the schema retry and then
+        EVALUATION_FAILED.
+      - Thought parts are dropped. Thinking tokens count as output tokens and are logged separately.
+    - The key is read only from the runtime environment variable `GEMINI_API_KEY`, by `provider_config.api_key()`.
+      It is redacted from every provider error text, and `describe()` exposes only whether it is configured.
+      `SystemConfig.llm_backend` adds `gemini` (run_manifest 3.2.0).
+    - The spec's B-05 item (the pinned snapshot for locked runs) stays PENDING_HUMAN_SIGNOFF in `docs/spec`, which
+      is not edited. This decision covers DEV engineering runs and the review app.
+    - B lists the agent's `promise_of_action` events as `unverified_agent_commitments` (the EXE-03 `mvp_output`;
+      B 0.2.1, engine 0.4.1).
+    - The DEV report is labelled "DEV ENGINEERING MEASUREMENT — NOT FINAL RELIABILITY EVIDENCE" and adds Clean
+      Loss agreement against the blueprint's `clean_loss` (report 1.1.0).
+    Tests: `test_gemini_provider.py`, `test_dev_drafts.py`, `test_rule_engine.py::test_promise_of_action_listed_as_unverified_commitment`,
+    `test_secrets.py`.
+49. **Review app (clickable MVP; owner request 2026-09-29)** (`app/`).
+    - **Host.** The app hosts Evaluator B, as the runner does, inside ProtectedPathGuard. B sees a random unit
+      alias. The app never imports gold, card, freeze, scorer, runner or design-validation modules
+      (`test_architecture_boundaries.py`). Its reliability screen reads only the committed DEV baseline report.
+    - **Intake.** `pipeline/normalize.normalize_supplied` builds the same turns and front end as
+      `build_normalized_input`, for a supplied transcript that is not a benchmark item.
+      - A+T fingerprints the audio in memory (sha256 + format) and discards the bytes; audio-derived checks stay
+        OUT_OF_SCOPE or INCONCLUSIVE.
+      - Audio-only is refused with a pathway, because ASR / diarization is B-06. No guessed result is produced.
+    - **Result sources, always labelled.**
+      - LIVE EVALUATION: Gemini. When the front end short-circuits a NOT_EVALUABLE call, the deterministic record
+        is live without any model call, and the page says no model was called.
+      - DEMO / REPLAY: the five synthetic app demo calls, whose scripted extraction and judgment answers are
+        replayed through the real rule engine and finalize.
+      - EVALUATOR UNAVAILABLE: no key. The front end runs, but there is no verdict.
+    - **Demo calls.** Their scripted output is written to be faithful to each demo transcript. They are not
+      benchmark content, gold or a measurement, and an edited demo transcript is never replayed.
+    - **Library.** In memory, capped at 200 entries, and reset on restart.
+    - **Secrets.** The browser talks only to the backend, and no response carries the key.
+    Tests: `test_app.py`, `test_secrets.py`.
 
 ## 4. Open questions / inconsistencies found in the spec (for the spec owner)
 

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ignosis Call Quality Judge</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-name">Ignosis <span>Call Quality Judge</span></div>
+      <div class="brand-tag" id="tagline">Ignosis already listens to every call. This layer judges whether the AI agent behaved correctly.</div>
+    </div>
+    <nav class="nav" aria-label="Main">
+      <a href="#/evaluate" data-route="evaluate">Evaluate a Call</a>
+      <a href="#/library" data-route="library">Call Library</a>
+      <a href="#/reliability" data-route="reliability">Evaluator Reliability</a>
+    </nav>
+    <div class="live-status" id="live-status" aria-live="polite">…</div>
+  </header>
+  <main id="view" tabindex="-1"></main>
+  <footer class="footer">
+    <span>For AI Quality Reviewers and Operations QA. Verdicts hold within the available evidence; undecided checks are shown, never counted as a pass.</span>
+    <span id="footer-version"></span>
+  </footer>
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -822,7 +822,11 @@ def resolve(p: Plan, answers: dict[tuple[str, str], str], spec: Spec) -> tuple[R
         if code in emitted:
             checks.pop(code)
     outcome = build_outcome(ex, ni, spec, firmness, findings, gates, death)
-    body = RecordBody(gates=list(gates.values()), findings=findings, checks=list(checks.values()), outcome=outcome)
+    # EXE-03 is out of scope (EXTERNAL_DATA_REQUIRED); its mvp_output lists the agent's promise_of_action events as
+    # unverified commitments (verified quotes only: the extraction verifier has already dropped the rest)
+    commitments = [_ev(e, "promise_of_action") for e in ex.events if e.type == "promise_of_action"]
+    body = RecordBody(gates=list(gates.values()), findings=findings, checks=list(checks.values()), outcome=outcome,
+                      unverified_agent_commitments=commitments)
     return body, out.facts, log + p.notes
 
 

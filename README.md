@@ -18,8 +18,10 @@ adjudication log) are in [`docs/freeze/`](docs/freeze/). The earlier 1.1 adjudic
 > **Nothing in this repository is a reliability result.** The benchmark design is frozen. The 25 DEV transcripts
 > exist as unfrozen drafts in `bench/dev/transcripts/` (Claude-assisted; human review pending). The first DEV
 > baseline (`reports/dev-baseline/`, `docs/dev-baseline.md`) compares against the design intent, not gold. Holdout
-> transcripts, audio and all gold do not exist yet (B-01/B-02 pending). bench-a1 contains no G7 positive, so G7 recall is not measured (BD-02). The LLM
-> backend is a replay mock (B-05), the ASR is a cache replay (B-06), the lexicon terms are empty (B-04) and 18
+> transcripts, audio and all gold do not exist yet (B-01/B-02 pending). bench-a1 contains no G7 positive, so G7
+> recall is not measured (BD-02). The evaluator provider is Gemini (`evaluators/provider_config.py`), live only when
+> the runtime variable `GEMINI_API_KEY` is set; the locked-run pin stays B-05. The ASR is a cache replay (B-06), the
+> lexicon terms are empty (B-04) and 18
 > profile/rubric values are `PENDING_HUMAN_SIGNOFF`. Every locked (holdout / red-team) run is refused until those
 > are resolved. Every `metrics.json` carries the SD-29 scope line and warnings.
 
@@ -30,12 +32,13 @@ adjudication log) are in [`docs/freeze/`](docs/freeze/). The earlier 1.1 adjudic
 | Spec pack | `docs/spec/` (the 6 frozen 1.2.0 files, verbatim; hashes committed in `docs/freeze/FREEZE-HANDOFF.md` and verified by every `bench check`). `ignosis-eval spec pending` lists the pending items. |
 | Contracts, front end, engine, K0 / A / A+ / B interfaces, gold derivation, scorer, runner, lock, blinding | Implemented and tested (`python -m pytest`). |
 | B: extraction contract + verifier, full rule engine (`SpecRuleEngine`: every MVP gate and code, batched judgments) | Implemented and tested; B's default. A, A+ and B run end to end (tested on replay fixtures and a fake OpenAI-compatible server). |
-| Evaluator provider | **PENDING (B-05).** `openai` client implemented (stdlib), inert without `OPENAI_API_KEY` and a pinned snapshot; a Claude evaluator is refused on the Claude-assisted drafts (constraint 1). |
+| Evaluator provider | **Gemini** (`gemini-3.8-flash`, temperature 0, seed 0, JSON mode + 1 schema retry, ≤ 3 transport retries), configured in one place (`evaluators/provider_config.py`). The key is read only from the runtime env `GEMINI_API_KEY`; without it, A / A+ / B do not run and nothing is fabricated. The pin for locked runs stays B-05. A Claude evaluator is refused on the Claude-assisted drafts (constraint 1). |
+| Review app (clickable MVP) | `src/ignosis_eval/app/`: Evaluate a Call (Audio / Transcript / Audio + Transcript), Result, Call Library, Evaluator Reliability; LIVE EVALUATION vs DEMO / REPLAY always labelled. FastAPI backend; the browser never sees the key. Railway-ready (`Dockerfile`). |
 | Opaque unit aliases (P-17, SC-05) | Random `u_xxxxxxxx` alias per unit per run, private mapping, audio renamed before ASR, pre-run identity-leak test that fails the run (identity tokens only; ordinary words pass). |
 | Deterministic normalizer, DC-02 / DC-LANG / DC-01-audio, diarization turn threshold, timing signals | Pending sign-off (see the reconciliation doc §5). |
 | Frozen DEV design (Stage 5) | `bench/public/`: 25 DEV case cards (functional beats), master matrix and gold blueprint, verbatim; committed by `docs/freeze/FREEZE-public.md`; validated by `ignosis-eval bench public-check` (0 errors, 6 PD015 authoring-rule warnings; clarifications BD-03..BD-05 in `docs/bd-changelog.md`). DEV only. |
 | Transcripts, gold, registries | DEV transcript **drafts** in `bench/dev/transcripts/` (25; not frozen; `bench transcript-qc` clean). Gold and registries are empty (B-02); the blueprint is intent, not gold. |
-| Results | **None.** |
+| Results | **None.** The DEV baseline (`reports/dev-baseline/`) is a DEV ENGINEERING MEASUREMENT (K0 only until the key is set), not reliability evidence. FINAL RELIABILITY VALIDATION: PENDING. |
 
 ## Quick start
 
@@ -47,6 +50,8 @@ ignosis-eval spec check && ignosis-eval spec pending
 ignosis-eval bench check --scope dev --require-gold
 ignosis-eval bench transcript-qc <dir>          # draft DEV transcripts (<ITEM_ID>.txt) before the hash freeze
 ignosis-eval dev run --systems K0 && ignosis-eval dev report --run-id <id>   # DEV draft baseline (docs/dev-baseline.md)
+ignosis-eval dev run --systems K0,A,A+,B      # needs GEMINI_API_KEY in the runtime environment
+python -m ignosis_eval.app                    # review app on http://localhost:8000 (needs the [web] extra; PORT honoured)
 ```
 
 A full dev run once items, cards and gold exist (plumbing only while the backend is a mock):
@@ -59,6 +64,58 @@ ignosis-eval blind --run-id <run_id>
 ignosis-eval score --run-id <run_id>     # -> scoring/<run_id>/{item_scores.csv, metrics.json, discordance_tables.csv, human_checks.csv}
 ```
 
+## Review app (clickable MVP)
+
+For the AI Quality Reviewer / Operations QA Reviewer: *Ignosis already listens to every call. This layer judges
+whether the AI agent behaved correctly.*
+
+| Screen | What it does |
+|---|---|
+| Evaluate a Call | Exactly three modes. **Transcript** works end to end. **Audio + Transcript** evaluates the transcript and fingerprints the audio (not stored). **Audio** alone explains that ASR / diarization is pending (B-06) and gives the pathway; it never guesses a result. Paste, upload `.txt` / `.json`, or pick a demo call. |
+| Result | Verdict (Critical Fail / Needs Attention / Meets Bar / Not Evaluable, "— within available evidence") → why (findings: code, dimension, severity, confidence, status, rule) → evidence turns → confidence and uncertainty (EVALUABLE / PARTIAL / NOT EVALUABLE, INCONCLUSIVE and OUT OF SCOPE checks) → attribution (no model reasoning) → action and routing. Also Dangerous Win, Clean Loss, unverified agent commitments, a read-only Evaluation Profile panel, and the evaluation record as JSON. |
+| Call Library | Name, modality, verdict, primary finding, status, source. Demo calls and calls evaluated since the server started (in memory; DEV / demo only). |
+| Evaluator Reliability | The DEV ENGINEERING MEASUREMENT from `reports/dev-baseline/` (K0 / A / A+ / B, reproducibility, UNMEASURED metrics) and **FINAL RELIABILITY VALIDATION: PENDING**. No gold, no holdout. |
+
+Every result is labelled with its source:
+- **LIVE EVALUATION**: Evaluator B with Gemini, server side.
+- **DEMO / REPLAY**: five synthetic demo calls whose scripted model output is replayed through the real rule engine;
+  it works without a key.
+- **EVALUATOR UNAVAILABLE**: no key on the server. The front end still runs, but no verdict is shown, and nothing is
+  ever counted as a pass.
+
+Run it locally:
+
+```bash
+pip install -e ".[web]"
+export GEMINI_API_KEY=...        # optional; in your shell or an untracked .env loader, never in a file in git
+python -m ignosis_eval.app       # http://localhost:8000
+```
+
+## Deploy on Railway
+
+The repository root has a `Dockerfile`, which Railway detects and builds. The image holds only the package, the
+frozen spec pack and the committed DEV report: no benchmark items, drafts, gold or runs. Railway's `railway.json` /
+`railway.toml` (Config as Code) is deprecated, and new services cannot use it, so this repository does not ship
+one. Use the service settings below.
+
+1. **Create the service.** In Railway choose **New Project → Deploy from GitHub repo**, pick this repository and the
+   branch to deploy. Railway builds the `Dockerfile`; there is no build command to set.
+2. **Add the secret.** Open the service's **Variables** tab and add `GEMINI_API_KEY` with your key. You can seal it
+   so its value can never be viewed again. It is used at runtime only: the Dockerfile declares no `ARG`, so Railway
+   never passes it into the build, and it is never written to the image, the repository, logs or responses.
+3. **Optional non-secret variables:**
+   - `GEMINI_MODEL`: a pinned Gemini model code. The default is `gemini-3.8-flash`; `latest` / `preview` / `exp`
+     aliases are refused.
+   - `GEMINI_BASE_URL`: an API root, for a proxy only.
+   - `PORT` is injected by Railway and honoured. Nothing else is required.
+4. **Start command:** none needed. The image runs `python -m ignosis_eval.app`, which listens on `0.0.0.0:$PORT`.
+5. **Health check.** In the service **Settings**, set the healthcheck path to `/api/health`.
+6. **Access the app.** Under **Settings → Networking**, choose **Generate Domain**, then open the URL.
+   - The badge at the top right reads **LIVE EVALUATION: gemini-3.8-flash** when the key is set.
+   - Otherwise it reads **DEMO / REPLAY only**.
+
+There is no authentication. Do not upload real customer calls to a public deployment.
+
 ## Repository layout
 
 ```
@@ -70,7 +127,8 @@ src/ignosis_eval/
   contracts/        NormalizedInput, EvaluationRecord, GoldLabel, CaseCard, ItemMeta, Registries, manifests
   pipeline/         shared front end: transcript intake, ASR cache, normalization, lexicon, pre-checks, evaluability
   engine/           deterministic verifier, confidence ceiling, attribution, verdict engine, tags, routing
-  evaluators/       K0, A, A+ (derived), B (interfaces), replay mock, prompt stubs + generated rubric section
+  evaluators/       K0, A, A+ (derived), B, provider config + Gemini / OpenAI-compatible clients, replay mock, prompts
+  app/              review app: FastAPI backend (service.py, server.py), static SPA, synthetic demo calls
   golddrv/          independent mode-level gold derivation (capability table, attribution)
   metrics/ scoring/ stats/   scoring-spec SD-01..SD-31 on the blinded view
   benchmark/ integrity/      layout, card rules, bench checks, locked-run registry; hash lists, gold freeze, guard
@@ -84,4 +142,5 @@ tests/              synthetic-stub tests only (P-1 rule 3)
 - [`docs/data-contracts.md`](docs/data-contracts.md), [`docs/benchmark-authoring.md`](docs/benchmark-authoring.md),
   [`docs/experiment-protocol.md`](docs/experiment-protocol.md), [`docs/reliability.md`](docs/reliability.md):
   implementation maps to the spec.
+- [`docs/dev-baseline.md`](docs/dev-baseline.md): DEV draft runs, the intent reference, how to run A / A+ / B.
 - [`docs/gap-analysis.md`](docs/gap-analysis.md): history of the infrastructure phase and its reconciliation.
