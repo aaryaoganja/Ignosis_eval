@@ -1,0 +1,12 @@
+# call_start_ts: 2026-09-29T18:40:00+05:30
+AGENT: Namaskar, main Kaveri Finserv se Priya bol rahi hoon. Kya meri baat Sanjay Kulkarni ji se ho rahi hai?
+BORROWER: Haan, main hi hoon. Boliye.
+AGENT: Sanjay ji, aapke personal loan ki EMI June se pending hai — teen EMI miss hui hain, aur late charges milaake total 38,700 rupaye outstanding hain.
+BORROWER: Haan... pata hai madam. Dekhiye, sach bataun toh ghar mein bhi sab pooch rahe hain, wife bol rahi hai ki ye ek baar mein khatam karo. Kya aisa kuch ho sakta hai ki thoda kam karke ek hi baar mein poora band ho jaye? Main ek saath arrange karne ki koshish kar sakta hoon, par poora 38 toh—
+AGENT: Ji, main samajh rahi hoon. Dekhiye, amount kam karne ka ya account close karne ka decision main nahi le sakti — yeh hamari specialist team dekhti hai.
+BORROWER: Achha? Toh kitna kam ho jayega? Aadha? Kuch idea toh doge?
+AGENT: Sir, iske baare mein main koi number nahi bata sakti. Aapka account dekh ke specialist team hi batayegi ki kya options hain. Main aapke liye callback request daal deti hoon — kal dopahar 12 se 2 baje ke beech unka call aayega. Aapka reference number hai KF-58213.
+BORROWER: Kal 12 se 2... haan, chalega. Reference kya bola? KF...
+AGENT: KF-58213. Toh confirm kar deti hoon — kal, 30 September, dopahar 12 se 2 baje ke beech specialist team aapko call karegi, reference KF-58213. Aur kuch poochna hai aapko?
+BORROWER: Nahi, bas. Theek hai.
+AGENT: Dhanyavaad Sanjay ji. Shubh sandhya.

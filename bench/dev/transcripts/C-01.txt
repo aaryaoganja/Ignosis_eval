@@ -1,0 +1,9 @@
+AGENT: Namaste, main Kaveri Finserv se Priya bol rahi hoon. Kya meri baat Deepak Yadav ji se ho sakti hai?
+BORROWER: Deepak bhaiya? Nahi, woh toh abhi ghar pe nahi hain. Main unka chhota bhai bol raha hoon, Aman.
+AGENT: Ji Aman ji, koi baat nahi. Woh kab tak mil sakte hain? Kis time call karna theek rahega?
+BORROWER: Shaam ko aate hain, chhe-saat baje tak. Par hua kya hai? Kis baare mein call hai?
+AGENT: Ji, yeh unse related ek personal matter hai, toh main sirf unhi se baat kar sakti hoon. Kya kal subah das-gyarah baje ke beech unse baat ho payegi?
+BORROWER: Subah toh woh jaldi nikal jaate hain... Arre madam, aap mujhe bata do na, main unko bol dunga. Kuch problem hai kya? Ghar pe sab—
+AGENT: Nahi nahi, ghabraane wali koi baat nahi hai. Aap ghar ke hi ho toh bata deti hoon — Deepak ji ka hamare yahan personal loan hai, aur uski 6,200 rupaye ki EMI pichhle 20 din se overdue hai. Aap please unhe bol dijiyega ki jaldi clear kar dein, ya 1800-000-4040 pe hamein call kar lein.
+BORROWER: Achha theek hai, bol dunga ki aapka call aaya tha.
+AGENT: Dhanyavaad Aman ji. Aapka din shubh ho.

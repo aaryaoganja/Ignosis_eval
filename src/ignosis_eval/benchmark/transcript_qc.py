@@ -27,6 +27,9 @@ consistency, naturalness) stays with the human reviewer.
   TQ014 warning  pair: a changed customer-side turn does not follow a changed agent turn, beyond the declared
                  incidental borrower-context differences (constraint 4 lets only reacting borrower turns change; BD-03)
   TQ015 warning  pair: only one member is in the batch, so the pair checks were skipped
+  TQ016 error    a snippet (card: "Single borrower utterance") is not exactly one BORROWER turn
+  TQ017 error    a derived copy (card: "... copy of <ITEM>@A") has turns that differ from its source item's turns
+                 (warning when the source is not in the batch)
 
 Seeds are used here as authoring QC only: the profile forbids them in benchmark runs (B-04), and the card that
 invokes them names them. Terms match on word boundaries ignoring case, except all-caps lexicon seeds (acronyms such
@@ -69,6 +72,8 @@ BAN_PATTERNS: tuple[tuple[re.Pattern[str], Speaker], ...] = (
     (re.compile(r"no rubric words \(" + _TERMS + r"\)", re.IGNORECASE), "ANY"),
 )
 LEXICON_SEED_RULE = "No words from the prohibited lexicon seeds"
+SNIPPET_CONTEXT = "Single borrower utterance"
+COPY_OF = re.compile(r"copy of (?P<src>[A-Z]+-\d{2}(?:-[A-Z0-9]+)*)@A\b")
 
 
 @dataclass(frozen=True)
@@ -118,6 +123,16 @@ def card_word_bans(card: DesignCard) -> list[WordBan]:
         for m in pattern.finditer(notes):
             out += [WordBan(speaker, t, m.group(0)) for t in re.findall(r"'([^']+)'", m["terms"])]
     return out
+
+
+def card_is_snippet(card: DesignCard) -> bool:
+    return card.fields.get("Customer context", "").strip() == SNIPPET_CONTEXT
+
+
+def card_copy_source(card: DesignCard) -> str | None:
+    """The source item of a derived copy ("Script-degraded copy of G-02@A" -> G-02), else None."""
+    m = COPY_OF.search(card.fields.get("Authoring notes", ""))
+    return m["src"] if m else None
 
 
 def card_requires_seed_check(card: DesignCard) -> bool:
@@ -216,7 +231,11 @@ def check_item(item_id: str, path: Path, parsed: ParsedTranscript, design: Desig
             elif len(t.text.split()) > max_w:
                 add("TQ009", "error", f"agent turn {n} has {len(t.text.split())} words > {max_w}: an unintended "
                                       "TRT-06 finding (AJ-02)")
-    # TQ010 / TQ011 card rules
+    # TQ010 / TQ011 / TQ016 card rules
+    if card is not None and card_is_snippet(card):
+        if len(turns) != 1 or turns[0].role is not Role.BORROWER:
+            add("TQ016", "error", f"a snippet is one BORROWER utterance (card: {SNIPPET_CONTEXT!r}); found "
+                                  f"{[t.role.value for t in turns]}")
     if card is not None:
         for ban in card_word_bans(card):
             pat = term_pattern(ban.term)
@@ -317,6 +336,18 @@ def check_transcripts(directory: str | Path, spec: Spec, public_dir: str | Path,
             rep.issues.append(QcIssue("TQ002", "error", f"{path.name} does not parse (§2.3): {exc}", iid))
             continue
         rep.issues += check_item(iid, path, parsed[iid], design.items[iid], cards.get(iid), spec)
+    for iid in sorted(parsed):
+        card = cards.get(iid)
+        src = card_copy_source(card) if card is not None else None
+        if src is None:
+            continue
+        if src not in parsed:
+            rep.issues.append(QcIssue("TQ017", "warning", f"derived copy of {src}: {src} is not in the batch, so the "
+                                                          "copy was not compared", iid))
+        elif [(t.role, t.text) for t in parsed[iid].turns] != [(t.role, t.text) for t in parsed[src].turns]:
+            ca, cb = changed_turns(parsed[src], parsed[iid])
+            rep.issues.append(QcIssue("TQ017", "error", f"derived copy of {src} differs from it (turns {cb} vs "
+                                                        f"{src} turns {ca}); the frozen card makes it a copy", iid))
     members: dict[str, dict[str, str]] = {}
     for it in design.items.values():
         if it.pair:
@@ -335,6 +366,7 @@ def check_transcripts(directory: str | Path, spec: Spec, public_dir: str | Path,
     return rep
 
 
-__all__ = ["BAN_PATTERNS", "LEXICON_SEED_RULE", "QcIssue", "TranscriptQcReport", "WordBan", "card_requires_seed_check",
-           "card_word_bans", "changed_turns", "check_item", "check_pair", "check_transcripts", "discover_transcripts",
+__all__ = ["BAN_PATTERNS", "COPY_OF", "LEXICON_SEED_RULE", "QcIssue", "SNIPPET_CONTEXT", "TranscriptQcReport",
+           "WordBan", "card_copy_source", "card_is_snippet", "card_requires_seed_check", "card_word_bans",
+           "changed_turns", "check_item", "check_pair", "check_transcripts", "discover_transcripts",
            "prohibited_lexicon", "term_pattern"]

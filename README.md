@@ -15,8 +15,9 @@ freeze commitments of bench-a1 design v1.0 (13 file hashes, the private bundle c
 adjudication log) are in [`docs/freeze/`](docs/freeze/). The earlier 1.1 adjudication record is kept as history in
 [`docs/history/final-adjudication-1.1.md`](docs/history/final-adjudication-1.1.md).
 
-> **Nothing in this repository is a measured result.** The benchmark design is frozen, but transcripts, audio and
-> gold do not exist yet (B-01/B-02 pending). bench-a1 contains no G7 positive, so G7 recall is not measured (BD-02). The LLM
+> **Nothing in this repository is a measured result.** The benchmark design is frozen. The 25 DEV transcripts
+> exist as unfrozen drafts in `bench/dev/transcripts/` (Claude-assisted; `provenance.yaml`). Holdout transcripts,
+> audio and all gold do not exist yet (B-01/B-02 pending). bench-a1 contains no G7 positive, so G7 recall is not measured (BD-02). The LLM
 > backend is a replay mock (B-05), the ASR is a cache replay (B-06), the lexicon terms are empty (B-04) and 18
 > profile/rubric values are `PENDING_HUMAN_SIGNOFF`. Every locked (holdout / red-team) run is refused until those
 > are resolved. Every `metrics.json` carries the SD-29 scope line and warnings.
@@ -31,7 +32,7 @@ adjudication log) are in [`docs/freeze/`](docs/freeze/). The earlier 1.1 adjudic
 | Opaque unit aliases (P-17, SC-05) | Random `u_xxxxxxxx` alias per unit per run, private mapping, audio renamed before ASR, pre-run identity-leak test that fails the run (identity tokens only; ordinary words pass). |
 | Full B rule engine, deterministic normalizer, DC-02 / DC-LANG / DC-01-audio, diarization turn threshold, timing signals | Next phase / pending sign-off (see the reconciliation doc §5). |
 | Frozen DEV design (Stage 5) | `bench/public/`: 25 DEV case cards (functional beats), master matrix and gold blueprint, verbatim; committed by `docs/freeze/FREEZE-public.md`; validated by `ignosis-eval bench public-check` (0 errors, 6 PD015 authoring-rule warnings; clarifications BD-03..BD-05 in `docs/bd-changelog.md`). DEV only. |
-| Transcripts, gold, registries | **Empty.** Written and labeled by humans (B-01..B-03); the blueprint is intent, not gold. |
+| Transcripts, gold, registries | DEV transcript **drafts** in `bench/dev/transcripts/` (25; not frozen; `bench transcript-qc` clean). Gold and registries are empty (B-02); the blueprint is intent, not gold. |
 | Results | **None.** |
 
 ## Quick start

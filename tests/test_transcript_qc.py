@@ -13,6 +13,8 @@ import pytest
 import factories as F
 from ignosis_eval.benchmark.public_dev import parse_case_cards
 from ignosis_eval.benchmark.transcript_qc import (
+    card_copy_source,
+    card_is_snippet,
     card_requires_seed_check,
     card_word_bans,
     changed_turns,
@@ -152,6 +154,8 @@ def test_frozen_card_rules_parse():
         "C-03": [("ANY", "AI disclosure")],
     }
     assert sorted(i for i, c in cards.items() if card_requires_seed_check(c)) == ["C-05"]
+    assert sorted(i for i, c in cards.items() if card_is_snippet(c)) == [f"SN-D0{n}" for n in range(1, 7)]
+    assert {i: card_copy_source(c) for i, c in cards.items() if card_copy_source(c)} == {"G-02-N5": "G-02"}
     lex = prohibited_lexicon(SP)
     assert {"police", "FIR", "manager ko batayenge"} <= set(lex)
 
@@ -233,3 +237,43 @@ def test_cli(batch, capsys):
     assert "pairs checked: ['MP-04']" in capsys.readouterr().out
     _write(batch, "K-01", _edit(BASE, 3, "stub mentions MP-04"))
     assert main(args) == 1
+
+
+def test_snippet_shape(tmp_path):
+    _write(tmp_path, "SN-D01", [("BORROWER", "stub utterance")])
+    assert _ids(_qc(tmp_path)) == []
+    _write(tmp_path, "SN-D01", [("BORROWER", "stub utterance"), ("BORROWER", "stub second")])
+    assert _ids(_qc(tmp_path)) == ["TQ016"]
+    _write(tmp_path, "SN-D01", [("AGENT", "stub utterance")])
+    assert _ids(_qc(tmp_path)) == ["TQ016"]
+
+
+def test_derived_copy(tmp_path):
+    _write(tmp_path, "G-02", BASE, header=IN_WINDOW)
+    _write(tmp_path, "G-02-N5", BASE)  # the copy carries no header (the design has none for it)
+    assert _ids(_qc(tmp_path), "G-02-N5") == []
+    _write(tmp_path, "G-02-N5", _edit(BASE, 3, "stub agent line three changed"))
+    assert _ids(_qc(tmp_path), "G-02-N5") == ["TQ017"] and not _qc(tmp_path).ok
+    (tmp_path / "G-02.txt").unlink()
+    rep = _qc(tmp_path)
+    assert _ids(rep, "G-02-N5") == ["TQ017"] and rep.ok  # source absent: a warning only
+
+
+def test_committed_dev_drafts():
+    """bench/dev/transcripts holds exactly the frozen DEV design items, passes the transcript QC with no issue, and
+    records every item's authoring provenance (CC009: an LLM-assisted item names the model family)."""
+    import yaml
+
+    from ignosis_eval.benchmark.public_dev import validate_public_dev
+
+    drafts = F.REPO / "bench" / "dev" / "transcripts"
+    design = validate_public_dev(PUBLIC, SP).design
+    assert design is not None
+    assert {p.stem for p in drafts.glob("*.txt")} == set(design.items)
+    rep = _qc(drafts)
+    assert rep.issues == [] and rep.pairs_checked == ["MP-01", "MP-04", "MP-10"]
+    prov = yaml.safe_load((drafts / "provenance.yaml").read_text(encoding="utf-8"))
+    entries = {e["item_id"]: e for e in prov["items"]}
+    assert set(entries) == set(design.items) and prov["status"] == "draft"
+    assert all(e["llm_family"] for e in entries.values() if e["llm_assisted"])
+    assert all("reference_date" in entries[i] for i in design.items if i.startswith("SN-"))

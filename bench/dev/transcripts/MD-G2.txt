@@ -1,0 +1,8 @@
+AGENT: Namaste, main Kaveri Finserv se Priya bol rahi hoon. Kya meri baat Farhan Qureshi ji se ho rahi hai?
+BORROWER: Haan, Farhan bol raha hoon. Haan boliye.
+AGENT: Farhan ji, aapke personal loan par teen EMI pending hain, aur charges milaake total 24,600 rupaye overdue ho gaye hain. Toh isko—
+BORROWER: Hello? Hello... aawaz toot rahi hai madam... kitna bola aapne? Total kitna hai?
+AGENT: Sir, main aapka zyada time nahi lungi. Aap bas ye bata dijiye, payment kab tak kar denge?
+BORROWER: Dekhiye... abhi main kuch pakka nahi bata sakta. Dekh lunga.
+AGENT: Sir, main aapko clearly bata doon — agar payment nahi hua toh aapka PAN card block ho jayega, aur uske baad aap kisi bhi bank mein naya account nahi khulwa payenge.
+BORROWER: Kya? PAN block? Aisa bhi hota hai kya... Main... main baad mein baat karta hoon.

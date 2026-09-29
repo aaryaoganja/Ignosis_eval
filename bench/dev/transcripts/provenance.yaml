@@ -1,0 +1,283 @@
+# Authoring provenance of the DEV transcript drafts in this directory (authoring constraint 1; the fields
+# mirror the case card `authoring` block, CC009). Not gold, not a case card, not evaluator input.
+schema: dev_transcript_provenance/1.0
+status: draft
+design: bench-a1 design v1.0 (bench/public; docs/freeze/FREEZE-public.md)
+owner_authorization: '2026-09-29: the benchmark owner instructed the implementing agent to author the complete DEV transcript
+  set with Claude assistance; the evaluator model family is pinned separately before the evaluator and gold freeze'
+pending_before_freeze:
+- 'authoring constraint 1: the assisting family (anthropic-claude) must differ from the evaluator LLM pinned under B-05,
+  otherwise these items are re-drafted'
+- 'authoring constraint 1: native Hinglish hand-edit of every item (native_hand_edit)'
+- 'authoring constraint 8: freeze and hash-list the transcripts before any non-stub evaluator prompt'
+- promotion to bench/dev/items/<item_id>/ with item.json, then `bench manifest`; gold is labeled blind (B-02)
+items:
+- item_id: G-02
+  author_id: owner-handoff-batch-1
+  created_on: '2026-09-29'
+  source: owner hand-off batch 1 (DEV-CORE-transcripts-draft v0.1), QC'd in the repository
+  llm_assisted: true
+  llm_family: anthropic-claude
+  reviewers: []
+  native_hand_edit: false
+  qc_fixes: []
+- item_id: M-01
+  author_id: owner-handoff-batch-1
+  created_on: '2026-09-29'
+  source: owner hand-off batch 1 (DEV-CORE-transcripts-draft v0.1), QC'd in the repository
+  llm_assisted: true
+  llm_family: anthropic-claude
+  reviewers: []
+  native_hand_edit: false
+  qc_fixes:
+  - 'turn 10: deleted the sentence ''Poora toh mushkil lagta hai.'' (owner fix 1: it read as an inability statement beyond
+    the card''s hedged partial attempt)'
+- item_id: K-01
+  author_id: owner-handoff-batch-1
+  created_on: '2026-09-29'
+  source: owner hand-off batch 1 (DEV-CORE-transcripts-draft v0.1), QC'd in the repository
+  llm_assisted: true
+  llm_family: anthropic-claude
+  reviewers: []
+  native_hand_edit: false
+  qc_fixes: []
+- item_id: C-01
+  author_id: owner-handoff-batch-1
+  created_on: '2026-09-29'
+  source: owner hand-off batch 1 (DEV-CORE-transcripts-draft v0.1), QC'd in the repository
+  llm_assisted: true
+  llm_family: anthropic-claude
+  reviewers: []
+  native_hand_edit: false
+  qc_fixes: []
+- item_id: K-07
+  author_id: owner-handoff-batch-1
+  created_on: '2026-09-29'
+  source: owner hand-off batch 1 (DEV-CORE-transcripts-draft v0.1), QC'd in the repository
+  llm_assisted: true
+  llm_family: anthropic-claude
+  reviewers: []
+  native_hand_edit: false
+  qc_fixes: []
+- item_id: C-08
+  author_id: owner-handoff-batch-1
+  created_on: '2026-09-29'
+  source: owner hand-off batch 1 (DEV-CORE-transcripts-draft v0.1), QC'd in the repository
+  llm_assisted: true
+  llm_family: anthropic-claude
+  reviewers: []
+  native_hand_edit: false
+  qc_fixes:
+  - 'turns 5-8: 23,200 -> 23,220 (owner fix 2: 60 percent of 38,700 is 23,220)'
+- item_id: C-03
+  author_id: owner-handoff-batch-1
+  created_on: '2026-09-29'
+  source: owner hand-off batch 1 (DEV-CORE-transcripts-draft v0.1), QC'd in the repository
+  llm_assisted: true
+  llm_family: anthropic-claude
+  reviewers: []
+  native_hand_edit: false
+  qc_fixes: []
+- item_id: C-05
+  author_id: owner-handoff-batch-1
+  created_on: '2026-09-29'
+  source: owner hand-off batch 1 (DEV-CORE-transcripts-draft v0.1), QC'd in the repository
+  llm_assisted: true
+  llm_family: anthropic-claude
+  reviewers: []
+  native_hand_edit: false
+  qc_fixes: []
+- item_id: C-10
+  author_id: owner-handoff-batch-1
+  created_on: '2026-09-29'
+  source: owner hand-off batch 1 (DEV-CORE-transcripts-draft v0.1), QC'd in the repository
+  llm_assisted: true
+  llm_family: anthropic-claude
+  reviewers: []
+  native_hand_edit: false
+  qc_fixes: []
+- item_id: C-12
+  author_id: owner-handoff-batch-1
+  created_on: '2026-09-29'
+  source: owner hand-off batch 1 (DEV-CORE-transcripts-draft v0.1), QC'd in the repository
+  llm_assisted: true
+  llm_family: anthropic-claude
+  reviewers: []
+  native_hand_edit: false
+  qc_fixes:
+  - 'turn 3: interruption after the amounts, ''Toh sir—'' (owner fix 3: realism constraint 2)'
+- item_id: MD-G1
+  author_id: implementing-agent
+  created_on: '2026-09-29'
+  source: drafted from the frozen case card beats at the owner's request
+  llm_assisted: true
+  llm_family: anthropic-claude
+  reviewers: []
+  native_hand_edit: false
+  authoring_notes:
+  - B6 is 'will check, and look into the payment' with no commitment, so the designed outcome stays ACKNOWLEDGED (no date-less
+    promise to pay)
+  - B1 says 'loan' without product, amount or status (loan existence only, as the card's anchor element)
+- item_id: MD-G2
+  author_id: implementing-agent
+  created_on: '2026-09-29'
+  source: drafted from the frozen case card beats at the owner's request
+  llm_assisted: true
+  llm_family: anthropic-claude
+  reviewers: []
+  native_hand_edit: false
+  authoring_notes:
+  - the network glitch is carried by the words only (no reliability marker, so no span is unreliable); no situational constraint
+    and no inability in B6
+  - 'B5 moves on without acknowledging the question (the card: no registration shown)'
+- item_id: MD-G3
+  author_id: implementing-agent
+  created_on: '2026-09-29'
+  source: drafted from the frozen case card beats at the owner's request
+  llm_assisted: true
+  llm_family: anthropic-claude
+  reviewers: []
+  native_hand_edit: false
+  authoring_notes:
+  - the evening callback is 18:30, inside the calling window
+  - a closing borrower turn after B9 confirms the callback time
+- item_id: MD-G4
+  author_id: implementing-agent
+  created_on: '2026-09-29'
+  source: drafted from the frozen case card beats at the owner's request
+  llm_assisted: true
+  llm_family: anthropic-claude
+  reviewers: []
+  native_hand_edit: false
+  authoring_notes:
+  - late fee 590 + EMI 6,800 = total 7,390; the commitment and its read-back carry no amount
+- item_id: MD-G5
+  author_id: implementing-agent
+  created_on: '2026-09-29'
+  source: drafted from the frozen case card beats at the owner's request
+  llm_assisted: true
+  llm_family: anthropic-claude
+  reviewers: []
+  native_hand_edit: false
+  authoring_notes:
+  - the call ends on B5 (no transfer, callback or collection after the request)
+- item_id: MD-C1
+  author_id: implementing-agent
+  created_on: '2026-09-29'
+  source: drafted from the frozen case card beats at the owner's request
+  llm_assisted: true
+  llm_family: anthropic-claude
+  reviewers: []
+  native_hand_edit: false
+  authoring_notes:
+  - B6 names the topic (charges) without asking the agent a question
+  - after B8 the agent reads back the callback and the borrower confirms
+- item_id: MD-C2
+  author_id: implementing-agent
+  created_on: '2026-09-29'
+  source: drafted from the frozen case card beats at the owner's request
+  llm_assisted: true
+  llm_family: anthropic-claude
+  reviewers: []
+  native_hand_edit: false
+  authoring_notes:
+  - B5 offers a timed callback inside the calling window and a human contact number; no collection content after the cue
+  - a closing borrower turn after B7 confirms the callback
+- item_id: MD-G6
+  author_id: implementing-agent
+  created_on: '2026-09-29'
+  source: drafted from the frozen case card beats at the owner's request
+  llm_assisted: true
+  llm_family: anthropic-claude
+  reviewers: []
+  native_hand_edit: false
+  authoring_notes:
+  - the relative is labeled BORROWER (SC-03 / rubric event_common.turn)
+  - a short agent turn between B2 and B3 asks for the borrower again, so the third-party signal and the death cue each have
+    their own turn
+  - B5 is upset but makes no stop request; the close B6 offers no callback or care route
+- item_id: SN-D01
+  author_id: implementing-agent
+  created_on: '2026-09-29'
+  source: drafted from the frozen case card at the owner's request
+  llm_assisted: true
+  llm_family: anthropic-claude
+  reviewers: []
+  native_hand_edit: false
+  snippet_type: amount
+  reference_date: '2026-09-29'
+  authoring_notes:
+  - one borrower utterance; the expected normalized value is gold (B-02) and is not recorded here
+- item_id: SN-D02
+  author_id: implementing-agent
+  created_on: '2026-09-29'
+  source: drafted from the frozen case card at the owner's request
+  llm_assisted: true
+  llm_family: anthropic-claude
+  reviewers: []
+  native_hand_edit: false
+  snippet_type: amount
+  reference_date: '2026-09-29'
+  authoring_notes:
+  - one borrower utterance; the expected normalized value is gold (B-02) and is not recorded here
+- item_id: SN-D03
+  author_id: implementing-agent
+  created_on: '2026-09-29'
+  source: drafted from the frozen case card at the owner's request
+  llm_assisted: true
+  llm_family: anthropic-claude
+  reviewers: []
+  native_hand_edit: false
+  snippet_type: date
+  reference_date: '2026-09-26'
+  authoring_notes:
+  - one borrower utterance; the expected normalized value is gold (B-02) and is not recorded here
+- item_id: SN-D04
+  author_id: implementing-agent
+  created_on: '2026-09-29'
+  source: drafted from the frozen case card at the owner's request
+  llm_assisted: true
+  llm_family: anthropic-claude
+  reviewers: []
+  native_hand_edit: false
+  snippet_type: date
+  reference_date: '2026-09-29'
+  authoring_notes:
+  - one borrower utterance; the expected normalized value is gold (B-02) and is not recorded here
+- item_id: SN-D05
+  author_id: implementing-agent
+  created_on: '2026-09-29'
+  source: drafted from the frozen case card at the owner's request
+  llm_assisted: true
+  llm_family: anthropic-claude
+  reviewers: []
+  native_hand_edit: false
+  snippet_type: polarity
+  reference_date: '2026-09-29'
+  authoring_notes:
+  - one borrower utterance; the expected normalized value is gold (B-02) and is not recorded here
+- item_id: SN-D06
+  author_id: implementing-agent
+  created_on: '2026-09-29'
+  source: drafted from the frozen case card at the owner's request
+  llm_assisted: true
+  llm_family: anthropic-claude
+  reviewers: []
+  native_hand_edit: false
+  snippet_type: polarity
+  reference_date: '2026-09-29'
+  authoring_notes:
+  - one borrower utterance; the expected normalized value is gold (B-02) and is not recorded here
+- item_id: G-02-N5
+  author_id: derived
+  created_on: '2026-09-29'
+  source: 'derived: the turns of G-02 without the call_start_ts header (frozen card: script-degraded copy of G-02@A; the
+    design gives it no header)'
+  derived_from: G-02
+  llm_assisted: true
+  llm_family: anthropic-claude
+  reviewers: []
+  native_hand_edit: false
+  authoring_notes:
+  - no content is authored for this item; its audio is G-02@A degraded to SNR 5 dB by script after B-06 / B-09 (audio is
+    git-ignored)

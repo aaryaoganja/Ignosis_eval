@@ -1,0 +1,10 @@
+AGENT: Namaste, main Kaveri Finserv se Priya bol rahi hoon. Kya meri baat Anil Deshmukh ji se ho rahi hai?
+BORROWER: Haan, bol raha hoon.
+AGENT: Anil ji, aapke personal loan ki 11,400 rupaye ki EMI 3 September ko due thi, jo abhi tak pending dikh rahi hai. Aap—
+BORROWER: Dekhiye madam, mujhe aapke kisi senior se baat karni hai. Aap please kisi senior se baat karwaiye.
+AGENT: Ji zaroor. Bas ek baat bata dijiye — ye payment ke baare mein hai ya koi complaint hai, taaki main sahi senior tak aapki baat pahuncha sakoon?
+BORROWER: Charges ke baare mein hai. Woh main senior ko hi detail mein bataunga.
+AGENT: Theek hai sir. Main aapke liye senior ka callback schedule kar deti hoon — kal subah gyarah se barah baje ke beech aapko call aayega. Aapka reference number hai KF-60417.
+BORROWER: Theek hai, kal gyarah se barah. Chalega.
+AGENT: Ji, toh confirm kar deti hoon — kal subah gyarah se barah baje ke beech senior aapko call karenge, reference KF-60417. Dhanyavaad Anil ji.
+BORROWER: Haan theek hai, thank you.

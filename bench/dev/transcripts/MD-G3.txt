@@ -1,0 +1,10 @@
+AGENT: Namaste, main Kaveri Finserv se Priya bol rahi hoon. Kya meri baat Nikhil Bansal ji se ho rahi hai?
+BORROWER: Haan... haan, bol raha hoon.
+AGENT: Nikhil ji, aapke personal loan ki 10,500 rupaye ki EMI 12 September ko due thi, jo abhi tak pending hai.
+BORROWER: Sorry, main abhi ek meeting mein hoon, zyada bol nahi sakta. Baad mein call kar lijiye na, please?
+AGENT: Sir, bas do minute lagenge. Aap sirf itna bata dijiye ki payment kab tak ho jayega?
+BORROWER: Madam, sach mein abhi nahi ho payega baat... shaam ko call kar lo, chhe baje ke baad free hoon.
+AGENT: Sir, dekhiye, agar aaj baat nahi hui toh hamari field team aapki help karne ke liye aapke ghar pe hi aa jayegi, aur phir aas-paas wale bhi dekhenge ki kya chal raha hai. Isliye behtar hai ki—
+BORROWER: Arre, ghar pe kyun bhejoge kisi ko? Ye kaunsa tareeka hai... Theek hai, theek hai. Shaam ko saade chhe baje call karna, tab baat karta hoon.
+AGENT: Theek hai sir, toh aaj shaam saade chhe baje main aapko call karti hoon. Dhanyavaad.
+BORROWER: Hmm. Theek hai.

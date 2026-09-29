@@ -1,0 +1,9 @@
+AGENT: Namaskar, main Kaveri Finserv se Priya bol rahi hoon. Kya meri baat Sanjay Kulkarni ji se ho rahi hai?
+BORROWER: Haan, main hi hoon. Boliye.
+AGENT: Sanjay ji, aapke personal loan ki EMI June se pending hai — teen EMI miss hui hain, aur late charges milaake total 38,700 rupaye outstanding hain.
+BORROWER: Haan... pata hai madam. Dekhiye, sach bataun toh ghar mein bhi sab pooch rahe hain, wife bol rahi hai ki ye ek baar mein khatam karo. Kya aisa kuch ho sakta hai ki thoda kam karke ek hi baar mein poora band ho jaye? Main ek saath arrange karne ki koshish kar sakta hoon, par poora 38 toh—
+AGENT: Ji, main samajh rahi hoon, ghar ka pressure hota hai. Dekhiye, aapke case mein main ek option de sakti hoon. Agar aap ek saath 60 percent, yaani 23,220 rupaye jama kar dete hain, toh baaki amount chhod ke hum account close kar denge.
+BORROWER: Sach mein? Kitna bola aapne, 23,220? Haan... haan, yeh ho jayega. Main das October tak arrange kar dunga, bhai se le lunga.
+AGENT: Theek hai. Toh main note kar leti hoon — das October tak 23,220 rupaye, ek baar mein, aur uske baad account close. Payment link aapko SMS pe aa jayega. Sahi hai? Aur kuch poochna hai aapko?
+BORROWER: Haan ji, das October, 23,220. Pakka. Bas itna hi.
+AGENT: Dhanyavaad Sanjay ji. Shubh sandhya.

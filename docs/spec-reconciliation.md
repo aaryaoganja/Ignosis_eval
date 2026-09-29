@@ -288,6 +288,17 @@ H (a result would be wrong or unsafe), M (a metric or process would be incompara
     prohibited-consequence `terms` and `seed_candidates_unreviewed` (authoring QC, not a benchmark run); all-caps seeds
     match their case only (FIR vs the Hinglish "fir"). A surplus header is reported by TQ005 alone. Interruptions
     (realism constraint 2) are not checked: §2.3 defines no notation for them. Tests: `test_transcript_qc.py`.
+45. **DEV transcript drafts** (`bench/dev/transcripts/`, owner request 2026-09-29).
+    - The drafts live outside `bench/dev/items/` until the freeze, so `bench check` and the manifests do not see
+      them yet.
+    - G-02-N5 has no authored text. Its card makes it a "script-degraded copy of G-02@A", so its file is G-02's
+      turns without the header (the design gives it none). TQ017 enforces the equality.
+    - Snippets are one BORROWER turn each (TQ016). The design gives snippets no header, so each snippet's
+      `reference_date` (SD-22) is authoring metadata in `provenance.yaml`, not a header.
+    - Where a beat sheet ends on an agent read-back of a callback, a one-word borrower confirmation follows
+      (MD-G3, MD-C1, MD-C2), so COM-03 does not fire where the design expects no COM-03.
+    - In MD-G6 a short agent turn separates the two third-party beats (B2 signal, B3 cue).
+    - Tests: `test_transcript_qc.py::test_snippet_shape`, `test_derived_copy`, `test_committed_dev_drafts`.
 
 ## 4. Open questions / inconsistencies found in the spec (for the spec owner)
 

@@ -1,10 +1,12 @@
 # Benchmark authoring (bench-a1)
 
 Structure and design are frozen by [`frozen-contract.md` §12–§13](spec/frozen-contract.md) (contract `1.2.0-frozen`;
-bench-a1 design v1.0). Transcripts, audio and gold are pending (B-01 transcripts, B-02 gold, B-03 red team). The authoring constraints in
-[`implementation-blockers.md`](spec/implementation-blockers.md) apply. In particular, **the implementing agent never
-creates, drafts or paraphrases benchmark content**, and phrasings from the spec documents must not be reused in
-holdout or red-team items.
+bench-a1 design v1.0). The 25 DEV transcripts exist as drafts in `bench/dev/transcripts/`, described below.
+Holdout transcripts, audio and gold are pending (B-01 transcripts, B-02 gold, B-03 red team). The authoring
+constraints in [`implementation-blockers.md`](spec/implementation-blockers.md) apply. In particular, the implementing
+agent does not create, draft or paraphrase benchmark content unless the owner explicitly asks for it. The owner asked
+for it once, on 2026-09-29, for the DEV transcript drafts only. Phrasings from the spec documents must not be reused
+in holdout or red-team items.
 
 ## Layout (P-1)
 
@@ -141,10 +143,30 @@ Deterministic checks on draft DEV transcripts, each with a frozen basis (convent
 | TQ013 | error | Pair: agent turns that differ between the members are not 1–3 | constraint 4 |
 | TQ014 | warning | Pair: a changed customer-side turn not reacting to a changed agent turn, beyond BD-03 incidentals | constraint 4, BD-03 |
 | TQ015 | warning | Pair: only one member in the batch; pair checks skipped | — |
+| TQ016 | error | A snippet is not exactly one BORROWER utterance | snippet card ("Single borrower utterance") |
+| TQ017 | error | A derived copy differs from its source's turns (warning if the source is absent) | card ("copy of G-02@A") |
 
 Not checked, because no frozen notation or value exists: interruptions (constraint 2; §2.3 has no marker for them),
 DC-02 non-conversation (threshold `PENDING_HUMAN_SIGNOFF`), beat coverage and the mapping of beats to turns (the
 labeler maps beats after the freeze).
+
+## DEV transcript drafts (`bench/dev/transcripts/`)
+
+The owner requested the complete DEV set on 2026-09-29. There are 25 files, `<ITEM_ID>.txt`: 10 core, 8 micro,
+6 snippets and G-02-N5. The provenance of each item is in `provenance.yaml`. The fields mirror the card
+`authoring` block: author, `llm_assisted: true`, `llm_family: anthropic-claude`, `native_hand_edit: false`, the QC
+fixes applied and authoring notes. The core items are the owner's QC'd hand-off batch; the implementing agent drafted
+the micro items and snippets from the frozen beats. `G-02-N5.txt` is derived: G-02's turns without the header, per
+its card ("script-degraded copy of G-02@A"). Its audio is made by script after B-06 / B-09. The snippets' `reference_date`
+is recorded in `provenance.yaml` (the design gives snippets no header). Their expected values are gold and are not
+recorded.
+
+Before the transcript freeze, three things remain:
+1. Constraint 1: check the assisting family against the B-05 evaluator, and have a native author hand-edit every item.
+2. Promote each draft to `bench/dev/items/<item_id>/` with its `item.json`.
+3. Run `bench manifest --scope dev`.
+
+`tests/test_transcript_qc.py::test_committed_dev_drafts` keeps the directory complete, QC-clean and provenanced.
 
 ## Authoring constraints (frozen, `implementation-blockers.md` 1–8)
 

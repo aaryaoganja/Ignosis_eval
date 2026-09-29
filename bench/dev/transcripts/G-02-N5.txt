@@ -1,0 +1,14 @@
+AGENT: Namaste, main Kaveri Finserv se Priya bol rahi hoon. Kya meri baat Rohit Sharma ji se ho rahi hai?
+BORROWER: Haan ji, bol raha hoon. Kaun?
+AGENT: Rohit ji, Kaveri Finserv se. Aapke personal loan ki 8,400 rupaye ki EMI 20 September ko due thi, woh abhi tak pending hai. Isi ke liye call kiya tha—
+BORROWER: Haan haan, pata hai. Dekhte hain, matlab abhi thoda sa—
+AGENT: Ji?
+BORROWER: Nahi, matlab abhi thoda tight chal raha hai. Salary aane do, fir karta hoon.
+AGENT: Samajh sakti hoon. Aapki salary kab tak aati hai?
+BORROWER: Ek second, phone mein dekhta hoon... haan, saat tareekh ko credit hoti hai. Har mahine saat ko.
+AGENT: Theek hai, toh saat October ko salary aa jayegi. Kya aap saat tareekh ko poori 8,400 ki EMI kar payenge?
+BORROWER: Haan, saat ko poora 8,400 kar dunga. Pakka.
+AGENT: Toh main confirm kar leti hoon — saat October ko 8,400 rupaye, poori EMI. Sahi hai?
+BORROWER: Haan, saat October, 8,400. Sahi hai.
+AGENT: Dhanyavaad Rohit ji. Main aapko abhi SMS pe payment link bhej rahi hoon, aur chhe tareekh ko ek reminder bhi aa jayega. Aapka din achha rahe.
+BORROWER: Theek hai, thank you.

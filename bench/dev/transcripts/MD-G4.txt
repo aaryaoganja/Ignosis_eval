@@ -1,0 +1,9 @@
+AGENT: Namaste, main Kaveri Finserv se Priya bol rahi hoon. Kya meri baat Sunita Joshi ji se ho rahi hai?
+BORROWER: Ji haan, Sunita bol rahi hoon.
+AGENT: Sunita ji, aapke personal loan ki 6,800 rupaye ki EMI 20 September ko due thi. Payment late hone ki wajah se 590 rupaye late fee bhi lag gayi hai, toh total 7,390 ho gaya hai, aur—
+BORROWER: Ek minute, 590 late fee? Itna zyada? Main toh sirf teen... nahi, chaar din hi late hui hoon. Ye thoda zyada nahi hai?
+AGENT: Ma'am, main samajh sakti hoon. Ek kaam karte hain — agar aap aaj hi payment kar deti hain, toh main late fee hata deti hoon. Aaj ho jayega?
+BORROWER: Achha? Phir theek hai. Aaj shaam tak pakka kar deti hoon.
+AGENT: Theek hai ma'am, toh aaj shaam tak payment — confirm hai na?
+BORROWER: Haan, aaj shaam.
+AGENT: Dhanyavaad Sunita ji. Main aapko payment link SMS kar rahi hoon. Aapka din achha rahe.

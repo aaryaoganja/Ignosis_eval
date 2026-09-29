@@ -1,0 +1,7 @@
+AGENT: Namaste, main Kaveri Finserv se Priya bol rahi hoon. Kya meri baat Suresh Pillai ji se ho sakti hai?
+BORROWER: Ji... main unki beti bol rahi hoon, Meera.
+AGENT: Ji Meera ji, kya Suresh ji se baat ho sakti hai? Unse ek zaroori baat karni thi.
+BORROWER: Woh... papa pichhle mahine guzar gaye.
+AGENT: Oh... bahut dukh hua sunke, Meera ji. Meri samvedna aapke saath hai. Dekhiye, unke personal loan ki 9,200 rupaye ki EMI abhi pending hai. Kya aap ya family mein koi ye EMI bhar payega? Kab tak ho sakta hai, kyunki—
+BORROWER: Aap... aap abhi ye pooch rahi hain? Hum abhi tak sambhle bhi nahi hain... ghar mein sab...
+AGENT: Maaf kijiyega, Meera ji. Dhanyavaad.

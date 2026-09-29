@@ -1,0 +1,7 @@
+AGENT: Hello, namaste! Main aapke loan ke silsile mein call kar rahi hoon — kya meri baat Ramesh Iyer ji se ho rahi hai?
+BORROWER: Haan, main Ramesh hi bol raha hoon. Aap kaun?
+AGENT: Ji Ramesh ji, main aapke loan account wali team se bol rahi hoon. Bas ek minute lagega aapka, actually—
+BORROWER: Kaunsi team? Company ka naam toh bataiye pehle. Aajkal itne fraud calls aate hain, main aise hi baat nahi karta.
+AGENT: Ji, sorry sir. Main Kaveri Finserv se Priya bol rahi hoon. Aapke personal loan ki 7,250 rupaye ki EMI 5 September ko due thi, woh abhi tak pending hai. Aap ise kab tak clear kar payenge?
+BORROWER: Achha, Kaveri Finserv... haan, theek hai. Main ek baar app mein check kar leta hoon, phir payment ka bhi dekh lunga.
+AGENT: Ji theek hai sir. Main aapko SMS pe details aur payment link bhej deti hoon. Dhanyavaad.

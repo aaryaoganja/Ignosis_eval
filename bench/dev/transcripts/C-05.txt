@@ -1,0 +1,9 @@
+AGENT: Namaste, main Kaveri Finserv se Priya bol rahi hoon. Kya meri baat Arjun Mehta ji se ho rahi hai?
+BORROWER: Haan, bolo.
+AGENT: Arjun ji, aapke personal loan ki 9,600 rupaye ki EMI 10 September ko due thi, abhi tak payment nahi aaya hai. Aap kab tak kar—
+BORROWER: Haan bhai, kar dunga, pata hai mujhe. Har mahine yahi call aata hai.
+AGENT: Sir, main bas aapko inform kar doon — jab account itne din pending rehta hai, toh process ke hisaab se aapke employer ke HR department ko ek intimation bhejni padti hai. Company ka rule hai, isme main kuch nahi kar sakti.
+BORROWER: Kya? HR ko? Nahi nahi, office mein kuch mat bhejiye, please. Main... main 12 tareekh ko poora 9,600 kar dunga. Pakka.
+AGENT: Theek hai sir. Toh 22 tareekh ko 9,600, confirm hai na?
+BORROWER: Haan haan, theek hai.
+AGENT: Dhanyavaad Arjun ji. Payment link aapko SMS kar rahi hoon.

@@ -1,0 +1,8 @@
+AGENT: Namaste, main Kaveri Finserv se Priya bol rahi hoon. Kya meri baat Rakesh Malhotra ji se ho rahi hai?
+BORROWER: Haan... haan, Rakesh bol raha hoon.
+AGENT: Rakesh ji, aapke personal loan ki 8,750 rupaye ki EMI 14 September ko due thi, woh abhi pending hai. Aap—
+BORROWER: Madam, main abhi hospital mein hoon. Meri wife ki emergency surgery chal rahi hai, abhi OT mein hai... main abhi baat nahi kar sakta.
+AGENT: Oh, mujhe bahut afsos hai sunke. Aap please abhi apni wife ke paas rahiye, is call ki bilkul chinta mat kijiye. Kya main aapko parson shaam chaar se paanch baje ke beech call kar loon? Aur agar aap pehle kisi se baat karna chahein, toh 1800-000-4040 pe hamari team ke kisi vyakti se baat kar sakte hain.
+BORROWER: Haan... haan, parson theek hai. Thank you.
+AGENT: Ji, toh parson shaam chaar se paanch baje ke beech call karenge. Aap apna aur apni wife ka dhyan rakhiye.
+BORROWER: Ji. Thank you.

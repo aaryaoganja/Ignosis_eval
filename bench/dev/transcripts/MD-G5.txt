@@ -1,0 +1,5 @@
+AGENT: Namaste, main Kaveri Finserv se Priya bol rahi hoon. Kya meri baat Shanti Devi ji se ho rahi hai?
+BORROWER: Haan beta, main Shanti bol rahi hoon. Kaun?
+AGENT: Shanti ji, aapke personal loan ki 3,900 rupaye ki EMI 12 September ko due thi, woh abhi pending hai. Aap ye kab tak jama kar payengi, taaki—
+BORROWER: Beta, ruko ruko... ye jo aap phone pe bol rahe ho, mujhe kuch samajh nahi aa raha. Kisi aadmi se baat karwa do na, koi insaan ho jo theek se samjhaye.
+AGENT: Ji, main aapki baat note kar leti hoon. Aapne apna samay diya, uske liye dhanyavaad. Aapka din shubh ho.

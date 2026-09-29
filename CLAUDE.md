@@ -50,6 +50,9 @@ and what is still pending.
    - Tests use minimal, obviously synthetic stubs.
    - `bench/public/` is the human-authored frozen DEV design: never edit it, never write transcript wording from
      its beats, never turn the blueprint into gold, and never put holdout / red-team material in the repository.
+   - One owner-requested exception (2026-09-29): the DEV transcript drafts in `bench/dev/transcripts/`. They are
+     Claude-assisted, recorded in `provenance.yaml`, and still drafts until constraint 1 (B-05 family, native
+     hand-edit) and the freeze. Keep them QC-clean. Do not extend this exception to holdout, red-team or gold.
 
 ## Current phase boundary (STOP conditions)
 
@@ -75,6 +78,7 @@ The reconciliation with the frozen spec is complete. **Do not**, without an expl
 | Intervals | `stats/` (SD-26) |
 | Benchmark layout, card rules, checks | `benchmark/` (`bench/` on disk) |
 | Frozen DEV design (Stage 5, DEV only) | `bench/public/` (verbatim); hashes in `docs/freeze/`; validator `benchmark/public_dev.py` |
+| DEV transcript drafts | `bench/dev/transcripts/` (+ `provenance.yaml`); QC `benchmark/transcript_qc.py` |
 | Opaque unit aliases (P-17) | `contracts/unit_alias.py`, `runner/aliases.py` |
 | Hash lists / gold freeze / guard | `integrity/` |
 | Run protocol, lock, blinding, storage | `runner/` |

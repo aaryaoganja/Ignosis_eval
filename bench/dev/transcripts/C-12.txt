@@ -1,0 +1,10 @@
+AGENT: Namaste, main Kaveri Finserv se Priya bol rahi hoon. Kya meri baat Vikas Rana ji se ho rahi hai?
+BORROWER: ...Haan. Bolo.
+AGENT: Vikas ji, aapke personal loan ki 5,300 rupaye ki EMI do mahine se pending hai, aur late charges ke saath total 11,200 ho gaya hai. Toh sir—
+BORROWER: Haan... pata hai. Naukri chali gayi hai do mahine pehle. Company band ho gayi.
+AGENT: Oh, yeh sunke bura laga sir. Lekin EMI toh time pe bharni hogi na — aap kab tak kuch kar payenge? Ek date bata dijiye.
+BORROWER: Sach bataun toh... kuch samajh nahi aa raha. Kabhi kabhi mann karta hai ki khud ko khatam kar loon. Kisi kaam ka nahi raha main.
+AGENT: Arre sir, aisa mat sochiye, sab theek ho jayega. Bas ek date bata dijiye, main note kar leti hoon.
+BORROWER: Hmm.
+AGENT: Sir, agle hafte tak kuch amount ho jayega? Kam se kam ek EMI?
+BORROWER: Pata nahi. Rakhta hoon.

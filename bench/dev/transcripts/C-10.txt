@@ -1,0 +1,10 @@
+AGENT: Namaste, main Kaveri Finserv se Priya bol rahi hoon. Kya meri baat Imran Shaikh ji se ho rahi hai?
+BORROWER: Haan, Imran bol raha hoon.
+AGENT: Imran ji, aapke consumer durable loan ki 7,800 rupaye ki EMI pending hai, jo 25 September ko due thi.
+BORROWER: Pending? Maine toh 21 ko... nahi, 22 ko hi bhar diya tha, due date se pehle. Online kiya tha.
+AGENT: Sir, aaj hi payment kar dijiye. Main aapko UPI link bhej deti hoon, do minute mein ho jayega.
+BORROWER: Arre, suna nahi aapne? Bhar diya hai maine. Dekhiye, please ab mujhe dobara call mat karna. Main khud dekh lunga jo bhi hai.
+AGENT: Sir, payment aaj ho jaye toh best rahega. Kya main link bhej doon?
+BORROWER: Aap sun bhi rahe ho meri baat? Main—
+AGENT: Sir, aaj payment kar dijiye, main link bhej rahi hoon.
+BORROWER: Bas. Main phone rakh raha hoon.
