@@ -15,6 +15,9 @@ freeze commitments of bench-a1 design v1.0 (13 file hashes, the private bundle c
 adjudication log) are in [`docs/freeze/`](docs/freeze/). The earlier 1.1 adjudication record is kept as history in
 [`docs/history/final-adjudication-1.1.md`](docs/history/final-adjudication-1.1.md).
 
+The assignment submission pack (case-study PDF, demo script, interview Q&A, submission checklist) is in
+[`submission/`](submission/SUBMISSION-CHECKLIST.md).
+
 > **Nothing in this repository is a reliability result.** The benchmark design is frozen. The 25 DEV transcripts
 > exist as unfrozen drafts in `bench/dev/transcripts/` (Claude-assisted; human review pending). The first DEV
 > baseline (`reports/dev-baseline/`, `docs/dev-baseline.md`) compares against the design intent, not gold. Holdout
