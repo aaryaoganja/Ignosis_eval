@@ -33,7 +33,7 @@ adjudication log) are in [`docs/freeze/`](docs/freeze/). The earlier 1.1 adjudic
 | Contracts, front end, engine, K0 / A / A+ / B interfaces, gold derivation, scorer, runner, lock, blinding | Implemented and tested (`python -m pytest`). |
 | B: extraction contract + verifier, full rule engine (`SpecRuleEngine`: every MVP gate and code, batched judgments) | Implemented and tested; B's default. A, A+ and B run end to end (tested on replay fixtures and a fake OpenAI-compatible server). |
 | Evaluator provider | **Gemini** (`gemini-3.8-flash`, temperature 0, seed 0, JSON mode + 1 schema retry, ≤ 3 transport retries), configured in one place (`evaluators/provider_config.py`). The key is read only from the runtime env `GEMINI_API_KEY`; without it, A / A+ / B do not run and nothing is fabricated. The pin for locked runs stays B-05. A Claude evaluator is refused on the Claude-assisted drafts (constraint 1). |
-| Review app (clickable MVP) | `src/ignosis_eval/app/`: guided journey (choose a call → evaluate → review → explore) over Evaluate a call (Transcript / Audio + Transcript / Audio only), Result, Call library, Evaluator reliability; fictional demo calls and a synthetic sample recording; LIVE EVALUATION vs DEMO / REPLAY always labelled. FastAPI backend; the browser never sees the key. Railway-ready (`Dockerfile`). |
+| Review app (clickable MVP) | `src/ignosis_eval/app/`: guided journey (choose a call → choose how it's provided → evaluate → review → explore) over Evaluate a call (Transcript / Audio, EXPERIMENTAL / Audio + Transcript), Result, Call library, Evaluator reliability; fictional demo calls and a synthetic sample recording; LIVE EVALUATION vs DEMO / REPLAY always labelled. FastAPI backend; the browser never sees the key. Railway-ready (`Dockerfile`). |
 | Opaque unit aliases (P-17, SC-05) | Random `u_xxxxxxxx` alias per unit per run, private mapping, audio renamed before ASR, pre-run identity-leak test that fails the run (identity tokens only; ordinary words pass). |
 | Deterministic normalizer, DC-02 / DC-LANG / DC-01-audio, diarization turn threshold, timing signals | Pending sign-off (see the reconciliation doc §5). |
 | Frozen DEV design (Stage 5) | `bench/public/`: 25 DEV case cards (functional beats), master matrix and gold blueprint, verbatim; committed by `docs/freeze/FREEZE-public.md`; validated by `ignosis-eval bench public-check` (0 errors, 6 PD015 authoring-rule warnings; clarifications BD-03..BD-05 in `docs/bd-changelog.md`). DEV only. |
@@ -70,29 +70,44 @@ ignosis-eval score --run-id <run_id>     # -> scoring/<run_id>/{item_scores.csv,
 For the AI Quality Reviewer / Operations QA Reviewer: *Ignosis already listens to every call. This layer judges
 whether the AI agent behaved correctly.*
 
-The journey is **1 Choose a call → 2 Evaluate → 3 Review verdict and evidence → 4 Explore other calls / evaluator
-reliability**. A progress stepper tracks steps 1–3 on the Evaluate and Result screens; step 4 is the Call library
-and Evaluator reliability (nav and result actions). A compact **How it works** guide with all four steps opens on
-the first visit, can be dismissed (remembered in the browser only) and reopened from the header.
+The journey is **1 Choose a call → 2 Choose how it's provided → 3 Evaluate → 4 Review verdict and evidence →
+5 Explore reliability**. The Evaluate screen is laid out as steps 1–3; a progress stepper shows all five. A compact
+**How it works** guide opens on the first visit, can be dismissed (remembered in the browser only) and reopened
+from the header.
 
 | Screen | What it does |
 |---|---|
-| Evaluate a call | **Start here: try a demo call.** Five fictional demo calls, each labelled with what it illustrates (Critical Fail / Dangerous Win, Needs Attention, Meets Bar, Clean Loss, Not Evaluable); *View evaluation* opens the replayed result in one click, *Open in the form* loads it for editing or a live run. **Or evaluate your own call** in one of three modes. **Transcript** works end to end. **Audio + Transcript** evaluates the transcript and fingerprints the audio (not stored). **Audio only** is marked *Not enabled*: it needs speech recognition (B-06), so it explains the limitation, offers *Switch to Audio + Transcript* (keeping the recording) and never guesses a result. |
+| Evaluate a call | **Step 1 · Choose a call.** Five fictional demo calls, each labelled with what it illustrates (Critical Fail / Dangerous Win, Needs Attention, Meets Bar, Clean Loss, Not Evaluable); *View evaluation* opens the replayed result in one click, *Open in step 2* loads it. **Step 2 · Choose how the call is provided.** **Transcript** ("Paste or upload a transcript"). **Audio** ("Upload a call recording", badge **EXPERIMENTAL AUDIO**): Gemini listens to the recording, see below. **Audio + Transcript** ("Upload both for the strongest available evaluation"): the transcript is judged and the recording is attached; audio never overrides the transcript (SC-02). **Step 3 · Evaluate.** |
 | Result | Continues the Evaluate journey (step 3, with *Evaluate another call*). Order: source banner (LIVE EVALUATION / DEMO / REPLAY / NO VERDICT) → verdict and what it means → why (the primary finding with its first quote) → findings (click one to highlight its transcript turns) → evidence transcript (cited turns and agent promises highlighted) → confidence and what could not be checked (EVALUABLE / PARTIAL / NOT EVALUABLE; INCONCLUSIVE and OUT OF SCOPE checks; facts that need external truth such as payment status) → outcome (Dangerous Win, Clean Loss, each explained) → attribution (no model reasoning) → next step and routing. A failed or unavailable evaluation shows what ran and never shows a verdict. Side panels: verdict scale, evaluator details, the read-only Evaluation Profile, the evaluation record as JSON. |
 | Call library | Demo calls and calls evaluated since the server started (in memory; DEV / demo only). Filter by verdict and source, search by name or finding; each row opens the result (mouse or keyboard). |
 | Evaluator reliability | **Development measurement** (what was tested, what is measured so far, what has not run and why) kept separate from **Final reliability validation: PENDING** (what it needs). Metrics carry plain-language help; technical details stay available. Reads only `reports/dev-baseline/`; no gold, no holdout. |
 
+**EXPERIMENTAL audio-only evaluation** (owner-authorized prototype path, `app/audio_gemini.py`). Gemini
+(`gemini-3.8-flash`, the same pinned model) listens to the uploaded .wav / .mp3 (≤ 14 MB, sent inline without its
+file name) and returns, as JSON-schema-constrained output, the turns in order, a speaker role per turn (AGENT /
+BORROWER / OTHER / UNKNOWN) and which turns were unclear. Those turns go through the existing front end and
+Evaluator B like any transcript. Speaker uncertainty is kept, never forced: UNKNOWN or unclear turns are unreliable
+(checks citing them are INCONCLUSIVE), and if Gemini cannot separate agent and borrower the call is NOT EVALUABLE
+(ROLE_UNCERTAIN). Timing signals are not measured. Every such result carries **EXPERIMENTAL AUDIO EVALUATION**,
+"Audio transcription/speaker attribution has not been independently calibrated for this prototype." and **Audio
+reliability: Not independently calibrated**. This path is not the B-06 ASR / diarization decision, is not
+calibrated against B-11, lives in the app only, and never feeds a benchmark run, gold or a reliability metric
+(`test_experimental_audio_path_stays_in_the_review_app`). Without a key it gives no verdict (the sample recording
+still shows its recorded demo evaluation).
+
 **Sample recording.** `demo-settlement` ships with a fictional recording (`app/static/demo/demo-settlement.wav`,
 56 s, 8 kHz mono) spoken by espeak-ng synthetic voices from that demo's transcript, so the audio and the transcript
-correspond one to one. No real person's voice is used. On the form, *Use the sample recording* attaches it:
-Audio + Transcript gives the DEMO / REPLAY Critical Fail with the recording playable on the result, and Audio only
-shows the speech-recognition limitation. Regenerate with `python scripts/make_demo_audio.py` (needs `espeak-ng`
+correspond one to one. No real person's voice is used. On the form, *Use the sample recording* attaches it in
+either audio mode: its recorded demo evaluation (DEMO / REPLAY, Critical Fail) without a key, or a live evaluation
+when a key is configured (Audio only: Gemini listens to it; Audio + Transcript: its transcript is judged). Regenerate with `python scripts/make_demo_audio.py` (needs `espeak-ng`
 at generation time only).
 
 Every result is labelled with its source:
 - **LIVE EVALUATION**: Evaluator B with Gemini, server side.
 - **DEMO / REPLAY**: five synthetic demo calls whose scripted model output is replayed through the real rule engine;
   it works without a key.
+- **EXPERIMENTAL AUDIO EVALUATION** (added to LIVE or DEMO / REPLAY for audio-only uploads): Gemini listened to the
+  recording; audio transcription and speaker attribution are not independently calibrated.
 - **NO VERDICT** (evaluator unavailable): no key on the server. The front end still runs, but no verdict is shown, and nothing is
   ever counted as a pass.
 

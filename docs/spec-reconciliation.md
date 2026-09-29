@@ -376,7 +376,8 @@ H (a result would be wrong or unsafe), M (a metric or process would be incompara
       `build_normalized_input`, for a supplied transcript that is not a benchmark item.
       - A+T fingerprints the audio in memory (sha256 + format) and discards the bytes; audio-derived checks stay
         OUT_OF_SCOPE or INCONCLUSIVE.
-      - Audio-only is refused with a pathway, because ASR / diarization is B-06. No guessed result is produced.
+      - Audio-only was refused with a pathway (ASR / diarization is B-06) until the owner authorized the
+        EXPERIMENTAL audio path (§3.50).
     - **Result sources, always labelled.**
       - LIVE EVALUATION: Gemini. When the front end short-circuits a NOT_EVALUABLE call, the deterministic record
         is live without any model call, and the page says no model was called.
@@ -399,6 +400,41 @@ H (a result would be wrong or unsafe), M (a metric or process would be incompara
         sha256 pinned in `demo_calls.json`). The app recognises it by sha256 and links it on the result for playback.
         The bytes are still never evaluated as audio: A+T evaluates the transcript, and audio-only stays refused (B-06).
     Tests: `test_app.py` (incl. `test_sample_recording_is_fictional_synthetic_and_linked`), `test_secrets.py`.
+50. **EXPERIMENTAL audio-only evaluation in the review app (owner authorization 2026-09-29: "pragmatic prototype",
+    not a validated audio QA system)** (`app/audio_gemini.py`, `pipeline/normalize.normalize_audio_result`).
+    - **What it is.** Gemini's native audio understanding used as an ASR adapter (`ASRAdapter` → `ASRResult`, the
+      existing contract): the recording goes inline (no Files API, no file name, P-17) with a JSON response schema;
+      Gemini returns ordered turns, a role per turn (AGENT / BORROWER / OTHER / UNKNOWN), an `unclear` flag per turn
+      and a call-level `role_separation` (CLEAR / UNCERTAIN). The existing A-unit front end and Evaluator B then run
+      unchanged. Events and evidence spans come from B's extraction over those turns: no second data model.
+    - **It is not B-06.** No ASR or diarizer is chosen for the benchmark; the B-11 audio thresholds stay PENDING and
+      the DC-01-audio / diarization steps stay `pending_signoff`. Calibration against them has not happened.
+    - **Conventions (prototype only).**
+      - `role_separation` CLEAR / UNCERTAIN is Gemini's categorical self-report, mapped to the DC-00 gate value
+        1.0 / 0.0. It is not a measured confidence and is never shown as a score. UNCERTAIN also turns every role into
+        UNKNOWN, so no speaker identity is forced; the call is NOT EVALUABLE (ROLE_UNCERTAIN).
+      - UNKNOWN-role and `unclear` turns are span-unreliable (AJ-05), so checks citing them are INCONCLUSIVE or capped
+        (a gate that needed such a turn as evidence can fire only as SUSPECTED / LOW).
+      - No timestamps are requested (Gemini's are approximate): the unit has no timestamps, timing signals are not
+        measured, and TRT-06 falls back to word count.
+      - Gemini's transcription is recorded as both `asr_text` and `supplied_text`: it is the only text the evaluator
+        sees, so a quote verifies against the same words whichever source tag B's extraction gives it. Without this,
+        the verifier drops every event whose tag is "supplied" in an AUDIO unit (observed with scripted output; the
+        model sees one text per turn and cannot tell the sources apart). The verifier and the benchmark A-unit path
+        are unchanged.
+      - Formats: .wav / .mp3 (the app formats that Gemini documents for audio input); ≤ 14 MB so the base64 request
+        stays under Gemini's 20 MB inline limit; contents are sniffed (a mismatch is AUDIO_MALFORMED).
+    - **Labelling.** Every audio-only result, including failed and unavailable ones, carries "EXPERIMENTAL AUDIO
+      EVALUATION", "Audio transcription/speaker attribution has not been independently calibrated for this
+      prototype." and "Audio reliability: Not independently calibrated". No key → no verdict; the sample recording
+      replays its demo script (labelled DEMO / REPLAY as well).
+    - **Isolation.** The module is app-only; no run, benchmark, gold, scorer, metric or evaluator module imports the
+      app (`test_experimental_audio_path_stays_in_the_review_app`). The reliability screen states that audio-only is
+      not part of any reliability claim.
+    - **Fail closed.** An unexpected evaluator error (e.g. model output citing a commitment turn the call does not
+      have, which the rule engine does not screen) now ends as EVALUATION_FAILED in the app instead of a 500.
+    Tests: `test_app.py` (audio upload, request shape, malformed / unsupported / oversized audio, missing key,
+    provider failures, uncertain and unknown speakers, labelling, key never exposed), `test_architecture_boundaries.py`.
 
 ## 4. Open questions / inconsistencies found in the spec (for the spec owner)
 

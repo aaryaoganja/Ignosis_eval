@@ -105,3 +105,19 @@ def test_no_live_module_uses_superseded_files():
         if "collections_placeholder.yaml" in text or "benchmark_smoke" in text:
             offenders.append(str(py.relative_to(PKG)))
     assert not offenders, offenders
+
+
+def test_experimental_audio_path_stays_in_the_review_app():
+    """The EXPERIMENTAL Gemini audio path (app/audio_gemini.py) is app-only: no run, benchmark, gold, scorer, metric or
+    evaluator module imports the app, so an audio-only result can never enter a benchmark run, gold or a metric."""
+    offenders = []
+    for py in _live_files():
+        rel = py.relative_to(PKG)
+        if rel.parts[0] == "app" or rel.name == "cli.py":  # the CLI only launches the app (`dev smoke`)
+            continue
+        if any(imp == "ignosis_eval.app" or imp.startswith("ignosis_eval.app.") for imp in _imports(py)):
+            offenders.append(str(rel))
+    assert offenders == []
+    loaded = _loaded_after(["ignosis_eval.runner.experiment", "ignosis_eval.runner.dev_drafts",
+                            "ignosis_eval.devbaseline.report", "ignosis_eval.scoring.scorer"])
+    assert not [m for m in loaded if m == "ignosis_eval.app" or m.startswith("ignosis_eval.app.")]

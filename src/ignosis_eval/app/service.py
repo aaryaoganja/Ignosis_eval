@@ -4,6 +4,9 @@ here, so every rule below is testable without a server.
 Sources of a result, always labelled:
 - LIVE EVALUATION: B with the Gemini provider (key from the runtime env GEMINI_API_KEY, server side only), or the
   deterministic front end alone when it short-circuits a NOT_EVALUABLE call (no model call is needed then).
+- EXPERIMENTAL AUDIO EVALUATION (audio-only uploads): Gemini listens to the recording and returns turns and speaker
+  roles (app/audio_gemini.py); the same front end and B then judge them. Every such result carries the label and the
+  "not independently calibrated" caveat, and never enters a benchmark run, gold or a reliability metric.
 - DEMO / REPLAY: a synthetic demo call whose scripted model output (demo_calls.json) is replayed through the real B
   rule engine and finalize. Not a live model result, not a measurement.
 - EVALUATOR UNAVAILABLE: no key on the server. The front end still runs; no verdict is produced (never a PASS).
@@ -30,8 +33,9 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from ignosis_eval.app import audio_gemini as AG
 from ignosis_eval.benchmark.layout import BenchLayout
-from ignosis_eval.contracts.canonical_input import NormalizedInput
+from ignosis_eval.contracts.canonical_input import AudioRef, NormalizedInput
 from ignosis_eval.contracts.enums import ConfidenceSource, UnitMode
 from ignosis_eval.contracts.evaluation_record import EvaluationRecord, Evidence, SystemInfo
 from ignosis_eval.engine.frontend_merge import not_evaluable_short_circuit, short_circuit_record
@@ -51,7 +55,12 @@ from ignosis_eval.evaluators.llm import (
 from ignosis_eval.evaluators.pipelines import EvaluatorB
 from ignosis_eval.integrity.guard import ProtectedPathGuard
 from ignosis_eval.pipeline.intake import ParsedTranscript, TranscriptParseError, parse_json, parse_txt
-from ignosis_eval.pipeline.normalize import NormalizationError, audio_ref_from_bytes, normalize_supplied
+from ignosis_eval.pipeline.normalize import (
+    NormalizationError,
+    audio_ref_from_bytes,
+    normalize_audio_result,
+    normalize_supplied,
+)
 from ignosis_eval.spec.loader import Spec, repo_root
 from ignosis_eval.spec.pending import find_pending
 from ignosis_eval.versions import ENGINE_VERSION, FRONTEND_VERSION, PACKAGE_VERSION, PROMPT_TEMPLATE_VERSION
@@ -62,7 +71,9 @@ MAX_TRANSCRIPT_BYTES = 256 * 1024
 MAX_AUDIO_BYTES = 25 * 1024 * 1024
 MAX_TURNS = 400
 LIBRARY_LIMIT = 200
-AUDIO_FORMATS = ("wav", "mp3", "m4a")
+AUDIO_FORMATS = ("wav", "mp3", "m4a")  # Audio + Transcript (the recording is fingerprinted, not interpreted)
+AUDIO_ONLY_FORMATS = tuple(sorted(provider_config.AUDIO_MIME_TYPES))  # sent to Gemini: formats it documents
+MAX_AUDIO_ONLY_BYTES = provider_config.AUDIO_MAX_INLINE_BYTES
 DEMO_FILE = Path(__file__).with_name("demo_calls.json")
 REPORT_ENV = "IGNOSIS_DEV_REPORT"
 DEMO_MODEL_ID = "demo-replay/scripted-1"
@@ -102,19 +113,29 @@ class Mode(str, Enum):
 
 
 MODE_INFO = {
-    Mode.TRANSCRIPT: {"label": "Transcript", "unit_mode": "TRANSCRIPT", "supported": True,
-                      "summary": "Text with one line per speaker turn",
-                      "note": "Paste or upload a transcript with one line per turn, starting AGENT: or BORROWER:."},
+    Mode.TRANSCRIPT: {"label": "Transcript", "unit_mode": "TRANSCRIPT", "supported": True, "experimental": False,
+                      "summary": "Paste or upload a transcript",
+                      "note": "One line per turn, starting AGENT: or BORROWER:. The transcript is judged directly."},
+    Mode.AUDIO: {"label": "Audio", "unit_mode": "A", "supported": True, "experimental": True,
+                 "badge": "EXPERIMENTAL AUDIO", "summary": "Upload a call recording",
+                 "note": "Gemini analyzes the recording directly. Speaker attribution and transcription are not "
+                         "independently calibrated."},
     Mode.AUDIO_TRANSCRIPT: {"label": "Audio + Transcript", "unit_mode": "A+T", "supported": True,
-                            "summary": "A recording plus its transcript",
-                            "note": "Upload the recording and its transcript. The transcript is evaluated and the "
-                                    "recording is attached to the result. Signals that need audio analysis (such "
-                                    "as people talking over each other) are listed as not checked."},
-    Mode.AUDIO: {"label": "Audio only", "unit_mode": "A", "supported": False,
-                 "summary": "A recording without a transcript",
-                 "note": "Audio-only evaluation requires speech recognition, which is not enabled in this "
-                         "prototype. Use Audio + Transcript for a working evaluation."},
+                            "experimental": False,
+                            "summary": "Upload both for the strongest available evaluation",
+                            "note": "The transcript is judged; the recording is attached as supporting evidence and "
+                                    "never overrides the transcript. Signals that need audio analysis (such as "
+                                    "people talking over each other) are listed as not checked."},
 }
+UNAVAILABLE_TEXT = ("Live evaluation isn't configured on this server (the administrator has not set "
+                    f"{provider_config.API_KEY_ENV}), so this call was not judged. The automatic pre-checks below did "
+                    "run. Demo calls still show their recorded evaluations.")
+AUDIO_UNAVAILABLE_TEXT = ("Audio-only evaluation needs Gemini to listen to the recording, and live evaluation isn't "
+                          "configured on this server (the administrator has not set "
+                          f"{provider_config.API_KEY_ENV}). Nothing was transcribed or judged. The sample recording "
+                          "still shows its recorded demo evaluation.")
+TIMING_NOTE = ("Not measured: timing signals (response gaps, people talking over each other, monologue length in "
+               "seconds) need calibrated timestamps, which this experimental path does not have.")
 
 
 class AppError(Exception):
@@ -197,8 +218,9 @@ def _ev(e: Evidence) -> dict[str, Any]:
 
 
 # ------------------------------------------------------------------------------------------ result view
-def result_view(record: EvaluationRecord | None, ni: NormalizedInput, spec: Spec, *, source: str, call: dict,
-                trace: TraceSink | None, latency_s: float, unavailable_reason: str | None = None) -> dict[str, Any]:
+def result_view(record: EvaluationRecord | None, ni: NormalizedInput | None, spec: Spec, *, source: str, call: dict,
+                trace: TraceSink | None, latency_s: float, unavailable_reason: str | None = None,
+                failure_reason: str | None = None, experimental: dict[str, Any] | None = None) -> dict[str, Any]:
     cat = catalog(spec)
     suffix = spec.rubric.get("verdict_display_label_suffix", "")
     findings: list[dict[str, Any]] = []
@@ -207,13 +229,23 @@ def result_view(record: EvaluationRecord | None, ni: NormalizedInput, spec: Spec
     cited: set[int] = set()
     view: dict[str, Any] = {
         "source": source, "source_label": SOURCE_LABELS[source], "call": call,
-        "evaluator": _evaluator_info(record, source, trace),
+        "evaluator": _evaluator_info(record, source, trace, audio=experimental is not None),
         "frontend": {"evaluability": ni.frontend.evaluability_status.value,
                      "reason_codes": [r.value for r in ni.frontend.reason_codes],
                      "reason_text": _reason_text([r.value for r in ni.frontend.reason_codes]),
-                     "prechecks": {g.gate.value: g.status.value for g in ni.frontend.prechecks}},
+                     "prechecks": {g.gate.value: g.status.value for g in ni.frontend.prechecks}} if ni else None,
         "usage": {**(trace.usage if trace else TraceSink().usage), "latency_s": round(latency_s, 3)},
+        "experimental_audio": experimental,
     }
+    if record is None and failure_reason:  # the audio interpretation failed: there are no turns to judge
+        view.update(status="EVALUATION_FAILED", verdict={"code": None, "label": "Evaluation Failed",
+                                                         "display": "Evaluation Failed - no verdict"},
+                    key_finding={"title": "The evaluation failed; no verdict was produced",
+                                 "explanation": redact(failure_reason)[:600]},
+                    findings=[], uncertainty=None, tags=None, outcome=None, unverified_commitments=[], routing=None,
+                    action="Re-run the evaluation, try Audio + Transcript, or review the call manually. A failed "
+                           "evaluation is never a pass.", record=None, transcript=[])
+        return view
     if record is None:
         view.update(status="NOT_RUN", verdict=None, key_finding={
             "title": "No verdict: live evaluation is not available",
@@ -221,7 +253,7 @@ def result_view(record: EvaluationRecord | None, ni: NormalizedInput, spec: Spec
             findings=[], uncertainty=None, tags=None, outcome=None, unverified_commitments=[], routing=None,
             action="Try a demo call, or ask the administrator to configure live evaluation (GEMINI_API_KEY) and "
                    "evaluate again. No verdict is implied: this is not a pass.", record=None)
-        view["transcript"] = _transcript(ni, cited)
+        view["transcript"] = _transcript(ni, cited) if ni else []
         return view
     if record.record_status.value == "EVALUATION_FAILED":
         reason = record.failure.reason if record.failure else "unknown"
@@ -232,8 +264,9 @@ def result_view(record: EvaluationRecord | None, ni: NormalizedInput, spec: Spec
                     findings=[], uncertainty=None, tags=None, outcome=None, unverified_commitments=[], routing=None,
                     action="Re-run the evaluation or review the call manually. A failed evaluation is never a pass.",
                     record=record.model_dump(mode="json"))
-        view["transcript"] = _transcript(ni, cited)
+        view["transcript"] = _transcript(ni, cited) if ni else []
         return view
+    assert ni is not None  # a record always comes from normalized input
 
     for g in record.gates:
         info = cat.get(g.gate.value, {})
@@ -360,7 +393,8 @@ def _transcript(ni: NormalizedInput, cited: set[int]) -> list[dict[str, Any]]:
              "unreliable": t.unreliable} for t in ni.turns]
 
 
-def _evaluator_info(record: EvaluationRecord | None, source: str, trace: TraceSink | None) -> dict[str, Any]:
+def _evaluator_info(record: EvaluationRecord | None, source: str, trace: TraceSink | None, *,
+                    audio: bool = False) -> dict[str, Any]:
     pc = provider_config.describe()
     model_called = bool(trace and trace.usage["llm_calls"])
     served = sorted({str(r.get("model_id")) for r in (trace.responses if trace else []) if r.get("ok")})
@@ -372,10 +406,13 @@ def _evaluator_info(record: EvaluationRecord | None, source: str, trace: TraceSi
         provider = (record.system.llm_backend if record and record.system.llm_backend else pc["provider"])
         model = (record.system.model_snapshot_id if record and record.system.model_snapshot_id else pc["model_id"])
     return {"system": "B", "system_version": EvaluatorB.version, "provider": provider, "model": model,
+            "provider_label": "Google Gemini" if provider == provider_config.PROVIDER else provider,
             "served_model_versions": served if source == LIVE else [], "model_called": model_called,
             "prompt_version": PROMPT_TEMPLATE_VERSION, "engine_version": ENGINE_VERSION,
             "frontend_version": FRONTEND_VERSION, "temperature": pc["temperature"],
-            "input_modality": pc["input_modality"]}
+            "input_modality": ("AUDIO (experimental: Gemini native audio understanding, then B on the turns)"
+                               if audio else pc["input_modality"]),
+            "audio_prompt_version": AG.PROMPT_VERSION if audio else None}
 
 
 # ------------------------------------------------------------------------------------------ service
@@ -441,38 +478,45 @@ class ReviewService:
             raise AppError(413, "TRANSCRIPT_TOO_LONG", f"The transcript has more than {MAX_TURNS} turns.")
         return parsed
 
-    def _normalize(self, req: EvaluateRequest) -> tuple[NormalizedInput, Mode]:
+    @staticmethod
+    def _mode(req: EvaluateRequest) -> Mode:
         try:
-            mode = Mode(req.mode)
+            return Mode(req.mode)
         except ValueError:
             raise AppError(400, "MODE_INVALID", "Mode must be audio, transcript or audio_transcript.") from None
-        if mode is Mode.AUDIO:
-            has_transcript = bool(req.transcript_bytes or (req.transcript_text or "").strip())
-            raise AppError(422, "ASR_PENDING", "Audio-only evaluation requires speech recognition, which is not "
-                           "enabled in this prototype, so no result was produced (a guessed transcript would "
-                           "not be trustworthy).", [
-                               "Use Audio + Transcript for a working evaluation: add the call's transcript "
-                               "next to the recording." if not has_transcript else
-                               "You supplied a transcript: switch to Audio + Transcript to evaluate it with the "
-                               "recording.",
-                               "The sample recording comes with its transcript: choose \"Use the sample "
-                               "recording\" under Audio + Transcript.",
-                               "Speech recognition (turning audio into a transcript) is a pending decision for "
-                               "this prototype."])
+
+    def _audio(self, req: EvaluateRequest, mode: Mode) -> tuple[AudioRef, float | None]:
+        """Validate an uploaded recording (size, extension, contents) and fingerprint it in memory. The bytes are
+        never written to disk; audio-only sends them to Gemini, Audio + Transcript only hashes them."""
+        audio_only = mode is Mode.AUDIO
+        if not req.audio_bytes:
+            raise AppError(400, "AUDIO_MISSING", "Choose a call recording (.wav or .mp3)." if audio_only else
+                           "Audio + Transcript needs the audio file as well.")
+        limit = MAX_AUDIO_ONLY_BYTES if audio_only else MAX_AUDIO_BYTES
+        if len(req.audio_bytes) > limit:
+            raise AppError(413, "AUDIO_TOO_LARGE", (
+                f"Audio-only recordings are limited to {limit // 2**20} MB (about 14 minutes of 8 kHz telephone "
+                f"WAV). Trim the recording, or use Audio + Transcript (up to {MAX_AUDIO_BYTES // 2**20} MB)."
+                if audio_only else f"The audio is larger than {limit // 2**20} MB."))
+        ext = Path(req.audio_filename or "").suffix.lower().lstrip(".")
+        allowed = AUDIO_ONLY_FORMATS if audio_only else AUDIO_FORMATS
+        if ext not in allowed:
+            raise AppError(400, "AUDIO_FORMAT", (
+                "Audio only accepts .wav or .mp3 recordings (formats Gemini documents for audio input). Convert "
+                "the file, or use Audio + Transcript, which also takes .m4a." if audio_only else
+                "Audio must be .wav, .mp3 or .m4a."))
+        try:
+            duration = AG.check_audio(req.audio_bytes, ext)
+        except AG.AudioInputError as exc:
+            raise AppError(400, exc.code, exc.message) from None
+        return audio_ref_from_bytes(req.audio_bytes, ext), duration
+
+    def _normalize(self, req: EvaluateRequest, mode: Mode) -> NormalizedInput:
         parsed = self._parse(req)
-        audio = None
-        if mode is Mode.AUDIO_TRANSCRIPT:
-            if not req.audio_bytes:
-                raise AppError(400, "AUDIO_MISSING", "Audio + Transcript needs the audio file as well.")
-            if len(req.audio_bytes) > MAX_AUDIO_BYTES:
-                raise AppError(413, "AUDIO_TOO_LARGE", f"The audio is larger than {MAX_AUDIO_BYTES // 2**20} MB.")
-            ext = Path(req.audio_filename or "").suffix.lower().lstrip(".")
-            if ext not in AUDIO_FORMATS:
-                raise AppError(400, "AUDIO_FORMAT", "Audio must be .wav, .mp3 or .m4a.")
-            audio = audio_ref_from_bytes(req.audio_bytes, ext)  # hashed in memory; the bytes are not stored
+        audio = self._audio(req, mode)[0] if mode is Mode.AUDIO_TRANSCRIPT else None
         try:
             unit = UnitMode.A_T if mode is Mode.AUDIO_TRANSCRIPT else UnitMode.TRANSCRIPT
-            return normalize_supplied(parsed, unit, self.spec, audio=audio), mode
+            return normalize_supplied(parsed, unit, self.spec, audio=audio)
         except NormalizationError as exc:
             raise AppError(400, "NORMALIZATION", str(exc)) from None
 
@@ -483,43 +527,95 @@ class ReviewService:
             return None
         return d if _same_text(req.transcript_text or "", d["transcript"]) else None
 
-    def _run(self, req: EvaluateRequest) -> dict[str, Any]:
-        ni, mode = self._normalize(req)
-        demo = self._demo_for(req)
-        use_replay = demo is not None and (req.replay or not self.live_available())
-        trace = TraceSink()
-        t0 = time.perf_counter()
-        record: EvaluationRecord | None = None
-        unavailable: str | None = None
-        if not_evaluable_short_circuit(ni):  # deterministic: no model call needed, so it is live even without a key
-            record = short_circuit_record(ni, self.spec, _b_info(), ConfidenceSource.COMPUTED)
-            source = REPLAY if use_replay else LIVE
-        elif use_replay:
+    def _demo_by_audio(self, sha256: str) -> dict[str, Any] | None:
+        """The demo call whose sample recording this is (matched by content, never by file name)."""
+        return next((d for d in self.demos.values() if (d.get("audio") or {}).get("sha256") == sha256), None)
+
+    def _interpret(self, req: EvaluateRequest, audio: AudioRef, demo: dict[str, Any] | None, use_replay: bool,
+                   trace: TraceSink) -> tuple[NormalizedInput | None, dict[str, Any], str, str | None, str | None]:
+        """EXPERIMENTAL audio-only step: (normalized input, experimental block, source, unavailable, failure)."""
+        if use_replay:
             assert demo is not None
-            record = self._evaluate(ScriptedDemoClient(demo["script"]), ni, trace)
+            res, info = AG.replay_interpretation(demo["transcript"])
             source = REPLAY
         elif self.live_available():
             source = LIVE
+            interpreter = AG.GeminiAudioInterpreter(trace=trace, sleep=self._sleep)
+            assert req.audio_bytes is not None
             try:
-                record = self._evaluate(GeminiClient(), ni, trace)
+                with ProtectedPathGuard(self.protected_paths()):
+                    res, info = interpreter.interpret(req.audio_bytes, audio.format)
             except ProviderConfigError as exc:  # e.g. an invalid GEMINI_MODEL: no call was made
-                source, unavailable = UNAVAILABLE, redact(str(exc))
+                return None, _experimental(None, UNAVAILABLE), UNAVAILABLE, redact(str(exc)), None
+            except LLMUnavailableError as exc:
+                log.warning("audio interpretation: provider unreachable: %s", redact(str(exc)))
+                return None, _experimental(None, LIVE), LIVE, None, (
+                    f"Gemini could not be reached after {provider_config.settings().transport.max_retries} retries "
+                    "while listening to the recording. Nothing was judged.")
+            except ProviderRequestError as exc:
+                log.warning("audio interpretation: provider error: %s", redact(str(exc)))
+                return None, _experimental(None, LIVE), LIVE, None, (
+                    f"Gemini returned an error while listening to the recording: {redact(str(exc))[:400]}")
+            except AG.AudioInterpretationError as exc:
+                return None, _experimental(None, LIVE), LIVE, None, f"{exc}. Nothing was judged."
         else:
-            source = UNAVAILABLE
-            unavailable = ("Live evaluation isn't configured on this server (the administrator has not set "
-                           f"{provider_config.API_KEY_ENV}), so this call was not judged. The automatic pre-checks "
-                           "below did run. Demo calls still show their recorded evaluations.")
+            return None, _experimental(None, UNAVAILABLE), UNAVAILABLE, AUDIO_UNAVAILABLE_TEXT, None
+        ni = normalize_audio_result(res, self.spec, audio=audio)
+        return ni, _experimental(info, source), source, None, None
+
+    def _judge(self, ni: NormalizedInput, demo: dict[str, Any] | None, use_replay: bool,
+               trace: TraceSink) -> tuple[EvaluationRecord | None, str, str | None]:
+        """(record, source, unavailable reason): the shared front end's short circuit, a demo replay, or live B."""
+        if not_evaluable_short_circuit(ni):  # deterministic: no model call needed, so it is live even without a key
+            return short_circuit_record(ni, self.spec, _b_info(), ConfidenceSource.COMPUTED), \
+                (REPLAY if use_replay else LIVE), None
+        if use_replay:
+            assert demo is not None
+            return self._evaluate(ScriptedDemoClient(demo["script"]), ni, trace), REPLAY, None
+        if self.live_available():
+            try:
+                return self._evaluate(GeminiClient(), ni, trace), LIVE, None
+            except ProviderConfigError as exc:  # e.g. an invalid GEMINI_MODEL: no call was made
+                return None, UNAVAILABLE, redact(str(exc))
+        return None, UNAVAILABLE, UNAVAILABLE_TEXT
+
+    def _run(self, req: EvaluateRequest) -> dict[str, Any]:
+        mode = self._mode(req)
+        trace = TraceSink()
+        t0 = time.perf_counter()
+        record: EvaluationRecord | None = None
+        unavailable = failure = None
+        experimental: dict[str, Any] | None = None
+        duration: float | None = None
+        ni: NormalizedInput | None
+        if mode is Mode.AUDIO:
+            audio, duration = self._audio(req, mode)
+            demo = self._demo_by_audio(audio.sha256)
+            use_replay = demo is not None and (req.replay or not self.live_available())
+            ni, experimental, source, unavailable, failure = self._interpret(req, audio, demo, use_replay, trace)
+            audio_sha: str | None = audio.sha256
+        else:
+            ni = self._normalize(req, mode)
+            demo = self._demo_for(req)
+            use_replay = demo is not None and (req.replay or not self.live_available())
+            source = REPLAY if use_replay else LIVE
+            audio_sha = ni.audio.sha256 if ni.audio else None
+        if ni is not None and failure is None and unavailable is None:
+            record, source, unavailable = self._judge(ni, demo, use_replay, trace)
         name = (req.call_name or "").strip()[:80] or (demo["title"] if demo else f"Evaluated call {self._next()}")
         call = {"name": name, "mode": mode.value, "mode_label": MODE_INFO[mode]["label"],
-                "unit_mode": ni.unit_mode.value, "n_turns": len(ni.turns), "has_audio": ni.audio is not None,
-                "demo": demo is not None, "demo_id": demo["id"] if demo else None,
-                "scenario": demo["scenario"] if demo else None}
-        sample = self._demo_audio.get(ni.audio.sha256) if ni.audio else None
+                "unit_mode": MODE_INFO[mode]["unit_mode"], "n_turns": len(ni.turns) if ni else 0,
+                "has_audio": audio_sha is not None, "demo": demo is not None, "demo_id": demo["id"] if demo else None,
+                "scenario": demo["scenario"] if demo else None, "experimental_audio": mode is Mode.AUDIO}
+        if duration is not None:
+            call["audio_duration_s"] = duration
+        sample = self._demo_audio.get(audio_sha or "")
         if sample:  # the uploaded recording is the app's sample recording: link it so the reviewer can play it
             call.update(audio_url=f"/static/{sample['file']}", audio_duration_s=sample["duration_s"],
                         audio_note="Sample recording: synthetic voices, fictional call")
         view = result_view(record, ni, self.spec, source=source, call=call, trace=trace,
-                           latency_s=time.perf_counter() - t0, unavailable_reason=unavailable)
+                           latency_s=time.perf_counter() - t0, unavailable_reason=unavailable,
+                           failure_reason=failure, experimental=experimental)
         view["evaluation_id"] = f"ev-{uuid.uuid4().hex[:12]}"
         view["created_at"] = datetime.now(timezone.utc).isoformat()
         return view
@@ -538,6 +634,11 @@ class ReviewService:
         except ProviderRequestError as exc:
             log.warning("provider error: %s", redact(str(exc)))
             return failed_record(ni, self.spec, b.system_info(), f"provider error: {redact(str(exc))}", 0)
+        except Exception as exc:  # an evaluator defect (e.g. model output citing a turn the call does not have) must
+            # end as EVALUATION_FAILED, never as a verdict or an opaque server error
+            log.error("evaluator error: %s", type(exc).__name__)
+            return failed_record(ni, self.spec, b.system_info(), "the evaluator could not complete on this call "
+                                 f"(internal {type(exc).__name__} while applying the rules); nothing was judged", 0)
 
     def evaluate(self, req: EvaluateRequest) -> dict[str, Any]:
         view = self._run(req)
@@ -568,7 +669,8 @@ class ReviewService:
                          "status": v["status"], "source": v["source"], "source_label": v["source_label"],
                          "evaluability": (v.get("uncertainty") or {}).get("evaluability"),
                          "dangerous_win": (v.get("tags") or {}).get("dangerous_win"),
-                         "clean_loss": (v.get("tags") or {}).get("clean_loss"), "created_at": v["created_at"]})
+                         "clean_loss": (v.get("tags") or {}).get("clean_loss"), "created_at": v["created_at"],
+                         "experimental_audio": bool(v.get("experimental_audio"))})
         return rows
 
     def get(self, evaluation_id: str) -> dict[str, Any]:
@@ -593,7 +695,9 @@ class ReviewService:
                           "frontend_version": FRONTEND_VERSION},
             "modes": [{"id": m.value, **info} for m, info in MODE_INFO.items()],
             "limits": {"transcript_kb": MAX_TRANSCRIPT_BYTES // 1024, "audio_mb": MAX_AUDIO_BYTES // 2**20,
-                       "audio_formats": list(AUDIO_FORMATS)},
+                       "audio_formats": list(AUDIO_FORMATS), "audio_only_mb": MAX_AUDIO_ONLY_BYTES // 2**20,
+                       "audio_only_formats": list(AUDIO_ONLY_FORMATS)},
+            "experimental_audio": {"label": AG.LABEL, "caveat": AG.CAVEAT, "audio_reliability": AG.RELIABILITY},
             "profile": profile_panel(self.spec),
         }
 
@@ -610,6 +714,52 @@ class ReviewService:
 
     def reliability(self) -> dict[str, Any]:
         return reliability_view(self.report_path)
+
+
+def _experimental(info: dict[str, Any] | None, source: str) -> dict[str, Any]:
+    """The EXPERIMENTAL AUDIO block every audio-only result carries (also when nothing ran)."""
+    model = provider_config.settings().model_id
+    if source == REPLAY:
+        interpreter = ("Scripted replay: the sample recording's own fictional script stands in for Gemini's audio "
+                       "interpretation (no model call).")
+    else:
+        interpreter = (f"Google Gemini · {model} · native audio understanding (the recording is sent inline, "
+                       "without its file name; JSON-schema output)")
+    base = {"label": AG.LABEL, "caveat": AG.CAVEAT, "audio_reliability": AG.RELIABILITY,
+            "interpreter": interpreter, "prompt_version": AG.PROMPT_VERSION, "timing": TIMING_NOTE,
+            "reliability_scope": "Not included in the benchmark, gold or any reliability metric.",
+            "speaker_attribution": None, "transcription": None}
+    if info is None:
+        return {**base, "status": "NOT_RUN", "interpreter": "Not run: the recording was not sent to Gemini, so nothing "
+                                                            "was transcribed."}
+    unknown, unclear, n = info["unknown_role_turns"], info["unclear_turns"], info["turns"]
+    if not info["speech_detected"]:
+        attribution = ("NO_SPEECH", "Gemini heard no intelligible conversation in the recording, so no speaker "
+                                    "roles were assigned and nothing could be judged.")
+    elif info["role_separation"] != "CLEAR":
+        attribution = ("UNCERTAIN", "Gemini could not reliably tell the agent from the borrower. No speaker identity "
+                                    "was forced: every turn is marked speaker-unknown and the call is NOT EVALUABLE "
+                                    "(speaker roles could not be established).")
+    elif unknown:
+        attribution = ("PARTIAL", f"Gemini separated the agent from the borrower but could not attribute {unknown} "
+                                  f"turn{'s' if unknown != 1 else ''}. Those turns are treated as unreliable: they "
+                                  "cannot serve as evidence for either speaker (for example a borrower confirming "
+                                  "identity), so checks that rely on them are INCONCLUSIVE or only suspected. Review "
+                                  "the findings next to them.")
+    elif source == REPLAY:
+        attribution = ("CLEAR", "Replay: the recording's own script supplies the speaker roles; no model listened to "
+                                "it.")
+    else:
+        attribution = ("CLEAR", "Gemini reported that it could tell the agent from the borrower throughout the "
+                                "call. This is Gemini's own report, not an independent check.")
+    return {**base, "status": "RAN", "source": source,
+            "speaker_attribution": {"status": attribution[0], "text": attribution[1],
+                                    "note": info.get("role_separation_note") or None},
+            "transcription": {"turns": n, "unclear_turns": unclear, "unknown_role_turns": unknown,
+                              "language": info.get("language") or None, "served_model": info.get("served_model"),
+                              "text": (f"{n} turn{'s' if n != 1 else ''} transcribed by Gemini"
+                                       if source != REPLAY else f"{n} turns from the recording's script") +
+                                      (f"; {unclear} marked unclear and treated as unreliable." if unclear else ".")}}
 
 
 def _b_info() -> SystemInfo:
@@ -652,6 +802,15 @@ def reliability_view(report_path: Path) -> dict[str, Any]:
                       "engine_version": ENGINE_VERSION, "live_available": pc["api_key_configured"]},
         "gold": "none: gold labelling is pending (B-02); nothing here is scored against gold",
         "holdout": "not started", "red_team": "not started",
+        "experimental_audio_path": {
+            "status": "EXPERIMENTAL - not part of any reliability claim",
+            "text": "Audio-only evaluation is functional for demonstration but is not included in final reliability "
+                    "claims because ASR/diarization calibration remains pending.",
+            "how": "Gemini listens to the recording and returns turns and speaker roles; Evaluator B then judges "
+                   "them like a transcript. Audio-only results are never written to a benchmark run, gold or the "
+                   "metrics on this page.",
+            "pending": "B-06 (ASR / diarization choice) and B-11 (audio reliability thresholds), calibrated on DEV "
+                       "audio that has not been recorded yet (B-01 / B-09)."},
     }
     if not report_path.exists():
         return {**base, "status": "NO_DEV_REPORT", "message": "No DEV baseline report is available on this server."}

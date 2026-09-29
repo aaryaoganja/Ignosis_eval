@@ -1,6 +1,7 @@
 /* Ignosis Call Quality Judge: single-page client for AI Quality Reviewers.
    It talks only to this server's /api and never holds a provider key. Every dynamic string is inserted with
-   textContent (no HTML injection). Journey: 1 Choose a call -> 2 Evaluate -> 3 Review result -> explore. */
+   textContent (no HTML injection). Journey: 1 Choose a call -> 2 Choose how it is provided -> 3 Evaluate ->
+   4 Review verdict and evidence -> 5 Explore reliability. Audio-only results are EXPERIMENTAL and always labelled. */
 "use strict";
 
 const state = {
@@ -26,11 +27,7 @@ const EVALUABILITY = {
 const DW_HELP = "Positive outcome (for example a promise to pay), but the agent broke a hard rule, or made a major mistake before the commitment, to get it. The win carries risk.";
 const CL_HELP = "No positive outcome, but the agent behaved to standard and the result was driven by the customer or by policy (for example a dispute correctly escalated). Not an agent failure.";
 const SEVERITY = { CRITICAL: "Critical", MAJOR: "Major", MINOR: "Minor", INFORMATIONAL: "Info" };
-const MODES = {
-  transcript: { label: "Transcript", works: true },
-  audio_transcript: { label: "Audio + Transcript", works: true },
-  audio: { label: "Audio only", works: false },
-};
+const MODE_CHIP = { audio: ["EXPERIMENTAL AUDIO", "exp"], audio_transcript: ["Strongest", "ok"] };
 const SYSTEM_NAMES = { K0: "Keyword baseline", A: "Single-pass model judge", "A+": "Model judge + rule checks", B: "Structured evaluator (used in this app)" };
 const METRICS = [
   ["verdict_accuracy", "Verdict accuracy", "Calls where the verdict matched the intended verdict."],
@@ -91,14 +88,17 @@ function notice(kind, title, lines, actions) {
     (lines || []).length ? h("ul", {}, lines.map(l => h("li", {}, l))) : null,
     actions ? h("div", { class: "row gap-s mt-s" }, actions) : null);
 }
+const STEPS = [["Choose a call", "Call"], ["Choose how it's provided", "Input"], ["Evaluate", "Evaluate"],
+  ["Review verdict & evidence", "Review"], ["Explore reliability", "Explore"]];
 function stepper(current, busy) {
-  const steps = ["Choose a call", "Evaluate", "Review result"];
-  return h("ol", { class: "stepper", id: "stepper", "aria-label": "Evaluation progress" }, steps.map((s, i) => h("li", {
+  return h("ol", { class: "stepper", id: "stepper", "aria-label": "Your progress" }, STEPS.map(([long, short], i) => h("li", {
     class: i < current ? "done" : i === current ? "current" + (busy ? " busy" : "") : "",
     "aria-current": i === current ? "step" : null,
-  }, h("span", { class: "step-num", "aria-hidden": "true" }, i < current ? "✓" : String(i + 1)), h("span", {}, s),
+  }, h("span", { class: "step-num", "aria-hidden": "true" }, i < current ? "✓" : String(i + 1)),
+    h("span", { class: "step-long" }, long), h("span", { class: "step-short", "aria-hidden": "true" }, short),
     i < current ? h("span", { class: "sr-only" }, " (done)") : null)));
 }
+function evaluateStep() { const f = state.form; return f.demoId || f.transcript.trim() || f.transcriptFile || f.audio ? 1 : 0; }
 function setStepper(current, busy) {
   const el = document.getElementById("stepper");
   if (el) el.replaceWith(stepper(current, busy));
@@ -110,11 +110,12 @@ function helpPanel() {
     h("div", { class: "help-head" }, h("h2", { id: "help-title" }, "How it works"),
       h("button", { type: "button", class: "btn btn-quiet", onclick: () => toggleHelp(false) }, "Got it, hide this")),
     h("ol", { class: "help-steps" },
-      h("li", {}, h("strong", {}, "Choose a call. "), "A demo call, a transcript, or a recording with its transcript."),
+      h("li", {}, h("strong", {}, "Choose a call. "), "Start with a fictional demo call, or bring your own."),
+      h("li", {}, h("strong", {}, "Choose how it's provided. "), "Transcript, Audio (experimental) or Audio + Transcript."),
       h("li", {}, h("strong", {}, "Evaluate. "), "The judge checks the agent against the collections rules."),
       h("li", {}, h("strong", {}, "Review. "), "Verdict first; select a finding to see its transcript lines."),
       h("li", {}, h("strong", {}, "Explore. "), "Past calls in the Call library; accuracy under Evaluator reliability.")),
-    h("p", { class: "small muted help-foot" }, "Results are labelled LIVE EVALUATION (judged now by the model) or DEMO / REPLAY (a fictional call with a recorded evaluation)."));
+    h("p", { class: "small muted help-foot" }, "Results are labelled LIVE EVALUATION (judged now by Google Gemini), DEMO / REPLAY (a fictional call with a recorded evaluation) or EXPERIMENTAL AUDIO (Gemini listened to a recording; not independently calibrated)."));
 }
 function toggleHelp(show) {
   const slot = document.getElementById("help-slot");
@@ -131,6 +132,8 @@ function renderEvaluate() {
   const cfg = state.config, live = cfg.live_available, f = state.form;
   const demo = state.demos.find(d => d.id === f.demoId);
   const sample = state.demos.find(d => d.audio);
+  const audioMode = state.mode === "audio";
+  const sampleAudio = !!(f.audio && f.audio.sample);
 
   const demoCards = state.demos.map(d => h("article", { class: "demo-card" },
     h("div", { class: "row gap-s wrap" }, chip(d.illustrates, "tag-" + tagClass(d.illustrates)), d.audio ? chip("Includes a sample recording", "plain") : null),
@@ -139,26 +142,27 @@ function renderEvaluate() {
     h("div", { class: "row gap-s wrap mt-auto" },
       h("button", { type: "button", class: "btn btn-primary btn-sm", "data-demo": d.id,
         onclick: (e) => runDemo(d, e.currentTarget) }, "View evaluation"),
-      h("button", { type: "button", class: "btn btn-link btn-sm", onclick: () => loadDemo(d, true) }, "Open in the form"))));
+      h("button", { type: "button", class: "btn btn-link btn-sm", onclick: () => loadDemo(d, true) }, "Open in step 2"))));
 
-  const modeCards = h("fieldset", { class: "mode-group" }, h("legend", {}, "What do you have?"),
-    h("div", { class: "mode-options" }, (cfg.modes || []).map(m => h("label", { class: "mode-option" + (state.mode === m.id ? " selected" : "") },
+  const modeCards = h("fieldset", { class: "mode-group" }, h("legend", { class: "sr-only" }, "How is the call provided?"),
+    h("div", { class: "mode-options" }, (cfg.modes || []).map(m => h("label", { class: "mode-option" + (state.mode === m.id ? " selected" : "") + (m.experimental ? " experimental" : "") },
       h("input", { type: "radio", name: "mode", value: m.id, checked: state.mode === m.id || null,
-        onchange: () => { state.mode = m.id; renderEvaluate(); document.querySelector('input[name="mode"]:checked').focus(); } }),
-      h("span", { class: "mode-title" }, m.label, m.supported ? chip("Works", "ok") : chip("Not enabled", "ne")),
+        onchange: () => { switchMode(m.id); document.querySelector('input[name="mode"]:checked').focus(); } }),
+      h("span", { class: "mode-title" }, m.label, MODE_CHIP[m.id] ? chip(MODE_CHIP[m.id][0], MODE_CHIP[m.id][1]) : null),
       h("span", { class: "mode-sub" }, m.summary)))));
   const modeInfo = (cfg.modes || []).find(m => m.id === state.mode) || {};
 
   const ta = h("textarea", { id: "transcript", spellcheck: "false", "aria-describedby": "transcript-help",
     placeholder: "AGENT: Namaste, main Priya, Acme Finserv se bol rahi hoon. Kya meri baat Rohan ji se ho rahi hai?\nBORROWER: Haan ji, boliye.\nAGENT: …",
-    oninput: (e) => { f.transcript = e.target.value; if (demo && e.target.value.trim() !== demo.transcript.trim()) { f.demoId = null; renderEvaluate(); focusEnd("transcript"); } } });
+    oninput: (e) => { f.transcript = e.target.value; setStepper(evaluateStep()); if (demo && e.target.value.trim() !== demo.transcript.trim()) { f.demoId = null; renderEvaluate(); focusEnd("transcript"); } } });
   ta.value = f.transcript;
   const tFile = h("input", { type: "file", id: "transcript-file", accept: ".txt,.json", class: "file-input",
     onchange: (e) => { f.transcriptFile = e.target.files[0] || null; f.demoId = null; renderEvaluate(); } });
-  const aFile = h("input", { type: "file", id: "audio-file", accept: ".wav,.mp3,.m4a", class: "file-input",
+  const formats = audioMode ? cfg.limits.audio_only_formats : cfg.limits.audio_formats;
+  const aFile = h("input", { type: "file", id: "audio-file", accept: formats.map(x => "." + x).join(","), class: "file-input",
     onchange: (e) => { const file = e.target.files[0]; if (file) setAudio({ file, name: file.name, url: URL.createObjectURL(file), sample: false }); } });
 
-  const transcriptField = state.mode === "audio" ? null : h("div", { class: "field" },
+  const transcriptField = audioMode ? null : h("div", { class: "field" },
     h("label", { for: "transcript", class: "field-label" }, "Transcript"),
     ta,
     h("div", { class: "row gap-s wrap small mt-s", id: "transcript-help" },
@@ -171,34 +175,42 @@ function renderEvaluate() {
           h("li", {}, "Optional first line: # call_start_ts: 2026-09-28T14:05:00+05:30 (enables the calling-hours check)."),
           h("li", {}, "Mark unclear speech with [inaudible]; those lines are not judged as if clear.")))));
 
+  const audioHelp = audioMode
+    ? formats.join(" or ") + ", up to " + cfg.limits.audio_only_mb + " MB. Sent to Google Gemini for this evaluation only (without its file name) and not stored."
+    : formats.join(", ") + ", up to " + cfg.limits.audio_mb + " MB. Fingerprinted in memory, attached to the result and not stored; it never overrides the transcript.";
   const audioField = state.mode === "transcript" ? null : h("div", { class: "field" },
-    h("span", { class: "field-label", id: "audio-label" }, "Recording"),
+    h("span", { class: "field-label", id: "audio-label" }, "Call recording"),
     h("div", { class: "row gap-s wrap", role: "group", "aria-labelledby": "audio-label" },
       aFile, h("label", { class: "btn btn-secondary btn-sm file-btn", for: "audio-file" }, f.audio ? "Choose a different recording" : "Choose a recording"),
       sample ? h("button", { type: "button", class: "btn btn-secondary btn-sm", onclick: () => useSample(sample) }, "Use the sample recording") : null),
     f.audio ? h("div", { class: "audio-preview" },
-      h("div", { class: "small" }, h("strong", {}, f.audio.name), f.audio.sample ? "  ·  sample recording (synthetic voices, fictional call)" : "",
+      h("div", { class: "small" }, h("strong", {}, f.audio.name), f.audio.sample ? "  ·  sample recording (synthetic voices, fictional call; DEMO)" : "",
         " ", h("button", { type: "button", class: "btn btn-link btn-sm", onclick: () => { f.audio = null; renderEvaluate(); } }, "Remove")),
-      h("audio", { controls: true, preload: "none", src: f.audio.url, "aria-label": "Play the selected recording" }))
-      : h("p", { class: "small muted" }, "wav, mp3 or m4a, up to " + cfg.limits.audio_mb + " MB. The recording is fingerprinted in memory and not stored."));
+      h("audio", { controls: true, preload: "none", src: f.audio.url, "aria-label": "Play the selected recording" })) : null,
+    h("p", { class: "small muted" }, audioHelp));
 
-  const methodField = demo && live ? h("fieldset", { class: "method-group" }, h("legend", {}, "How should this demo call be evaluated?"),
+  const offerMethod = live && (audioMode ? sampleAudio : !!demo);
+  const methodField = offerMethod ? h("fieldset", { class: "method-group" }, h("legend", {}, audioMode ? "How should the sample recording be evaluated?" : "How should this demo call be evaluated?"),
     h("label", { class: "radio-line" }, h("input", { type: "radio", name: "method", checked: !f.live || null, onchange: () => { f.live = false; renderEvaluate(); } }),
       " Recorded demo evaluation (instant, DEMO / REPLAY)"),
     h("label", { class: "radio-line" }, h("input", { type: "radio", name: "method", checked: f.live || null, onchange: () => { f.live = true; renderEvaluate(); } }),
-      " Live evaluation with " + cfg.evaluator.model_id + " (up to a minute)")) : null;
+      audioMode ? " Live: Gemini listens to the recording (" + cfg.evaluator.model_id + ", experimental, up to a minute or two)"
+        : " Live evaluation with " + cfg.evaluator.model_id + " (up to a minute)")) : null;
 
-  const goesLive = live && (!demo || f.live);
-  const expectation = state.mode === "audio" ? "Audio only is not enabled: you will get an explanation and the working alternative, not a verdict."
-    : demo && !goesLive ? "Shows the recorded evaluation of this fictional demo call (DEMO / REPLAY)."
-    : goesLive ? "Evaluated live by " + cfg.evaluator.model_id + ". This usually takes 10 to 60 seconds."
+  const expectation = audioMode
+    ? (!f.audio ? "Choose a recording, or use the sample recording."
+      : sampleAudio && (!live || !f.live) ? "Shows the recorded demo evaluation of the sample recording (DEMO / REPLAY, experimental audio)."
+      : live ? "EXPERIMENTAL AUDIO: Gemini (" + cfg.evaluator.model_id + ") listens to the recording, then the judge checks each rule. Usually 20 to 90 seconds."
+      : "Live evaluation isn't configured on this server, so an uploaded recording can't be listened to: you will get no verdict. The sample recording still shows its recorded demo evaluation.")
+    : demo && !(live && f.live) ? "Shows the recorded evaluation of this fictional demo call (DEMO / REPLAY)."
+    : live ? "Evaluated live by Google Gemini (" + cfg.evaluator.model_id + "). This usually takes 10 to 60 seconds."
     : "Live evaluation isn't configured on this server: your call gets the automatic pre-checks only, with no verdict. Demo calls still show their recorded evaluations.";
 
   page(
-    stepper(0),
+    stepper(evaluateStep()),
     h("header", { class: "page-head" },
       h("h1", {}, "Evaluate a Voice AI call"),
-      h("p", { class: "lead" }, "Choose a collections call and the judge tells you whether the AI agent behaved correctly."),
+      h("p", { class: "lead" }, "Choose a collections call, say how it is provided, and the judge tells you whether the AI agent behaved correctly."),
       h("div", { class: "row gap-s wrap cta-row" },
         h("button", { type: "button", class: "btn btn-primary", onclick: () => jump("demos") }, "Try a demo call"),
         h("button", { type: "button", class: "btn btn-secondary", onclick: () => jump("own-call") }, "Evaluate your own call")),
@@ -208,26 +220,36 @@ function renderEvaluate() {
         h("li", {}, h("strong", {}, "Uncertainty"), " what could not be checked, never counted as a pass"),
         h("li", {}, h("strong", {}, "Next step"), " what the reviewer should do"))),
     h("section", { class: "panel", id: "demos", "aria-labelledby": "demos-title" },
-      h("div", { class: "section-head" }, h("h2", { id: "demos-title" }, h("span", { class: "start-here" }, "Start here"), " Try a demo call"),
+      h("div", { class: "section-head" }, h("h2", { id: "demos-title" }, h("span", { class: "step-tag" }, "Step 1"), " Choose a call"),
         sourceChip("DEMO_REPLAY", "DEMO / REPLAY")),
-      h("p", { class: "muted small" }, "Five fictional calls, each showing a different outcome. One click shows the full recorded evaluation."),
+      h("p", { class: "muted small" }, "Start here: five fictional calls, each showing a different outcome. “View evaluation” opens the recorded result in one click. To use your own call, go to step 2."),
       h("div", { class: "demo-grid" }, demoCards),
       h("div", { id: "demo-status", "aria-live": "polite" })),
     h("section", { class: "panel", id: "own-call", "aria-labelledby": "own-title" },
-      h("h2", { id: "own-title" }, "Or evaluate your own call"),
+      h("h2", { id: "own-title" }, h("span", { class: "step-tag" }, "Step 2"), " Choose how the call is provided"),
       modeCards,
-      h("div", { class: "notice " + (modeInfo.supported ? "info" : "warn") }, modeInfo.note || ""),
-      demo ? h("div", { class: "loaded-demo" }, "Loaded demo call: ", h("strong", {}, demo.title), " ", sourceChip("DEMO_REPLAY", "DEMO"),
+      h("div", { class: "notice " + (modeInfo.experimental ? "exp" : "info") }, modeInfo.experimental ? h("strong", {}, "EXPERIMENTAL AUDIO. ") : null, modeInfo.note || ""),
+      demo && !audioMode ? h("div", { class: "loaded-demo" }, "Loaded demo call: ", h("strong", {}, demo.title), " ", sourceChip("DEMO_REPLAY", "DEMO"),
         " ", h("button", { type: "button", class: "btn btn-link btn-sm", onclick: clearForm }, "Clear")) : null,
       transcriptField, audioField,
       h("div", { class: "field" }, h("label", { for: "call-name", class: "field-label" }, "Call name ", h("span", { class: "muted" }, "(optional)")),
         h("input", { type: "text", id: "call-name", maxlength: "80", value: f.callName, placeholder: "e.g. Evening batch, call 4",
           oninput: (e) => { f.callName = e.target.value; } })),
-      methodField,
+      methodField),
+    h("section", { class: "panel", id: "run-step", "aria-labelledby": "run-title" },
+      h("h2", { id: "run-title" }, h("span", { class: "step-tag" }, "Step 3"), " Evaluate"),
       h("div", { class: "submit-row" },
         h("button", { type: "button", class: "btn btn-primary btn-lg", id: "evaluate-btn", onclick: submitForm }, "Evaluate call"),
         h("p", { class: "small muted", id: "expectation" }, expectation)),
       h("div", { id: "eval-status", "aria-live": "polite" })));
+}
+function switchMode(id) {
+  const f = state.form, sample = state.demos.find(d => d.audio);
+  state.mode = id; f.live = false;
+  if (id === "audio") f.demoId = null;
+  if (id === "audio_transcript" && f.audio && f.audio.sample && sample && !f.transcript.trim())
+    Object.assign(f, { transcript: sample.transcript, demoId: sample.id, transcriptFile: null });
+  renderEvaluate();
 }
 function jump(id) {
   const el = document.getElementById(id);
@@ -250,7 +272,8 @@ async function useSample(d) {
   try {
     const blob = await (await fetch(d.audio.url)).blob();
     state.form.audio = { file: blob, name: d.audio.filename, url: d.audio.url, sample: true };
-    if (state.mode === "audio_transcript") Object.assign(state.form, { transcript: d.transcript, demoId: d.id, transcriptFile: null, live: false });
+    state.form.live = false;
+    if (state.mode === "audio_transcript") Object.assign(state.form, { transcript: d.transcript, demoId: d.id, transcriptFile: null });
     renderEvaluate();
   } catch (e) { document.getElementById("eval-status").replaceChildren(notice("err", "The sample recording could not be loaded.", [])); }
 }
@@ -260,7 +283,7 @@ function startBusy(button, statusEl, text) {
   state.busy = true;
   document.querySelectorAll("button").forEach(b => { if (b.dataset.demo || b.id === "evaluate-btn") b.disabled = true; });
   if (button) { button.dataset.label = button.textContent; button.textContent = "Evaluating…"; }
-  setStepper(1, true);
+  setStepper(2, true);
   const t0 = Date.now();
   const line = h("p", { class: "busy-line" }, h("span", { class: "spinner", "aria-hidden": "true" }), text);
   const secs = h("span", { class: "muted" }, "");
@@ -272,7 +295,7 @@ function stopBusy(button) {
   state.busy = false; clearInterval(timer);
   document.querySelectorAll("button").forEach(b => { if (b.dataset.demo || b.id === "evaluate-btn") b.disabled = false; });
   if (button && button.dataset.label) button.textContent = button.dataset.label;
-  setStepper(0, false);
+  setStepper(evaluateStep(), false);
 }
 async function evaluate(fd, button, statusEl, busyText) {
   if (state.busy) return;
@@ -293,30 +316,33 @@ function runDemo(d, button) {
   evaluate(fd, button, document.getElementById("demo-status"), "Opening the recorded evaluation of “" + d.title + "”…");
 }
 function submitForm() {
-  const f = state.form, fd = new FormData();
+  const f = state.form, fd = new FormData(), cfg = state.config;
+  const audioMode = state.mode === "audio";
+  if (state.mode !== "transcript" && !f.audio) {
+    document.getElementById("eval-status").replaceChildren(notice("err", audioMode ? "Choose a call recording first (or use the sample recording)." : "Audio + Transcript needs the recording as well.", []));
+    return;
+  }
   fd.append("mode", state.mode);
   if (f.callName.trim()) fd.append("call_name", f.callName.trim());
-  if (state.mode !== "audio") {
+  if (!audioMode) {
     if (f.transcriptFile) fd.append("transcript_file", f.transcriptFile);
     else fd.append("transcript", f.transcript);
-    if (f.demoId) { fd.append("demo_id", f.demoId); fd.append("replay", f.live && state.config.live_available ? "false" : "true"); }
+    if (f.demoId) { fd.append("demo_id", f.demoId); fd.append("replay", f.live && cfg.live_available ? "false" : "true"); }
+  } else if (f.audio.sample) {
+    fd.append("replay", f.live && cfg.live_available ? "false" : "true");
   }
-  if (state.mode !== "transcript" && f.audio) fd.append("audio_file", f.audio.file, f.audio.name);
-  const live = state.config.live_available && (!f.demoId || f.live) && state.mode !== "audio";
+  if (state.mode !== "transcript") fd.append("audio_file", f.audio.file, f.audio.name);
+  const replay = audioMode ? f.audio.sample && !(f.live && cfg.live_available) : !!f.demoId && !(f.live && cfg.live_available);
+  const live = cfg.live_available && !replay;
   evaluate(fd, document.getElementById("evaluate-btn"), document.getElementById("eval-status"),
-    live ? "Evaluating live with " + state.config.evaluator.model_id + ": reading the call, then checking each rule…" : "Evaluating…");
+    live && audioMode ? "EXPERIMENTAL AUDIO: Gemini is listening to the recording, then the judge checks each rule…"
+      : live ? "Evaluating live with Google Gemini (" + cfg.evaluator.model_id + "): reading the call, then checking each rule…" : "Evaluating…");
 }
 function errorPanel(err) {
-  if (err.code === "ASR_PENDING") {
-    const sample = state.demos.find(d => d.audio);
-    return notice("warn", "Audio-only evaluation isn't available in this prototype", [err.message, ...(err.pathway || [])], [
-      h("button", { type: "button", class: "btn btn-primary btn-sm", onclick: () => {
-        state.mode = "audio_transcript";
-        if (state.form.audio && state.form.audio.sample && sample) Object.assign(state.form, { transcript: sample.transcript, demoId: sample.id, live: false });
-        renderEvaluate(); document.getElementById("own-call").scrollIntoView({ block: "start" });
-      } }, "Switch to Audio + Transcript")]);
-  }
-  return notice("err", err.message || "Something went wrong. Nothing was evaluated.", err.pathway || []);
+  const tips = { AUDIO_FORMAT: "Audio only takes .wav or .mp3; Audio + Transcript also takes .m4a.",
+    AUDIO_TOO_LARGE: "Trim the recording, or provide its transcript and use Audio + Transcript.",
+    AUDIO_MALFORMED: "Export the recording again as a standard .wav or .mp3 file." }[err.code];
+  return notice("err", err.message || "Something went wrong. Nothing was evaluated.", [...(err.pathway || []), ...(tips ? [tips] : [])]);
 }
 
 /* ------------------------------------------------------------------ Screen 2: Result */
@@ -330,15 +356,19 @@ function renderResult(r) {
 
   const context = fromLibrary
     ? h("nav", { class: "breadcrumb", "aria-label": "Breadcrumb" }, h("a", { href: "#/library" }, "Call library"), h("span", { "aria-hidden": "true" }, " › "), h("span", { "aria-current": "page" }, r.call.name))
-    : stepper(2);
+    : stepper(3);
   const actions = h("div", { class: "row gap-s wrap result-actions" },
     h("a", { class: "btn btn-secondary btn-sm", href: "#/evaluate" }, "← Evaluate another call"),
     fromLibrary ? null : h("a", { class: "btn btn-link btn-sm", href: "#/library" }, "Open the call library"));
 
-  const srcText = { LIVE: r.evaluator.model_called ? "Judged just now by " + r.evaluator.provider + " · " + r.evaluator.model + "." : "Decided just now by the automatic pre-checks; no model call was needed.",
+  const xa = r.experimental_audio;
+  const who = "Provider: " + (r.evaluator.provider_label || r.evaluator.provider) + " · Model: " + r.evaluator.model;
+  const srcText = { LIVE: r.evaluator.model_called ? who + " · judged just now." : "Decided just now by the automatic pre-checks; no model call was needed.",
     DEMO_REPLAY: "A fictional demo call. This is its recorded evaluation, replayed through the real rules engine, not a live model result.",
     UNAVAILABLE: "Live evaluation isn't available on this server, so this call was not judged." }[r.source];
   const banner = h("div", { class: "source-banner src-" + r.source }, h("strong", {}, r.source === "UNAVAILABLE" ? "NO VERDICT" : r.source_label), h("span", {}, srcText));
+  const xBanner = xa ? h("div", { class: "exp-banner", role: "note" }, h("strong", {}, xa.label),
+    h("span", {}, xa.caveat + " Audio reliability: " + xa.audio_reliability + ". " + xa.reliability_scope)) : null;
 
   // 1 VERDICT + 2 WHY
   const verdictLabel = v ? v.label : r.status === "EVALUATION_FAILED" ? "Evaluation failed" : "No verdict";
@@ -347,7 +377,8 @@ function renderResult(r) {
     : "The call was not judged. Nothing here is a pass.";
   const ev = r.uncertainty ? EVALUABILITY[r.uncertainty.evaluability] : null;
   const hero = h("section", { class: "panel verdict v-" + (v ? v.cls : "none"), "aria-labelledby": "verdict-title" },
-    h("p", { class: "small muted" }, r.call.name + " · " + r.call.mode_label + " · " + r.call.n_turns + " turns"),
+    h("p", { class: "small muted" }, [r.call.name, r.call.mode_label + (xa ? " (experimental)" : ""), r.call.n_turns ? r.call.n_turns + " turns" : null,
+      r.call.audio_duration_s ? r.call.audio_duration_s + " s of audio" : null].filter(Boolean).join(" · ")),
     r.call.scenario ? h("p", { class: "small scenario" }, "Scenario (fictional): " + r.call.scenario) : null,
     h("h1", { id: "verdict-title", class: "verdict-label" }, verdictLabel,
       r.verdict && r.verdict.critical_status ? h("span", { class: "verdict-sub" }, r.verdict.critical_status === "CONFIRMED" ? " · confirmed" : " · suspected") : null),
@@ -363,7 +394,8 @@ function renderResult(r) {
       ev ? h("li", { class: "fact f-" + ev.cls }, h("span", { class: "fact-k" }, "Evaluability"), h("span", { class: "fact-v" }, ev.label)) : null,
       r.tags ? h("li", { class: "fact " + (r.tags.dangerous_win !== "NONE" ? "f-crit" : "") }, h("span", { class: "fact-k" }, "Dangerous Win"), h("span", { class: "fact-v" }, r.tags.dangerous_win === "NONE" ? "No" : "Yes (" + r.tags.dangerous_win.toLowerCase() + ")")) : null,
       r.tags ? h("li", { class: "fact " + (r.tags.clean_loss ? "f-ok" : "") }, h("span", { class: "fact-k" }, "Clean Loss"), h("span", { class: "fact-v" }, r.tags.clean_loss ? "Yes" : "No")) : null,
-      r.status === "OK" ? h("li", { class: "fact" }, h("span", { class: "fact-k" }, "Findings"), h("span", { class: "fact-v" }, String(findings.length))) : null),
+      r.status === "OK" ? h("li", { class: "fact" }, h("span", { class: "fact-k" }, "Findings"), h("span", { class: "fact-v" }, String(findings.length))) : null,
+      xa ? h("li", { class: "fact f-warn" }, h("span", { class: "fact-k" }, "Audio reliability"), h("span", { class: "fact-v" }, xa.audio_reliability)) : null),
     r.status !== "OK" ? h("div", { class: "row gap-s wrap mt-s" },
       h("a", { class: "btn btn-primary btn-sm", href: "#/evaluate" }, "Try a demo call")) : null);
 
@@ -374,24 +406,42 @@ function renderResult(r) {
       : h("p", {}, "No hard rule was broken and no defect was found in what could be checked."),
     h("div", { class: "finding-list", role: "list" }, findings.map((f, i) => findingCard(f, i, i === sel))))
     : h("section", { class: "panel", "aria-labelledby": "ran-title" }, h("h2", { id: "ran-title" }, "What did run"),
-      h("p", { class: "small" }, r.status === "EVALUATION_FAILED" ? "The model evaluation started but did not complete, so no findings are reported." : "Only the automatic pre-checks ran; no rule was judged."),
+      h("p", { class: "small" }, r.status === "EVALUATION_FAILED" ? "The model evaluation started but did not complete, so no findings are reported."
+        : xa && !r.frontend ? "Nothing ran: the recording was not listened to, so there is no transcript and no rule was judged." : "Only the automatic pre-checks ran; no rule was judged."),
       r.frontend ? h("p", { class: "small muted" }, "Pre-checks: the call looks " + (r.frontend.evaluability === "EVALUABLE" ? "evaluable" : r.frontend.evaluability.toLowerCase().replace("_", " ")) + (r.frontend.reason_text ? " (" + r.frontend.reason_text + ")" : "") + ".") : null);
 
   // 4 EVIDENCE
   const cited = new Set((r.transcript || []).filter(t => t.cited).map(t => t.turn));
   const commitTurns = new Set((r.unverified_commitments || []).map(e => e.turn));
-  const evidence = h("section", { class: "panel", "aria-labelledby": "evidence-title" },
-    h("h2", { id: "evidence-title" }, "Evidence: the transcript"),
-    findings.length ? h("p", { class: "legend small" }, h("span", { class: "sw sw-strong" }), " selected finding  ", h("span", { class: "sw sw-soft" }), " other cited lines  ",
-      commitTurns.size ? [h("span", { class: "sw sw-commit" }), " agent promise (unverified)"] : null) : null,
+  const anyUnreliable = (r.transcript || []).some(t => t.unreliable);
+  const evidence = (r.transcript || []).length ? h("section", { class: "panel", "aria-labelledby": "evidence-title" },
+    h("h2", { id: "evidence-title" }, xa ? "Evidence: the transcript Gemini heard (experimental)" : "Evidence: the transcript"),
+    xa ? h("p", { class: "small muted" }, xa.source === "DEMO_REPLAY" ? "Replay: these turns come from the sample recording's own script." : "Transcribed and speaker-labelled by Gemini from the recording. Not independently checked: listen to the recording before acting on a finding.") : null,
+    findings.length || anyUnreliable ? h("p", { class: "legend small" }, findings.length ? [h("span", { class: "sw sw-strong" }), " selected finding  ", h("span", { class: "sw sw-soft" }), " other cited lines  "] : null,
+      commitTurns.size ? [h("span", { class: "sw sw-commit" }), " agent promise (unverified)  "] : null,
+      anyUnreliable ? [h("span", { class: "sw sw-unrel" }), " unreliable: unknown speaker or unclear speech"] : null) : null,
     h("div", { class: "transcript" }, (r.transcript || []).map(t => h("div", {
       id: "turn-" + t.turn,
       class: "turn" + (selTurns.has(t.turn) ? " hl-strong" : cited.has(t.turn) ? " hl-soft" : "") + (commitTurns.has(t.turn) ? " hl-commit" : "") + (t.unreliable ? " unreliable" : "") },
-      h("span", { class: "n" }, t.turn), h("span", { class: "r" }, t.role === "BORROWER" ? "Borrower" : t.role === "AGENT" ? "Agent" : t.role), h("span", { class: "t" }, t.text)))),
+      h("span", { class: "n" }, t.turn), h("span", { class: "r" }, t.role === "BORROWER" ? "Borrower" : t.role === "AGENT" ? "Agent" : t.role === "UNKNOWN" ? "Speaker unknown" : t.role === "OTHER" ? "Other" : t.role),
+      h("span", { class: "t" }, t.text, t.unreliable ? h("span", { class: "sr-only" }, " (unreliable)") : null)))),
     (r.unverified_commitments || []).length ? h("div", { class: "mt" },
       h("h3", {}, "Agent promises to verify"),
       h("p", { class: "small muted" }, "Things the agent said it would do. Whether they were done needs systems outside the call, so they are listed for follow-up, not judged."),
-      r.unverified_commitments.map(quote)) : null);
+      r.unverified_commitments.map(quote)) : null) : null;
+
+  // Audio reliability (experimental audio only)
+  const audioRel = xa ? h("section", { class: "panel audio-rel", "aria-labelledby": "arel-title" },
+    h("div", { class: "section-head" }, h("h2", { id: "arel-title" }, "Audio reliability"), chip(xa.audio_reliability, "exp")),
+    h("p", { class: "small" }, xa.caveat),
+    h("dl", { class: "kv" },
+      h("dt", {}, "How the recording was read"), h("dd", {}, xa.interpreter),
+      h("dt", {}, "Speaker attribution"), h("dd", {}, xa.speaker_attribution ? [h("strong", {}, { CLEAR: "Agent and borrower separated", PARTIAL: "Partly separated", UNCERTAIN: "Could not be separated", NO_SPEECH: "No conversation heard" }[xa.speaker_attribution.status] || xa.speaker_attribution.status), ". ", xa.speaker_attribution.text,
+        xa.speaker_attribution.note ? h("span", { class: "muted" }, " Gemini's own note: “" + xa.speaker_attribution.note + "”") : null] : "Not run."),
+      h("dt", {}, "Transcription"), h("dd", {}, xa.transcription ? xa.transcription.text + (xa.transcription.language ? " Language: " + xa.transcription.language + "." : "") : "Not run."),
+      h("dt", {}, "Timing"), h("dd", {}, xa.timing),
+      h("dt", {}, "Reliability claims"), h("dd", {}, xa.reliability_scope)),
+    h("p", { class: "small muted" }, "No confidence score is shown for the transcription itself: none has been measured.")) : null;
 
   // 5 CONFIDENCE / UNCERTAINTY
   const u = r.uncertainty;
@@ -442,11 +492,12 @@ function renderResult(r) {
     h("div", { class: "row gap-s wrap" },
       h("a", { class: "btn btn-primary btn-sm", href: "#/evaluate" }, "Evaluate another call"),
       h("a", { class: "btn btn-secondary btn-sm", href: "#/library" }, "Open the call library"),
+      h("a", { class: "btn btn-secondary btn-sm", href: "#/reliability" }, "Explore evaluator reliability"),
       r.record ? h("button", { type: "button", class: "btn btn-link btn-sm", onclick: () => downloadRecord(r) }, "Download the evaluation record (JSON)") : null));
 
-  page(h("div", { class: "result-top" }, context, actions), banner, hero,
+  page(h("div", { class: "result-top" }, context, actions), banner, xBanner, hero,
     h("div", { class: "grid" },
-      h("div", { class: "col-main" }, findingsSec, evidence, uncertainty, outcome, attribution, action),
+      h("div", { class: "col-main" }, findingsSec, evidence, uncertainty, audioRel, outcome, attribution, action),
       h("aside", { class: "col-side", "aria-label": "About this result" }, readingGuide(), evaluatorPanel(r), profilePanel())));
 }
 function collapsible(collapse, label, content) {
@@ -480,7 +531,8 @@ function flashTurn(n, scroll) {
   el.classList.add("flash"); setTimeout(() => el.classList.remove("flash"), 1400);
 }
 function downloadRecord(r) {
-  const blob = new Blob([JSON.stringify(r.record, null, 2)], { type: "application/json" });
+  const body = r.experimental_audio ? { experimental_audio: { label: r.experimental_audio.label, caveat: r.experimental_audio.caveat, audio_reliability: r.experimental_audio.audio_reliability, interpreter: r.experimental_audio.interpreter }, record: r.record } : r.record;
+  const blob = new Blob([JSON.stringify(body, null, 2)], { type: "application/json" });
   const a = h("a", { href: URL.createObjectURL(blob), download: r.evaluation_id + ".json" });
   document.body.append(a); a.click(); a.remove();
 }
@@ -494,7 +546,8 @@ function evaluatorPanel(r) {
     h("dl", { class: "kv" },
       h("dt", {}, "Source"), h("dd", {}, sourceChip(r.source, r.source_label)),
       h("dt", {}, "Evaluator"), h("dd", {}, e.system + " " + e.system_version),
-      h("dt", {}, "Provider"), h("dd", {}, e.provider),
+      h("dt", {}, "Provider"), h("dd", {}, e.provider_label || e.provider),
+      r.experimental_audio ? [h("dt", {}, "Input"), h("dd", {}, "Audio: EXPERIMENTAL (" + (e.audio_prompt_version || "") + ")")] : null,
       h("dt", {}, "Model"), h("dd", { class: "mono" }, e.model),
       (e.served_model_versions || []).length ? [h("dt", {}, "Served version"), h("dd", { class: "mono" }, e.served_model_versions.join(", "))] : null,
       h("dt", {}, "Prompt"), h("dd", { class: "mono" }, e.prompt_version),
@@ -540,7 +593,7 @@ async function renderLibrary(cached) {
     h("tbody", {}, shown.map(r => h("tr", { class: "row-link", tabindex: "0", "aria-label": "Open the result for " + r.name,
       onclick: () => open(r), onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(r); } } },
       h("td", { "data-label": "Call" }, h("strong", {}, r.name), h("div", { class: "small muted" }, new Date(r.created_at).toLocaleTimeString())),
-      h("td", { "data-label": "Input" }, r.modality),
+      h("td", { "data-label": "Input" }, r.modality, r.experimental_audio ? [" ", chip("EXPERIMENTAL", "exp")] : null),
       h("td", { "data-label": "Verdict" }, verdictPill(r)),
       h("td", { "data-label": "Key finding" }, r.primary_finding || "-"),
       h("td", { "data-label": "Source" }, sourceChip(r.source, r.source === "UNAVAILABLE" ? "NO VERDICT" : r.source_label)),
@@ -605,6 +658,12 @@ async function renderReliability() {
         h("li", {}, "A holdout run on unseen calls: " + r.holdout),
         h("li", {}, "A red-team run on adversarial calls: " + r.red_team)),
       h("p", { class: "small strong" }, "Until these are complete, no number on this page is evidence that the evaluator works.")));
+  const xp = r.experimental_audio_path;
+  const audioPath = xp ? h("section", { class: "panel exp-card", "aria-labelledby": "xa-title" },
+    h("div", { class: "section-head" }, h("h2", { id: "xa-title" }, "Experimental audio path"), chip("EXPERIMENTAL · NOT IN RELIABILITY CLAIMS", "exp")),
+    h("p", { class: "strong" }, xp.text),
+    h("p", { class: "small" }, xp.how),
+    h("p", { class: "small muted" }, "Pending before audio can be measured: " + xp.pending)) : null;
   const table = h("section", { class: "panel", "aria-labelledby": "cmp-title" },
     h("h2", { id: "cmp-title" }, "Evaluators compared on the development calls"),
     h("p", { class: "small muted" }, "The app uses B. The others are comparison points. UNMEASURED means the run gives the number no support; it is never filled in."),
@@ -632,7 +691,7 @@ async function renderReliability() {
       h("dt", {}, "Pre-checks"), h("dd", {}, "evaluability agreement " + pct(r.frontend.evaluability_agreement) + " · calling-hours agreement " + pct(r.frontend.g7_agreement)),
       h("dt", {}, "Gold"), h("dd", {}, r.gold),
       notRun.length ? [h("dt", {}, "Not executed"), h("dd", {}, notRun.join(", ") + ": " + (r.systems[notRun[0]].reason || ""))] : null));
-  page(head, summary, table, unmeasured, tech);
+  page(head, h("h2", { class: "rel-section" }, "Evaluator reliability: current development evidence"), summary, audioPath, table, unmeasured, tech);
 }
 
 /* ------------------------------------------------------------------ routing */
@@ -659,7 +718,7 @@ async function boot() {
     const [cfg, demos] = await Promise.all([api("/api/config"), api("/api/demo-calls")]);
     state.config = cfg; state.demos = demos;
     const ls = document.getElementById("live-status");
-    ls.textContent = cfg.live_available ? "Live evaluation on · " + cfg.evaluator.model_id : "Demo mode · live evaluation off";
+    ls.textContent = cfg.live_available ? "Live evaluation on · Google Gemini · " + cfg.evaluator.model_id : "Demo mode · live evaluation off";
     ls.title = cfg.live_available ? "Calls you submit are judged live by the model." : "Demo calls show recorded evaluations; your own calls get the automatic pre-checks only.";
     ls.classList.toggle("on", !!cfg.live_available);
     document.getElementById("footer-version").textContent = "v" + cfg.product.version + " · evaluator " + cfg.evaluator.system + " " + cfg.evaluator.system_version;

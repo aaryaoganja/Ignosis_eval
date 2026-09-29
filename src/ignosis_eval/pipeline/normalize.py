@@ -20,7 +20,7 @@ from ignosis_eval.contracts.benchmark import ItemMeta, UnitFacts
 from ignosis_eval.contracts.canonical_input import ASRRef, AudioRef, NormalizedInput, TranscriptHeader, Turn
 from ignosis_eval.contracts.enums import UNIT_MODE_INPUT, Role, TranscriptProvenance, UnitMode
 from ignosis_eval.contracts.unit_alias import new_unit_alias
-from ignosis_eval.pipeline.asr import ASRAdapter, ASRUnavailableError
+from ignosis_eval.pipeline.asr import ASRAdapter, ASRResult, ASRTurn, ASRUnavailableError
 from ignosis_eval.pipeline.intake import ParsedTranscript, parse_transcript
 from ignosis_eval.pipeline.prechecks import run_frontend
 from ignosis_eval.spec.loader import Spec
@@ -101,6 +101,36 @@ def supplied_turns(parsed: ParsedTranscript) -> list[Turn]:
                  unreliable=pt.unreliable or pt.role is Role.UNKNOWN) for i, pt in enumerate(parsed.turns, start=1)]
 
 
+def asr_turns(res_turns: tuple[ASRTurn, ...]) -> list[Turn]:
+    """Turns of an ASR result (T-asr and A units). The turn-level diarization threshold is PENDING (B-11): only
+    UNKNOWN-role turns and turns the adapter itself flags are marked span-unreliable (DC-01, AJ-05)."""
+    return [Turn(turn=i, role=at.role, text=at.text, asr_text=at.text, start_s=at.start_s, end_s=at.end_s,
+                 diarization_confidence=at.diarization_confidence,
+                 unreliable=at.unreliable or at.role is Role.UNKNOWN) for i, at in enumerate(res_turns, start=1)]
+
+
+def normalize_audio_result(res: ASRResult, spec: Spec, *, audio: AudioRef,
+                           unit_alias: str | None = None) -> NormalizedInput:
+    """An AUDIO unit that is not a benchmark item (the review app's EXPERIMENTAL audio path): the turns come from an
+    ASR adapter's result, there is no transcript header (R-08), and the front end is the same as for the A units of
+    `build_normalized_input` (DC-00 role gate on the call-level mapping confidence, UNKNOWN turns span-unreliable).
+
+    The adapter's transcription is also the only text handed to the evaluator, so it is recorded as both the ASR text
+    and the supplied text: an extracted quote verifies against the same words whichever source tag the model gives
+    it (the model sees one text per turn and cannot tell them apart). The verifier itself is unchanged."""
+    turns = [t.model_copy(update={"supplied_text": t.text}) for t in asr_turns(res.turns)]
+    has_ts = bool(turns) and all(t.start_s is not None and t.end_s is not None for t in turns)
+    input_mode = UNIT_MODE_INPUT[UnitMode.A]
+    header = TranscriptHeader()
+    frontend = run_frontend(turns, header, input_mode, spec, role_mapping_confidence=res.mapping_confidence,
+                            diarized=True)
+    return NormalizedInput(unit_alias=unit_alias or new_unit_alias(), input_mode=input_mode, unit_mode=UnitMode.A,
+                           header=header, has_timestamps=has_ts, role_mapping_confidence=res.mapping_confidence,
+                           turns=turns, audio=audio, frontend=frontend,
+                           asr=ASRRef(engine=res.engine, model=res.model, version=res.version,
+                                      params_sha256=res.params_sha256))
+
+
 def audio_ref_from_bytes(data: bytes, fmt: str) -> AudioRef:
     fmt = fmt.lower().lstrip(".")
     if fmt not in ("wav", "mp3", "m4a"):
@@ -149,12 +179,8 @@ def build_normalized_input(meta: ItemMeta, item_dir: Path, mode: UnitMode, spec:
         res = _transcribe_as_alias(asr, audio_path, audio_ref.sha256, alias)
         asr_ref = ASRRef(engine=res.engine, model=res.model, version=res.version, params_sha256=res.params_sha256)
         mapping_confidence = res.mapping_confidence
-        for i, at in enumerate(res.turns, start=1):
-            # turn-level diarization threshold is PENDING (B-11): only UNKNOWN turns are marked unreliable here
-            turns.append(Turn(turn=i, role=at.role, text=at.text, asr_text=at.text, start_s=at.start_s,
-                              end_s=at.end_s, diarization_confidence=at.diarization_confidence,
-                              unreliable=at.role is Role.UNKNOWN))
-        has_ts = bool(turns)
+        turns = asr_turns(res.turns)
+        has_ts = bool(turns) and all(t.start_s is not None and t.end_s is not None for t in turns)
         if mode is UnitMode.T_ASR:
             # P-5: our ASR supplied *as a transcript* with provenance offline_asr; header facts from the item.
             header = TranscriptHeader(call_start_ts=header.call_start_ts, truncated_start=header.truncated_start,

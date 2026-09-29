@@ -41,6 +41,15 @@ SCHEMA_RETRIES = 1  # P-3
 STRUCTURED_OUTPUT = "JSON mode (responseMimeType application/json) + contract validation, 1 schema retry"
 INPUT_MODALITY = "TRANSCRIPT"  # text only; audio reaches the evaluator as a transcript (ASR is B-06)
 
+# EXPERIMENTAL audio understanding (owner-authorized prototype, 2026-09-29; review app only, spec-reconciliation §3.50).
+# Gemini listens to an audio-only upload and returns turns + speaker roles as JSON-schema-constrained output; the
+# existing front end and Evaluator B then judge those turns. It is NOT the B-06 ASR/diarization decision, is not
+# calibrated against the B-11 thresholds, and never feeds a benchmark run, gold or a reliability metric.
+AUDIO_UNDERSTANDING = "EXPERIMENTAL (review app only): Gemini native audio input, inline; not calibrated (B-06/B-11)"
+AUDIO_MIME_TYPES = {"wav": "audio/wav", "mp3": "audio/mp3"}  # app formats that Gemini documents for audio input
+AUDIO_MAX_INLINE_BYTES = 14 * 1024 * 1024  # base64 keeps the whole request under Gemini's 20 MB inline limit
+AUDIO_TIMEOUT_S = 180.0
+
 _MODEL_ID = re.compile(r"^gemini-[0-9][0-9a-z.\-]*$")
 _ALIAS_TOKENS = {"latest", "preview", "exp", "experimental"}
 
@@ -104,8 +113,11 @@ def describe(env: Mapping[str, str] | None = None) -> dict[str, Any]:
         "temperature": s.temperature, "seed": s.seed, "max_output_tokens": s.max_output_tokens,
         "timeout_s": s.timeout_s, "structured_output": STRUCTURED_OUTPUT, "schema_retries": s.schema_retries,
         "transport_retry": s.transport.model_dump(mode="json"), "input_modality": s.input_modality,
+        "audio_understanding": AUDIO_UNDERSTANDING, "audio_formats": sorted(AUDIO_MIME_TYPES),
+        "audio_max_mb": AUDIO_MAX_INLINE_BYTES // 2**20,
     }
 
 
-__all__ = ["API_KEY_ENV", "BASE_URL_ENV", "DEFAULT_MODEL", "FAMILY", "MODEL_ENV", "PROVIDER", "ProviderSettings",
+__all__ = ["API_KEY_ENV", "AUDIO_MAX_INLINE_BYTES", "AUDIO_MIME_TYPES", "AUDIO_TIMEOUT_S", "AUDIO_UNDERSTANDING",
+           "BASE_URL_ENV", "DEFAULT_MODEL", "FAMILY", "MODEL_ENV", "PROVIDER", "ProviderSettings",
            "api_key", "api_key_configured", "describe", "model_id_problem", "settings"]

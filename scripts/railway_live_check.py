@@ -3,14 +3,14 @@
     python scripts/railway_live_check.py https://<your-service>.up.railway.app
 
 The Gemini key stays on the server: this script calls only the app's public API and never sees or sends a key.
-It sends one fictional demo call for a LIVE evaluation. The server calls Gemini for B's extraction and
-judgments, then runs the rule engine and builds the evaluation record. The script checks that:
-  - the request succeeded and the response parsed;
-  - a validated record was created;
-  - the provider and the model are recorded;
-  - a failure is never a verdict;
-  - live and DEMO / REPLAY results are labelled apart.
-It measures plumbing on a synthetic call; its verdict is not a result.
+It exercises the three input modes and the demo replay with fictional content only:
+  1. Transcript, LIVE: a demo call's transcript -> Gemini (B's extraction and judgments) -> rule engine -> record;
+  2. Audio only, LIVE, EXPERIMENTAL: the app's synthetic sample recording -> Gemini audio understanding -> turns ->
+     B -> record; the result must carry the EXPERIMENTAL AUDIO EVALUATION label;
+  3. Audio + Transcript, LIVE: the sample recording with its own transcript (the transcript is judged);
+  4. DEMO / REPLAY: the recorded demo evaluation, labelled apart from live results.
+It checks that each request succeeded, a validated record was created, the provider and model are recorded, and a
+failure is never a verdict. It measures plumbing on fictional calls; no verdict here is a reliability result.
 """
 
 from __future__ import annotations
@@ -31,10 +31,14 @@ def _get(base: str, path: str) -> Any:
     return json.loads(body) if path.startswith("/api/") else body
 
 
-def _post_form(base: str, fields: dict[str, str]) -> tuple[int, Any]:
+def _post_form(base: str, fields: dict[str, str], audio: tuple[str, bytes] | None = None) -> tuple[int, Any]:
     boundary = uuid.uuid4().hex
     parts = [f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n' for k, v in fields.items()]
-    data = ("".join(parts) + f"--{boundary}--\r\n").encode("utf-8")
+    data = "".join(parts).encode("utf-8")
+    if audio:
+        data += (f'--{boundary}\r\nContent-Disposition: form-data; name="audio_file"; filename="{audio[0]}"\r\n'
+                 "Content-Type: audio/wav\r\n\r\n").encode("utf-8") + audio[1] + b"\r\n"
+    data += f"--{boundary}--\r\n".encode("utf-8")
     req = urllib.request.Request(base + "/api/evaluate", data=data, method="POST",
                                  headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
     try:
@@ -87,6 +91,33 @@ def main(argv: list[str]) -> int:
               f"{live['evaluator'].get('served_model_versions')}")
         check("a failure is never a verdict",
               live["status"] != "EVALUATION_FAILED" or (live["verdict"] or {}).get("code") is None, live["status"])
+    # 2 + 3: the synthetic sample recording (fictional call, espeak-ng voices), audio only and audio + transcript
+    sample = next(d for d in _get(base, "/api/demo-calls") if d.get("audio"))
+    with urllib.request.urlopen(base + sample["audio"]["url"], timeout=60) as r:
+        wav = r.read()
+    status, aud = _post_form(base, {"mode": "audio", "replay": "false", "call_name": "live check: audio only"},
+                             ("recording.wav", wav))
+    check("audio only: POST succeeded", status == 200, f"HTTP {status} {json.dumps(aud)[:200] if status != 200 else ''}")
+    if status == 200:
+        xa = aud.get("experimental_audio") or {}
+        check("audio only: labelled LIVE + EXPERIMENTAL AUDIO EVALUATION",
+              aud["source"] == "LIVE" and xa.get("label") == "EXPERIMENTAL AUDIO EVALUATION",
+              f"{aud['source_label']} / {xa.get('label')} / audio reliability: {xa.get('audio_reliability')}")
+        check("audio only: Gemini listened, B judged, record created",
+              aud["status"] == "OK" and (aud.get("record") or {}).get("unit_mode") == "A",
+              (aud.get("key_finding") or {}).get("explanation", "")[:300] if aud["status"] != "OK" else
+              f"verdict={aud['verdict']['code']} turns={aud['call']['n_turns']} speakers="
+              f"{(xa.get('speaker_attribution') or {}).get('status')} calls={aud['usage'].get('llm_calls')} "
+              f"latency={aud['usage'].get('latency_s')}s")
+        check("audio only: a failure is never a verdict",
+              aud["status"] != "EVALUATION_FAILED" or (aud["verdict"] or {}).get("code") is None, aud["status"])
+    status, at = _post_form(base, {"mode": "audio_transcript", "transcript": sample["transcript"],
+                                   "demo_id": sample["id"], "replay": "false", "call_name": "live check: A+T"},
+                            ("recording.wav", wav))
+    check("audio + transcript: LIVE, record created",
+          status == 200 and at["source"] == "LIVE" and at["status"] == "OK" and at["call"]["unit_mode"] == "A+T",
+          f"HTTP {status} " + (f"verdict={(at.get('verdict') or {}).get('code')} source={at.get('source')}"
+                               if status == 200 else ""))
     status, replay = _post_form(base, {"mode": "transcript", "transcript": demo["transcript"], "demo_id": DEMO_ID,
                                        "replay": "true"})
     check("DEMO / REPLAY still works and is labelled apart", status == 200 and replay["source"] == "DEMO_REPLAY",
@@ -95,7 +126,8 @@ def main(argv: list[str]) -> int:
 
     for name, ok, detail in checks:
         print(f"{'PASS' if ok else 'FAIL'}  {name}" + (f"  ({detail})" if detail else ""))
-    print("Plumbing check on a fictional demo call; the verdict is not a result.")
+    print("Plumbing check on fictional calls; no verdict here is a reliability result. Audio-only results are "
+          "EXPERIMENTAL and not independently calibrated.")
     return 0 if all(ok for _, ok, _ in checks) else 1
 
 

@@ -5,6 +5,7 @@ server side, with the key from the runtime environment. No endpoint returns, log
     GET  /api/config             product text, evaluator configuration (key presence only), modes, profile panel
     GET  /api/demo-calls         synthetic demo calls (DEMO / REPLAY)
     POST /api/evaluate           multipart: mode, transcript | transcript_file, audio_file, demo_id, replay, call_name
+                                 (mode=audio is the EXPERIMENTAL Gemini audio path: .wav / .mp3, up to 14 MB)
     GET  /api/calls              call library (in memory; resets on restart)
     GET  /api/calls/{id}         one result
     GET  /api/reliability        DEV engineering measurement (committed report), FINAL VALIDATION: PENDING
@@ -47,7 +48,8 @@ async def _read_limited(f: UploadFile | None, limit: int, code: str) -> tuple[by
     finally:
         await f.close()  # the spooled temp file is released now; nothing uploaded is kept on disk
     if len(data) > limit:
-        raise AppError(413, code, f"The file is larger than the {limit // 1024} KB limit.")
+        size = f"{limit // 2**20} MB" if limit >= 2**20 else f"{limit // 1024} KB"
+        raise AppError(413, code, f"The file is larger than the {size} limit.")
     return (data or None), f.filename
 
 

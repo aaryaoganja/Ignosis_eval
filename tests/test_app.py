@@ -4,9 +4,12 @@ obviously fake test string, and every transcript is a synthetic stub or an app d
 
 from __future__ import annotations
 
+import base64
+import io
 import json
 import logging
 import threading
+import wave
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any
@@ -28,12 +31,14 @@ DEMOS = {d["id"]: d for d in load_demo_calls()}
 class _Gemini(BaseHTTPRequestHandler):
     mode: str = "auto"  # auto | http500 | http403 | not_json | blocked
     seen: list[dict] = []
+    audio_reply: Any = None  # audio requests: a dict (JSON interpretation) or raw text; None = the sample's script
 
     def do_POST(self):  # noqa: N802
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])).decode("utf-8"))
         cls = type(self)
         cls.seen.append({"path": self.path, "key": self.headers.get("x-goog-api-key"), "body": body})
-        prompt = "".join(p["text"] for c in body["contents"] for p in c["parts"])
+        parts = [p for c in body["contents"] for p in c["parts"]]
+        prompt = "".join(p.get("text", "") for p in parts)
         code, payload = 200, None
         if cls.mode == "http500":
             code, payload = 500, {"error": {"code": 500, "message": "stub internal"}}
@@ -43,6 +48,9 @@ class _Gemini(BaseHTTPRequestHandler):
             payload = {"promptFeedback": {"blockReason": "SAFETY"}}
         elif cls.mode == "not_json":
             payload = _cand("this is not json")
+        elif any("inlineData" in p for p in parts):  # the fake cannot hear: it answers with a scripted interpretation
+            reply = cls.audio_reply if cls.audio_reply is not None else _interp()
+            payload = _cand(reply if isinstance(reply, str) else json.dumps(reply))
         elif '"title":"ExtractionOutput"' in prompt:
             payload = _cand(json.dumps({"events": [], "turn_languages": {}, "call_frame": {"stage_hint": "pre_due"}}))
         else:
@@ -56,6 +64,26 @@ class _Gemini(BaseHTTPRequestHandler):
 
     def log_message(self, *args):  # noqa: D102
         pass
+
+
+def _interp(separation: str = "CLEAR", unknown: tuple[int, ...] = (), unclear: tuple[int, ...] = ()) -> dict:
+    """A structured interpretation shaped like Gemini's audio answer: the sample call's own fictional script."""
+    lines = DEMOS["demo-settlement"]["transcript"].strip().splitlines()
+    turns = [{"speaker_role": "UNKNOWN" if i in unknown else ln.split(":", 1)[0].strip(),
+              "text": ln.split(":", 1)[1].strip(), "unclear": i in unclear} for i, ln in enumerate(lines, start=1)]
+    return {"speech_detected": True, "language": "English", "role_separation": separation,
+            "role_separation_note": "stub note", "turns": turns}
+
+
+def _wav(seconds: float = 0.5) -> bytes:
+    """A tiny synthetic silent PCM WAV (8 kHz mono)."""
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(8000)
+        w.writeframes(b"\x00\x00" * int(8000 * seconds))
+    return buf.getvalue()
 
 
 def _cand(text: str) -> dict:
@@ -76,7 +104,7 @@ def client(no_key):
 
 @pytest.fixture
 def live(monkeypatch):
-    _Gemini.mode, _Gemini.seen = "auto", []
+    _Gemini.mode, _Gemini.seen, _Gemini.audio_reply = "auto", [], None
     srv = HTTPServer(("127.0.0.1", 0), _Gemini)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     monkeypatch.setenv(PC.API_KEY_ENV, FAKE_KEY)
@@ -99,8 +127,11 @@ def test_health_config_and_static(client):
     cfg = client.get("/api/config").json()
     assert cfg["live_available"] is False and cfg["evaluator"]["api_key_configured"] is False
     assert cfg["evaluator"]["provider"] == "gemini" and cfg["evaluator"]["model_id"] == "gemini-3.8-flash"
-    assert [m["label"] for m in cfg["modes"]] == ["Transcript", "Audio + Transcript", "Audio only"]
-    assert [m["supported"] for m in cfg["modes"]] == [True, True, False]
+    assert [m["label"] for m in cfg["modes"]] == ["Transcript", "Audio", "Audio + Transcript"]
+    assert [m["supported"] for m in cfg["modes"]] == [True, True, True]
+    assert [m["experimental"] for m in cfg["modes"]] == [False, True, False]
+    assert cfg["modes"][1]["badge"] == "EXPERIMENTAL AUDIO" and "not independently calibrated" in cfg["modes"][1]["note"]
+    assert cfg["limits"]["audio_only_formats"] == ["mp3", "wav"] and cfg["limits"]["audio_only_mb"] == 14
     assert cfg["product"]["tagline"].startswith("Ignosis already listens to every call.")
     assert cfg["profile"]["read_only"] is True and cfg["profile"]["profile_version"] == "1.1.1"
     page = client.get("/")
@@ -158,21 +189,45 @@ def test_front_end_short_circuit_is_live_without_a_model_call(client):
 
 
 # ------------------------------------------------------------------------------------------ modes and uploads
-def test_audio_mode_gives_a_pathway_not_a_result(client):
-    r = _eval(client, mode="audio", files={"audio_file": ("call.wav", b"RIFF-stub", "audio/wav")})
-    assert r.status_code == 422
-    err = r.json()["error"]
-    assert err["code"] == "ASR_PENDING" and "requires speech recognition" in err["message"]
-    assert any("Audio + Transcript" in p for p in err["pathway"])
+def test_audio_only_without_key_is_labelled_and_gives_no_verdict(client):
+    r = _eval(client, mode="audio", files={"audio_file": ("call.wav", _wav(), "audio/wav")})
+    assert r.status_code == 200
+    v = r.json()
+    assert (v["source"], v["status"], v["verdict"], v["transcript"], v["frontend"]) == \
+        ("UNAVAILABLE", "NOT_RUN", None, [], None)
+    x = v["experimental_audio"]
+    assert x["label"] == "EXPERIMENTAL AUDIO EVALUATION" and x["audio_reliability"] == "Not independently calibrated"
+    assert x["caveat"] == ("Audio transcription/speaker attribution has not been independently calibrated for this "
+                           "prototype.") and x["status"] == "NOT_RUN"
+    assert "GEMINI_API_KEY" in v["key_finding"]["explanation"] and v["call"]["experimental_audio"] is True
+    row = next(x for x in client.get("/api/calls").json() if x["evaluation_id"] == v["evaluation_id"])
+    assert row["experimental_audio"] is True and row["modality"] == "Audio"
+
+
+def test_audio_upload_validation(client):
+    cases = [("audio", None, 400, "AUDIO_MISSING"),
+             ("audio", ("call.wav", b"plain text, not audio", "audio/wav"), 400, "AUDIO_MALFORMED"),
+             ("audio", ("call.wav", b"RIFF\x00\x00\x00\x00WAVEfmt ", "audio/wav"), 400, "AUDIO_MALFORMED"),
+             ("audio", ("call.wav", _wav(0), "audio/wav"), 400, "AUDIO_EMPTY"),
+             ("audio", ("call.mp3", _wav(), "audio/mpeg"), 400, "AUDIO_MALFORMED"),
+             ("audio", ("call.ogg", b"OggS" + b"\x00" * 64, "audio/ogg"), 400, "AUDIO_FORMAT"),
+             ("audio", ("call.m4a", b"\x00\x00\x00\x20ftypM4A " + b"\x00" * 64, "audio/mp4"), 400, "AUDIO_FORMAT"),
+             ("audio", ("call.wav", b"RIFF" + b"\x00" * (15 * 2**20), "audio/wav"), 413, "AUDIO_TOO_LARGE"),
+             ("audio_transcript", ("x.txt", b"x", "text/plain"), 400, "AUDIO_FORMAT"),
+             ("audio_transcript", ("call.wav", b"RIFF-synthetic-stub-bytes", "audio/wav"), 400, "AUDIO_MALFORMED")]
+    for mode, f, status, code in cases:
+        r = _eval(client, mode=mode, transcript=STUB if mode != "audio" else None,
+                  files={"audio_file": f} if f else None)
+        assert (r.status_code, r.json()["error"]["code"]) == (status, code), (mode, f and f[0], r.json())
+        assert r.json()["error"]["message"]  # a readable message, never a stack trace
 
 
 def test_audio_plus_transcript(client):
     assert _eval(client, mode="audio_transcript", transcript=STUB).json()["error"]["code"] == "AUDIO_MISSING"
-    bad = _eval(client, mode="audio_transcript", transcript=STUB, files={"audio_file": ("x.txt", b"x", "text/plain")})
-    assert bad.status_code == 400 and bad.json()["error"]["code"] == "AUDIO_FORMAT"
     r = _eval(client, mode="audio_transcript", transcript=STUB,
-              files={"audio_file": ("call.wav", b"RIFF-synthetic-stub-bytes", "audio/wav")}).json()
+              files={"audio_file": ("call.wav", _wav(), "audio/wav")}).json()
     assert r["call"]["unit_mode"] == "A+T" and r["call"]["has_audio"] is True and r["verdict"] is None
+    assert r["experimental_audio"] is None and r["call"]["experimental_audio"] is False
 
 
 def test_transcript_uploads_and_validation(client):
@@ -215,6 +270,7 @@ def test_live_transcript_evaluation_end_to_end(live, caplog):
         "MEETS_BAR", "NEEDS_ATTENTION", "CRITICAL_FAIL")
     assert r["evaluator"]["model_called"] is True and r["evaluator"]["model"] == "gemini-3.8-flash"
     assert r["evaluator"]["provider"] == "gemini" and r["evaluator"]["served_model_versions"] == ["gemini-3.8-flash"]
+    assert r["evaluator"]["provider_label"] == "Google Gemini" and r["experimental_audio"] is None
     assert (r["record"]["system"]["llm_backend"], r["record"]["system"]["model_snapshot_id"]) == (
         "gemini", "gemini-3.8-flash")
     assert r["usage"]["llm_calls"] >= 1 and r["usage"]["input_tokens"] >= 30
@@ -246,6 +302,89 @@ def test_invalid_model_override_is_unavailable_not_a_call(live, monkeypatch):
     _Gemini.seen = []
     r = _eval(live, mode="transcript", transcript=STUB).json()
     assert r["source"] == "UNAVAILABLE" and r["verdict"] is None and _Gemini.seen == []
+    a = _eval(live, mode="audio", files={"audio_file": ("call.wav", _wav(), "audio/wav")}).json()
+    assert a["source"] == "UNAVAILABLE" and a["verdict"] is None and _Gemini.seen == []
+    assert a["experimental_audio"]["label"] == "EXPERIMENTAL AUDIO EVALUATION"
+
+
+# ------------------------------------------------------------------------------------------ EXPERIMENTAL audio only
+def test_live_audio_only_end_to_end(live, caplog):
+    """audio -> Gemini (inline audio, JSON schema) -> turns -> front end -> B -> record -> view, always labelled."""
+    caplog.set_level(logging.DEBUG)
+    audio = _wav(1.0)
+    resp = _eval(live, mode="audio", call_name="Audio stub", files={"audio_file": ("my-call-name.wav", audio, "audio/wav")})
+    r = resp.json()
+    assert (r["source"], r["status"]) == ("LIVE", "OK") and r["verdict"]["code"] in (
+        "MEETS_BAR", "NEEDS_ATTENTION", "CRITICAL_FAIL")
+    x = r["experimental_audio"]
+    assert x["label"] == "EXPERIMENTAL AUDIO EVALUATION" and x["audio_reliability"] == "Not independently calibrated"
+    assert x["speaker_attribution"]["status"] == "CLEAR" and x["transcription"]["turns"] == 9
+    assert "Google Gemini" in x["interpreter"] and "gemini-3.8-flash" in x["interpreter"]
+    assert "confidence" not in json.dumps(x["transcription"]).lower()  # no invented ASR score
+    assert (r["call"]["unit_mode"], r["call"]["n_turns"], r["call"]["audio_duration_s"]) == ("A", 9, 1.0)
+    assert r["record"]["unit_mode"] == "A" and r["record"]["input_mode"] == "AUDIO"
+    assert r["evaluator"]["provider_label"] == "Google Gemini" and r["evaluator"]["model"] == "gemini-3.8-flash"
+    assert r["usage"]["llm_calls"] >= 2  # the audio interpretation, then B
+    assert [t["role"] for t in r["transcript"][:2]] == ["AGENT", "BORROWER"] and not any(
+        t["unreliable"] for t in r["transcript"])
+    first = _Gemini.seen[0]
+    parts = first["body"]["contents"][0]["parts"]
+    assert parts[0]["inlineData"]["mimeType"] == "audio/wav" and base64.b64decode(parts[0]["inlineData"]["data"]) == audio
+    gen = first["body"]["generationConfig"]
+    assert gen["responseMimeType"] == "application/json" and gen["responseSchema"]["required"][-1] == "turns"
+    assert gen["temperature"] == 0.0 and "systemInstruction" in first["body"]
+    assert first["path"] == "/v1beta/models/gemini-3.8-flash:generateContent" and first["key"] == FAKE_KEY
+    assert "my-call-name" not in json.dumps(first["body"])  # the file name never reaches the model (P-17)
+    everything = resp.text + live.get("/api/calls").text + caplog.text
+    assert FAKE_KEY not in everything and FAKE_KEY not in first["path"]
+
+
+def test_live_audio_uncertain_speakers_are_not_forced(live):
+    _Gemini.audio_reply = _interp("UNCERTAIN")
+    r = _eval(live, mode="audio", files={"audio_file": ("call.wav", _wav(), "audio/wav")}).json()
+    assert r["source"] == "LIVE" and r["verdict"]["code"] == "NOT_EVALUABLE"
+    assert "ROLE_UNCERTAIN" in r["uncertainty"]["reason_codes"] and r["usage"]["llm_calls"] == 1  # no judging
+    assert {t["role"] for t in r["transcript"]} == {"UNKNOWN"} and all(t["unreliable"] for t in r["transcript"])
+    assert r["experimental_audio"]["speaker_attribution"]["status"] == "UNCERTAIN"
+
+
+def test_live_audio_unknown_or_unclear_turns_are_unreliable(live):
+    _Gemini.audio_reply = _interp(unknown=(2,), unclear=(4,))
+    r = _eval(live, mode="audio", files={"audio_file": ("call.wav", _wav(), "audio/wav")}).json()
+    assert r["status"] == "OK" and r["experimental_audio"]["speaker_attribution"]["status"] == "PARTIAL"
+    assert [t["turn"] for t in r["transcript"] if t["unreliable"]] == [2, 4]
+    assert r["transcript"][1]["role"] == "UNKNOWN" and r["experimental_audio"]["transcription"]["unclear_turns"] == 1
+
+
+@pytest.mark.parametrize("mode,reply,expect", [("http500", None, "could not be reached"),
+                                               ("http403", None, "returned an error"),
+                                               ("auto", "not json at all", "not usable"),
+                                               ("blocked", None, "declined")])
+def test_live_audio_failures_are_evaluation_failed_never_a_verdict(live, mode, reply, expect, caplog):
+    _Gemini.mode, _Gemini.audio_reply = mode, reply
+    r = _eval(live, mode="audio", files={"audio_file": ("call.wav", _wav(), "audio/wav")}).json()
+    assert (r["source"], r["status"], r["verdict"]["code"], r["transcript"]) == ("LIVE", "EVALUATION_FAILED", None, [])
+    assert expect in r["key_finding"]["explanation"] and r["action"].endswith("A failed evaluation is never a pass.")
+    assert r["experimental_audio"]["label"] == "EXPERIMENTAL AUDIO EVALUATION"
+    assert FAKE_KEY not in json.dumps(r) + caplog.text
+
+
+def test_audio_interpretation_maps_to_the_existing_contracts():
+    """The audio path reuses ASRResult / NormalizedInput: no second data model, no forced roles."""
+    from ignosis_eval.app import audio_gemini as AG
+    from ignosis_eval.contracts.canonical_input import AudioRef
+    from ignosis_eval.pipeline.normalize import normalize_audio_result
+
+    interp = AG.parse_interpretation(json.dumps(_interp(unknown=(3,))))
+    res = AG.to_result(interp, AG.GeminiAudioInterpreter())
+    ni = normalize_audio_result(res, SP, audio=AudioRef(sha256="0" * 64, format="wav"))
+    assert ni.unit_mode.value == "A" and ni.header.call_start_ts is None and ni.has_timestamps is False
+    assert ni.asr is not None and ni.asr.engine == AG.ENGINE and ni.role_mapping_confidence == 1.0
+    assert all(t.supplied_text == t.asr_text == t.text for t in ni.turns) and ni.turns[2].unreliable
+    uncertain = AG.to_result(AG.parse_interpretation(json.dumps(_interp("UNCERTAIN"))), AG.GeminiAudioInterpreter())
+    assert uncertain.mapping_confidence == 0.0 and {t.role.value for t in uncertain.turns} == {"UNKNOWN"}
+    with pytest.raises(AG.OutputSchemaError):
+        AG.parse_interpretation(json.dumps({"turns": []}))
 
 
 # ------------------------------------------------------------------------------------------ rendering data
@@ -307,9 +446,14 @@ def test_sample_recording_is_fictional_synthetic_and_linked(client):
               replay="true", files={"audio_file": ("demo-settlement.wav", data, "audio/wav")}).json()
     assert r["source"] == "DEMO_REPLAY" and r["call"]["unit_mode"] == "A+T" and r["verdict"]["code"] == "CRITICAL_FAIL"
     assert r["call"]["audio_url"] == sample[0]["audio"]["url"]
-    # Audio only with the sample: the known limitation, with the working alternative, never a result
-    a = _eval(client, mode="audio", files={"audio_file": ("demo-settlement.wav", data, "audio/wav")})
-    assert a.status_code == 422 and a.json()["error"]["code"] == "ASR_PENDING"
+    # Audio only with the sample and no key: its recorded demo evaluation, labelled replay AND experimental audio;
+    # the sample is recognised by content, not by file name
+    a = _eval(client, mode="audio", files={"audio_file": ("renamed.wav", data, "audio/wav")}).json()
+    assert (a["source"], a["status"], a["verdict"]["code"]) == ("DEMO_REPLAY", "OK", "CRITICAL_FAIL")
+    assert a["experimental_audio"]["label"] == "EXPERIMENTAL AUDIO EVALUATION"
+    assert a["evaluator"]["model"] == "demo-replay/scripted-1"  # scripted replay: no Gemini request
+    assert a["experimental_audio"]["interpreter"].startswith("Scripted replay") and a["call"]["n_turns"] == 9
+    assert a["call"]["audio_url"] == sample[0]["audio"]["url"] and a["call"]["unit_mode"] == "A"
     # without a key, the sample's transcript in Audio + Transcript without replay gets no verdict
     n = _eval(client, mode="audio_transcript", transcript=sample[0]["transcript"],
               files={"audio_file": ("demo-settlement.wav", data, "audio/wav")}).json()

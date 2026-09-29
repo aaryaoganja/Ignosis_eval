@@ -72,13 +72,22 @@ No other variable is needed. `GEMINI_BASE_URL` exists only for a proxy or a test
 12. Open `https://<your-service>.up.railway.app/api/health`. Expect `"status":"ok"` and `"live_evaluation":true`.
     If you see `false`, the key is missing, or `GEMINI_MODEL` is invalid or an alias.
 13. Open `https://<your-service>.up.railway.app/`. The top-right badge should read
-    **LIVE EVALUATION: gemini-3.8-flash**.
-14. **Evaluate a Call → Transcript**:
-    - pick a demo call, untick "Replay the scripted demo output", and press **Evaluate**;
-    - the result must be labelled **LIVE EVALUATION**, and the Evaluator panel shows provider `gemini`, the model and
-      the served version.
-    - If it shows "Evaluation Failed" and names the model, change `GEMINI_MODEL` to a model your key can use and
-      redeploy.
+    **Live evaluation on · Google Gemini · gemini-3.8-flash**.
+14. Test the three modes in the browser (all content is fictional):
+    - **Transcript (live).** Step 1: on any demo card, click **Open in step 2**. Step 2: keep **Transcript** and
+      choose **Live evaluation with gemini-3.8-flash**. Step 3: click **Evaluate call**. The result banner must read
+      **LIVE EVALUATION · Provider: Google Gemini · Model: gemini-3.8-flash**, never DEMO / REPLAY.
+    - **Audio only (live, experimental).** Step 2: choose **Audio** (badge EXPERIMENTAL AUDIO) → **Use the sample
+      recording** → choose **Live: Gemini listens to the recording**. Step 3: **Evaluate call**. Expect the
+      **LIVE EVALUATION** banner, the **EXPERIMENTAL AUDIO EVALUATION** banner, a verdict, the transcript Gemini
+      heard, and **Audio reliability: Not independently calibrated**. You can also upload any .wav / .mp3 recording
+      (up to 14 MB).
+    - **Audio + Transcript (live).** Step 2: choose **Audio + Transcript** → **Use the sample recording** (it also
+      fills the transcript) → **Live evaluation**. Step 3: **Evaluate call**. Expect **LIVE EVALUATION**; the
+      transcript is judged and the recording is attached.
+    - **Demo replay.** Step 1: click **View evaluation** on a demo card. Expect **DEMO / REPLAY**.
+    - If a result shows "Evaluation Failed" and names the model, change `GEMINI_MODEL` to a model your key can use and
+      redeploy. Failures never show a verdict.
 
 15. Or run the whole live check from any machine with Python 3 (no key needed on that machine: the key stays in
     Railway):
@@ -87,14 +96,21 @@ No other variable is needed. `GEMINI_BASE_URL` exists only for a proxy or a test
     python scripts/railway_live_check.py https://<your-service>.up.railway.app
     ```
 
-    It sends one fictional demo call for a LIVE evaluation and checks:
-    - health, and that live evaluation is configured;
-    - request → Gemini response → extraction and judgments accepted → evaluation record created;
-    - provider `gemini` and model `gemini-3.8-flash` are recorded;
-    - a failure is never a verdict;
-    - DEMO / REPLAY is still labelled apart.
+    It checks health and that live evaluation is configured, then runs, with fictional content only:
+    - **Transcript, LIVE**: request → Gemini → extraction and judgments accepted → evaluation record created;
+      provider `gemini` and model `gemini-3.8-flash` recorded;
+    - **Audio only, LIVE, EXPERIMENTAL**: the sample recording → Gemini audio understanding → turns → B → record,
+      labelled EXPERIMENTAL AUDIO EVALUATION;
+    - **Audio + Transcript, LIVE**: record created, unit A+T;
+    - **DEMO / REPLAY** still labelled apart; a failure is never a verdict.
 
-    Every line should read PASS.
+    Every line should read PASS. The script prints each verdict; they are plumbing checks on fictional calls, not
+    reliability results.
+
+Upload limits: Transcript 256 KB; Audio only .wav / .mp3 up to 14 MB (sent inline to Gemini, which keeps the whole
+request under Gemini's 20 MB inline limit; the Files API is not used, so the recording is not stored at Google for
+later requests); Audio + Transcript .wav / .mp3 / .m4a up to 25 MB (fingerprinted only). Nothing uploaded is written
+to disk. A live audio evaluation usually takes 20 to 90 seconds (one audio request of up to 180 s timeout, then B).
 
 Later pushes to `spec/frozen-stage4` redeploy automatically. Changing a variable needs a redeploy (Railway stages
 it; click Deploy).

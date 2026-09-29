@@ -25,10 +25,11 @@ class ASRUnavailableError(RuntimeError):
 class ASRTurn:
     role: Role
     text: str
-    start_s: float
-    end_s: float
+    start_s: float | None  # None when the adapter gives no reliable timing (then the unit has no timestamps)
+    end_s: float | None
     diarization_confidence: float | None  # turn-level speaker confidence (DC-01, AJ-05); None for a channel split
     word_confidences: tuple[float, ...] | None = None
+    unreliable: bool = False  # the adapter itself flags the turn as not heard clearly (DC-01 span-unreliable)
 
 
 @dataclass(frozen=True)

@@ -68,7 +68,10 @@ The reconciliation with the frozen spec is complete. **Do not**, without an expl
 - author benchmark cases, registries entries, gold labels or red-team items;
 - run official (locked) holdout or red-team experiments;
 - choose values the spec marks `PENDING_HUMAN_SIGNOFF` (`ignosis-eval spec pending`);
-- add auth, billing or admin to the review app, or let it read gold, design intent or run trees.
+- add auth, billing or admin to the review app, or let it read gold, design intent or run trees;
+- let the EXPERIMENTAL audio path (owner-authorized for the app only, 2026-09-29) reach a run, the benchmark, gold or a
+  reliability metric, or present it as calibrated ASR / diarization. Every audio-only result keeps its
+  EXPERIMENTAL AUDIO EVALUATION label and "not independently calibrated" caveat.
 
 ## Secrets
 
@@ -98,6 +101,7 @@ The reconciliation with the frozen spec is complete. **Do not**, without an expl
 | DEV draft runs / baseline | `runner/dev_drafts.py` (runs), `devbaseline/` (intent-referenced metrics, report; scorer side) |
 | Evaluator provider (Gemini) | `evaluators/provider_config.py` (the only place for provider, model id, settings, key access); `evaluators/llm.py::GeminiClient` |
 | Review app (MVP) | `app/service.py` (intake → front end → B → result view), `app/server.py` (FastAPI), `app/static/`, `app/demo_calls.json`; `Dockerfile` (Railway) |
+| EXPERIMENTAL audio-only path (app only) | `app/audio_gemini.py` (Gemini audio understanding as an `ASRAdapter`), `pipeline/normalize.normalize_audio_result`; reconciliation §3.50. Not B-06; never used by runs, gold or metrics |
 | Opaque unit aliases (P-17) | `contracts/unit_alias.py`, `runner/aliases.py` |
 | Hash lists / gold freeze / guard | `integrity/` |
 | Run protocol, lock, blinding, storage | `runner/` |
