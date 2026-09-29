@@ -4,9 +4,10 @@ here, so every rule below is testable without a server.
 Sources of a result, always labelled:
 - LIVE EVALUATION: B with the Gemini provider (key from the runtime env GEMINI_API_KEY, server side only), or the
   deterministic front end alone when it short-circuits a NOT_EVALUABLE call (no model call is needed then).
-- EXPERIMENTAL AUDIO EVALUATION (audio-only uploads): Gemini listens to the recording and returns turns and speaker
-  roles (app/audio_gemini.py); the same front end and B then judge them. Every such result carries the label and the
-  "not independently calibrated" caveat, and never enters a benchmark run, gold or a reliability metric.
+- EXPERIMENTAL AUDIO EVALUATION (audio-only uploads): GEMINI_TRANSCRIBE_MODEL transcribes the recording with speaker
+  diarization, a deterministic outbound-call rule names the speakers (R-02), and the same front end and B (on
+  GEMINI_MODEL) judge the turns (app/audio_gemini.py). Every such result carries the label and the "not included in
+  final reliability claims" caveat, and never enters a benchmark run, gold or a reliability metric.
 - DEMO / REPLAY: a synthetic demo call whose scripted model output (demo_calls.json) is replayed through the real B
   rule engine and finalize. Not a live model result, not a measurement.
 - EVALUATOR UNAVAILABLE: no key on the server. The front end still runs; no verdict is produced (never a PASS).
@@ -118,7 +119,8 @@ MODE_INFO = {
                       "note": "One line per turn, starting AGENT: or BORROWER:. The transcript is judged directly."},
     Mode.AUDIO: {"label": "Audio", "unit_mode": "A", "supported": True, "experimental": True,
                  "badge": "EXPERIMENTAL AUDIO", "summary": "Upload a call recording",
-                 "note": "Gemini analyzes the recording directly. Speaker attribution and transcription are not "
+                 "note": "A Gemini speech-to-text model transcribes the recording and separates the speakers; the "
+                         "evaluator model then judges the call. Speaker attribution and transcription are not "
                          "independently calibrated."},
     Mode.AUDIO_TRANSCRIPT: {"label": "Audio + Transcript", "unit_mode": "A+T", "supported": True,
                             "experimental": False,
@@ -130,12 +132,12 @@ MODE_INFO = {
 UNAVAILABLE_TEXT = ("Live evaluation isn't configured on this server (the administrator has not set "
                     f"{provider_config.API_KEY_ENV}), so this call was not judged. The automatic pre-checks below did "
                     "run. Demo calls still show their recorded evaluations.")
-AUDIO_UNAVAILABLE_TEXT = ("Audio-only evaluation needs Gemini to listen to the recording, and live evaluation isn't "
+AUDIO_UNAVAILABLE_TEXT = ("Audio-only evaluation needs Gemini to transcribe the recording, and live evaluation isn't "
                           "configured on this server (the administrator has not set "
                           f"{provider_config.API_KEY_ENV}). Nothing was transcribed or judged. The sample recording "
                           "still shows its recorded demo evaluation.")
-TIMING_NOTE = ("Not measured: timing signals (response gaps, people talking over each other, monologue length in "
-               "seconds) need calibrated timestamps, which this experimental path does not have.")
+TIMING_NOTE = ("Not measured: no word timestamps for every turn, so timing signals (response gaps, people talking "
+               "over each other, monologue length in seconds) are not checked.")
 
 
 class AppError(Exception):
@@ -410,9 +412,11 @@ def _evaluator_info(record: EvaluationRecord | None, source: str, trace: TraceSi
             "served_model_versions": served if source == LIVE else [], "model_called": model_called,
             "prompt_version": PROMPT_TEMPLATE_VERSION, "engine_version": ENGINE_VERSION,
             "frontend_version": FRONTEND_VERSION, "temperature": pc["temperature"],
-            "input_modality": ("AUDIO (experimental: Gemini native audio understanding, then B on the turns)"
+            "input_modality": ("AUDIO (experimental: transcription model with diarization, then B on the turns)"
                                if audio else pc["input_modality"]),
-            "audio_prompt_version": AG.PROMPT_VERSION if audio else None}
+            "audio_pipeline_version": AG.PIPELINE_VERSION if audio else None,
+            "transcription_model": (provider_config.settings().transcribe_model_id
+                                    if audio and source == LIVE else None)}
 
 
 # ------------------------------------------------------------------------------------------ service
@@ -540,7 +544,7 @@ class ReviewService:
             source = REPLAY
         elif self.live_available():
             source = LIVE
-            interpreter = AG.GeminiAudioInterpreter(trace=trace, sleep=self._sleep)
+            interpreter = AG.GeminiTranscriber(trace=trace, sleep=self._sleep)
             assert req.audio_bytes is not None
             try:
                 with ProtectedPathGuard(self.protected_paths()):
@@ -551,13 +555,14 @@ class ReviewService:
                 log.warning("audio interpretation: provider unreachable: %s", redact(str(exc)))
                 return None, _experimental(None, LIVE), LIVE, None, (
                     f"Gemini could not be reached after {provider_config.settings().transport.max_retries} retries "
-                    "while listening to the recording. Nothing was judged.")
+                    "while transcribing the recording. Nothing was judged.")
             except ProviderRequestError as exc:
                 log.warning("audio interpretation: provider error: %s", redact(str(exc)))
                 return None, _experimental(None, LIVE), LIVE, None, (
-                    f"Gemini returned an error while listening to the recording: {redact(str(exc))[:400]}")
+                    f"Gemini returned an error while transcribing the recording: {redact(str(exc))[:400]}")
             except AG.AudioInterpretationError as exc:
-                return None, _experimental(None, LIVE), LIVE, None, f"{exc}. Nothing was judged."
+                msg = str(exc)
+                return None, _experimental(None, LIVE), LIVE, None, f"{msg[:1].upper()}{msg[1:]}. Nothing was judged."
         else:
             return None, _experimental(None, UNAVAILABLE), UNAVAILABLE, AUDIO_UNAVAILABLE_TEXT, None
         ni = normalize_audio_result(res, self.spec, audio=audio)
@@ -716,50 +721,61 @@ class ReviewService:
         return reliability_view(self.report_path)
 
 
+ROLE_TEXT = {
+    "CLEAR": "The transcription model separated two speakers and the outbound-call rule named them: {detail}. A rule, "
+             "not a measured confidence; not independently checked.",
+    "PARTIAL": "The outbound-call rule named the two speakers ({detail}), but {unknown} turn{s} carried no speaker "
+               "label. Those turns are unreliable: they cannot serve as evidence for either speaker, so checks that "
+               "rely on them are INCONCLUSIVE or only suspected.",
+    "NO_SPEECH": "No speech was transcribed, so no speaker roles were assigned and nothing could be judged.",
+    "NO_DIARIZATION": "The transcription carried no speaker labels, so no speaker roles were assigned (none is "
+                      "guessed): every turn is speaker-unknown and the call is NOT EVALUABLE.",
+    "SPEAKER_COUNT": "Roles were not assigned: {detail}. No speaker identity was guessed; every turn is "
+                     "speaker-unknown and the call is NOT EVALUABLE.",
+    "CONFLICT": "Roles were not assigned: {detail}, so the outbound-call rule cannot tell who the agent is. No speaker "
+                "identity was guessed; every turn is speaker-unknown and the call is NOT EVALUABLE.",
+    "REPLAY": "Replay: {detail}.",
+}
+
+
 def _experimental(info: dict[str, Any] | None, source: str) -> dict[str, Any]:
     """The EXPERIMENTAL AUDIO block every audio-only result carries (also when nothing ran)."""
-    model = provider_config.settings().model_id
+    s = provider_config.settings()
     if source == REPLAY:
-        interpreter = ("Scripted replay: the sample recording's own fictional script stands in for Gemini's audio "
-                       "interpretation (no model call).")
+        transcription, evaluator = "replayed script (no model call)", "scripted replay"
+    elif source == UNAVAILABLE:  # nothing was sent to either model
+        transcription = evaluator = "not run (live evaluation is not configured)"
     else:
-        interpreter = (f"Google Gemini · {model} · native audio understanding (the recording is sent inline, "
-                       "without its file name; JSON-schema output)")
+        transcription, evaluator = s.transcribe_model_id, s.model_id
     base = {"label": AG.LABEL, "caveat": AG.CAVEAT, "audio_reliability": AG.RELIABILITY,
-            "interpreter": interpreter, "prompt_version": AG.PROMPT_VERSION, "timing": TIMING_NOTE,
+            "transcription_model": transcription, "evaluator_model": evaluator,
+            "interpreter": (f"Transcription: {transcription} (speech-to-text, speaker diarization, word timestamps; "
+                            f"sent inline without its file name) · Evaluator: {evaluator}" if source != REPLAY else
+                            "Scripted replay: the sample recording's own fictional script stands in for the "
+                            "transcription (no model call)."),
+            "role_rule": AG.ROLE_RULE, "pipeline_version": AG.PIPELINE_VERSION, "timing": TIMING_NOTE,
             "reliability_scope": "Not included in the benchmark, gold or any reliability metric.",
             "speaker_attribution": None, "transcription": None}
     if info is None:
         return {**base, "status": "NOT_RUN", "interpreter": "Not run: the recording was not sent to Gemini, so nothing "
                                                             "was transcribed."}
-    unknown, unclear, n = info["unknown_role_turns"], info["unclear_turns"], info["turns"]
-    if not info["speech_detected"]:
-        attribution = ("NO_SPEECH", "Gemini heard no intelligible conversation in the recording, so no speaker "
-                                    "roles were assigned and nothing could be judged.")
-    elif info["role_separation"] != "CLEAR":
-        attribution = ("UNCERTAIN", "Gemini could not reliably tell the agent from the borrower. No speaker identity "
-                                    "was forced: every turn is marked speaker-unknown and the call is NOT EVALUABLE "
-                                    "(speaker roles could not be established).")
-    elif unknown:
-        attribution = ("PARTIAL", f"Gemini separated the agent from the borrower but could not attribute {unknown} "
-                                  f"turn{'s' if unknown != 1 else ''}. Those turns are treated as unreliable: they "
-                                  "cannot serve as evidence for either speaker (for example a borrower confirming "
-                                  "identity), so checks that rely on them are INCONCLUSIVE or only suspected. Review "
-                                  "the findings next to them.")
-    elif source == REPLAY:
-        attribution = ("CLEAR", "Replay: the recording's own script supplies the speaker roles; no model listened to "
-                                "it.")
-    else:
-        attribution = ("CLEAR", "Gemini reported that it could tell the agent from the borrower throughout the "
-                                "call. This is Gemini's own report, not an independent check.")
-    return {**base, "status": "RAN", "source": source,
-            "speaker_attribution": {"status": attribution[0], "text": attribution[1],
-                                    "note": info.get("role_separation_note") or None},
-            "transcription": {"turns": n, "unclear_turns": unclear, "unknown_role_turns": unknown,
-                              "language": info.get("language") or None, "served_model": info.get("served_model"),
-                              "text": (f"{n} turn{'s' if n != 1 else ''} transcribed by Gemini"
-                                       if source != REPLAY else f"{n} turns from the recording's script") +
-                                      (f"; {unclear} marked unclear and treated as unreliable." if unclear else ".")}}
+    unknown, n = info["unknown_role_turns"], info["turns"]
+    status = info["role_status"]
+    text = ROLE_TEXT[status].format(detail=info.get("role_detail") or "", unknown=unknown, s="s" if unknown != 1 else "")
+    speakers = ", ".join(f"{k} → {v.lower()}" for k, v in (info.get("speakers") or {}).items())
+    timing = ("From the transcription model's word timestamps; timing checks (response gaps, monologue length) use "
+              "them. Not independently calibrated." if info.get("timestamps") else TIMING_NOTE)
+    return {**base, "status": "RAN", "source": source, "timing": timing,
+            "speaker_attribution": {"status": status if status in ("CLEAR", "PARTIAL", "NO_SPEECH") else
+                                    ("CLEAR" if status == "REPLAY" else "UNCERTAIN"),
+                                    "rule_status": status, "text": text, "speakers": speakers or None},
+            "transcription": {"turns": n, "unclear_turns": 0, "unknown_role_turns": unknown,
+                              "words": info.get("words"), "diarized": info.get("diarized"),
+                              "timestamps": info.get("timestamps"), "language": info.get("language") or None,
+                              "served_model": info.get("served_model"),
+                              "text": (f"{n} turn{'s' if n != 1 else ''} ({info.get('words')} words) transcribed by "
+                                       f"{transcription}" if source != REPLAY else
+                                       f"{n} turns from the recording's script") + "."}}
 
 
 def _b_info() -> SystemInfo:
@@ -806,9 +822,11 @@ def reliability_view(report_path: Path) -> dict[str, Any]:
             "status": "EXPERIMENTAL - not part of any reliability claim",
             "text": "Audio-only evaluation is functional for demonstration but is not included in final reliability "
                     "claims because ASR/diarization calibration remains pending.",
-            "how": "Gemini listens to the recording and returns turns and speaker roles; Evaluator B then judges "
-                   "them like a transcript. Audio-only results are never written to a benchmark run, gold or the "
-                   "metrics on this page.",
+            "how": f"{pc['transcribe_model_id']} transcribes the recording with speaker diarization and word "
+                   "timestamps, a fixed outbound-call rule names the agent and the borrower (or none, if ambiguous), "
+                   f"and Evaluator B on {pc['model_id']} judges the turns like a transcript. Audio transcription and "
+                   "speaker attribution are not included in final reliability claims: audio-only results are never "
+                   "written to a benchmark run, gold or the metrics on this page.",
             "pending": "B-06 (ASR / diarization choice) and B-11 (audio reliability thresholds), calibrated on DEV "
                        "audio that has not been recorded yet (B-01 / B-09)."},
     }

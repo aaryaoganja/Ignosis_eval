@@ -99,9 +99,9 @@ The reconciliation with the frozen spec is complete. **Do not**, without an expl
 | DEV transcript drafts | `bench/dev/transcripts/` (+ `provenance.yaml`, `REVIEW-CHECKLIST.md`); QC `benchmark/transcript_qc.py` |
 | B rule engine | `engine/code_rules.py` + `engine/rules.py`; `evaluators/judgement.py::SpecRuleEngine` |
 | DEV draft runs / baseline | `runner/dev_drafts.py` (runs), `devbaseline/` (intent-referenced metrics, report; scorer side) |
-| Evaluator provider (Gemini) | `evaluators/provider_config.py` (the only place for provider, model id, settings, key access); `evaluators/llm.py::GeminiClient` |
+| Evaluator provider (Gemini) | `evaluators/provider_config.py` (the only place for provider, model ids `GEMINI_MODEL` / `GEMINI_TRANSCRIBE_MODEL`, settings, key access); `evaluators/llm.py::GeminiClient` |
 | Review app (MVP) | `app/service.py` (intake → front end → B → result view), `app/server.py` (FastAPI), `app/static/`, `app/demo_calls.json`; `Dockerfile` (Railway) |
-| EXPERIMENTAL audio-only path (app only) | `app/audio_gemini.py` (Gemini audio understanding as an `ASRAdapter`), `pipeline/normalize.normalize_audio_result`; reconciliation §3.50. Not B-06; never used by runs, gold or metrics |
+| EXPERIMENTAL audio-only path (app only) | `app/audio_gemini.py` (`GEMINI_TRANSCRIBE_MODEL` transcription + diarization as an `ASRAdapter`, R-02 outbound-call role rule), `pipeline/normalize.normalize_audio_result`; reconciliation §3.50. Not B-06; never used by runs, gold or metrics |
 | Opaque unit aliases (P-17) | `contracts/unit_alias.py`, `runner/aliases.py` |
 | Hash lists / gold freeze / guard | `integrity/` |
 | Run protocol, lock, blinding, storage | `runner/` |

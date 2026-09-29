@@ -29,9 +29,11 @@ DEMOS = {d["id"]: d for d in load_demo_calls()}
 
 
 class _Gemini(BaseHTTPRequestHandler):
-    mode: str = "auto"  # auto | http500 | http403 | not_json | blocked
+    mode: str = "auto"  # auto | http500 | http403 | not_json | blocked | http404_transcribe
     seen: list[dict] = []
-    audio_reply: Any = None  # audio requests: a dict (JSON interpretation) or raw text; None = the sample's script
+    audio_reply: Any = None  # transcription response for audio requests; None = the sample's script, diarized
+    extraction_reply: Any = None  # B extraction output; None = no events
+    answers_reply: Any = None  # B judgment answers; None = none
 
     def do_POST(self):  # noqa: N802
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])).decode("utf-8"))
@@ -39,8 +41,11 @@ class _Gemini(BaseHTTPRequestHandler):
         cls.seen.append({"path": self.path, "key": self.headers.get("x-goog-api-key"), "body": body})
         parts = [p for c in body["contents"] for p in c["parts"]]
         prompt = "".join(p.get("text", "") for p in parts)
+        is_audio = any("inlineData" in p for p in parts)
         code, payload = 200, None
-        if cls.mode == "http500":
+        if cls.mode == "http404_transcribe" and is_audio:
+            code, payload = 404, {"error": {"code": 404, "message": "stub model not found"}}
+        elif cls.mode == "http500":
             code, payload = 500, {"error": {"code": 500, "message": "stub internal"}}
         elif cls.mode == "http403":
             code, payload = 403, {"error": {"code": 403, "message": "stub denied"}}
@@ -48,13 +53,13 @@ class _Gemini(BaseHTTPRequestHandler):
             payload = {"promptFeedback": {"blockReason": "SAFETY"}}
         elif cls.mode == "not_json":
             payload = _cand("this is not json")
-        elif any("inlineData" in p for p in parts):  # the fake cannot hear: it answers with a scripted interpretation
-            reply = cls.audio_reply if cls.audio_reply is not None else _interp()
-            payload = _cand(reply if isinstance(reply, str) else json.dumps(reply))
+        elif is_audio:  # the fake cannot hear: it answers with a scripted, transcription-shaped response
+            payload = cls.audio_reply if cls.audio_reply is not None else _transcription()
         elif '"title":"ExtractionOutput"' in prompt:
-            payload = _cand(json.dumps({"events": [], "turn_languages": {}, "call_frame": {"stage_hint": "pre_due"}}))
+            payload = _cand(json.dumps(cls.extraction_reply or {"events": [], "turn_languages": {},
+                                                                 "call_frame": {"stage_hint": "pre_due"}}))
         else:
-            payload = _cand(json.dumps({"answers": []}))
+            payload = _cand(json.dumps({"answers": cls.answers_reply or []}))
         data = json.dumps(payload).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
@@ -66,13 +71,41 @@ class _Gemini(BaseHTTPRequestHandler):
         pass
 
 
-def _interp(separation: str = "CLEAR", unknown: tuple[int, ...] = (), unclear: tuple[int, ...] = ()) -> dict:
-    """A structured interpretation shaped like Gemini's audio answer: the sample call's own fictional script."""
+def _transcription(shape: str = "annotations", lead: tuple[str, str] | None = None, unlabeled: tuple[int, ...] = (),
+                   third: int | None = None) -> dict:
+    """A response shaped like the transcription model's generateContent answer for the sample call: its own
+    fictional script, diarized (AGENT = spk_1, BORROWER = spk_2) with word offsets. `shape` picks where the word
+    entries sit ('annotations': word_info annotations on the text part; 'words': a camelCase word list; 'prefix':
+    'spk_N:' lines only; 'plain': text only). `lead` prepends (speaker, text); `unlabeled` turn numbers carry no
+    speaker; `third` turn number is given to a third speaker."""
     lines = DEMOS["demo-settlement"]["transcript"].strip().splitlines()
-    turns = [{"speaker_role": "UNKNOWN" if i in unknown else ln.split(":", 1)[0].strip(),
-              "text": ln.split(":", 1)[1].strip(), "unclear": i in unclear} for i, ln in enumerate(lines, start=1)]
-    return {"speech_detected": True, "language": "English", "role_separation": separation,
-            "role_separation_note": "stub note", "turns": turns}
+    turns = [("spk_1" if ln.startswith("AGENT") else "spk_2", ln.split(":", 1)[1].strip()) for ln in lines]
+    if lead:
+        turns.insert(0, lead)
+    t, snake, camel, text_lines = 0.2, [], [], []
+    for i, (spk, text) in enumerate(turns, start=1):
+        spk = "spk_3" if i == third else spk
+        text_lines.append(f"{spk}: {text}")
+        for w in text.split():
+            entry = {"type": "word_info", "text": w, "start_offset": f"{t:.3f}s", "end_offset": f"{t + 0.25:.3f}s"}
+            c_entry = {"word": w, "startOffset": {"seconds": int(t), "nanos": int((t % 1) * 1e9)},
+                       "endOffset": {"seconds": int(t + 0.25), "nanos": int(((t + 0.25) % 1) * 1e9)}}
+            if i not in unlabeled:
+                entry["speaker"], c_entry["speakerLabel"] = spk, spk.upper()
+            snake.append(entry)
+            camel.append(c_entry)
+            t += 0.3
+        t += 0.5
+    plain = " ".join(x for _, x in turns)
+    part: dict[str, Any] = {"text": "\n".join(text_lines) if shape == "prefix" else plain}
+    if shape == "annotations":
+        part["annotations"] = snake
+    out = {"candidates": [{"content": {"parts": [part]}, "finishReason": "STOP"}],
+           "usageMetadata": {"promptTokenCount": 900, "candidatesTokenCount": 200},
+           "modelVersion": "gemini-3.5-transcribe"}
+    if shape == "words":
+        out["audioTranscription"] = {"words": camel, "languageCode": "en-IN"}
+    return out
 
 
 def _wav(seconds: float = 0.5) -> bytes:
@@ -105,6 +138,7 @@ def client(no_key):
 @pytest.fixture
 def live(monkeypatch):
     _Gemini.mode, _Gemini.seen, _Gemini.audio_reply = "auto", [], None
+    _Gemini.extraction_reply = _Gemini.answers_reply = None
     srv = HTTPServer(("127.0.0.1", 0), _Gemini)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     monkeypatch.setenv(PC.API_KEY_ENV, FAKE_KEY)
@@ -123,10 +157,13 @@ def _eval(c: TestClient, **form: Any):
 
 # ------------------------------------------------------------------------------------------ basics
 def test_health_config_and_static(client):
-    assert client.get("/api/health").json() == {"status": "ok", "version": "0.4.0", "live_evaluation": False}
+    assert client.get("/api/health").json() == {"status": "ok", "version": "0.4.0", "live_evaluation": False,
+                                                "models": {"evaluator": "gemini-3.8-flash",
+                                                           "transcription": "gemini-3.5-transcribe"}}
     cfg = client.get("/api/config").json()
     assert cfg["live_available"] is False and cfg["evaluator"]["api_key_configured"] is False
     assert cfg["evaluator"]["provider"] == "gemini" and cfg["evaluator"]["model_id"] == "gemini-3.8-flash"
+    assert cfg["evaluator"]["transcribe_model_id"] == "gemini-3.5-transcribe" and cfg["evaluator"]["transcribe_model_valid"]
     assert [m["label"] for m in cfg["modes"]] == ["Transcript", "Audio", "Audio + Transcript"]
     assert [m["supported"] for m in cfg["modes"]] == [True, True, True]
     assert [m["experimental"] for m in cfg["modes"]] == [False, True, False]
@@ -197,8 +234,8 @@ def test_audio_only_without_key_is_labelled_and_gives_no_verdict(client):
         ("UNAVAILABLE", "NOT_RUN", None, [], None)
     x = v["experimental_audio"]
     assert x["label"] == "EXPERIMENTAL AUDIO EVALUATION" and x["audio_reliability"] == "Not independently calibrated"
-    assert x["caveat"] == ("Audio transcription/speaker attribution has not been independently calibrated for this "
-                           "prototype.") and x["status"] == "NOT_RUN"
+    assert x["caveat"] == "Audio transcription and speaker attribution are not included in final reliability claims."
+    assert x["status"] == "NOT_RUN" and x["transcription_model"].startswith("not run")  # no model named as if it ran
     assert "GEMINI_API_KEY" in v["key_finding"]["explanation"] and v["call"]["experimental_audio"] is True
     row = next(x for x in client.get("/api/calls").json() if x["evaluation_id"] == v["evaluation_id"])
     assert row["experimental_audio"] is True and row["modality"] == "Audio"
@@ -309,56 +346,96 @@ def test_invalid_model_override_is_unavailable_not_a_call(live, monkeypatch):
 
 # ------------------------------------------------------------------------------------------ EXPERIMENTAL audio only
 def test_live_audio_only_end_to_end(live, caplog):
-    """audio -> Gemini (inline audio, JSON schema) -> turns -> front end -> B -> record -> view, always labelled."""
+    """audio -> GEMINI_TRANSCRIBE_MODEL (diarization, word timestamps) -> outbound-call role rule -> front end ->
+    B on GEMINI_MODEL -> record -> view; always labelled EXPERIMENTAL."""
     caplog.set_level(logging.DEBUG)
     audio = _wav(1.0)
-    resp = _eval(live, mode="audio", call_name="Audio stub", files={"audio_file": ("my-call-name.wav", audio, "audio/wav")})
+    resp = _eval(live, mode="audio", files={"audio_file": ("my-call-name.wav", audio, "audio/wav")})
     r = resp.json()
     assert (r["source"], r["status"]) == ("LIVE", "OK") and r["verdict"]["code"] in (
         "MEETS_BAR", "NEEDS_ATTENTION", "CRITICAL_FAIL")
     x = r["experimental_audio"]
     assert x["label"] == "EXPERIMENTAL AUDIO EVALUATION" and x["audio_reliability"] == "Not independently calibrated"
-    assert x["speaker_attribution"]["status"] == "CLEAR" and x["transcription"]["turns"] == 9
-    assert "Google Gemini" in x["interpreter"] and "gemini-3.8-flash" in x["interpreter"]
+    assert (x["transcription_model"], x["evaluator_model"]) == ("gemini-3.5-transcribe", "gemini-3.8-flash")
+    assert x["speaker_attribution"]["status"] == "CLEAR" and x["speaker_attribution"]["speakers"] == \
+        "spk_1 → agent, spk_2 → borrower"
+    assert x["transcription"]["turns"] == 9 and x["transcription"]["timestamps"] is True
     assert "confidence" not in json.dumps(x["transcription"]).lower()  # no invented ASR score
-    assert (r["call"]["unit_mode"], r["call"]["n_turns"], r["call"]["audio_duration_s"]) == ("A", 9, 1.0)
+    assert (r["evaluator"]["transcription_model"], r["evaluator"]["model"]) == ("gemini-3.5-transcribe",
+                                                                             "gemini-3.8-flash")
     assert r["record"]["unit_mode"] == "A" and r["record"]["input_mode"] == "AUDIO"
-    assert r["evaluator"]["provider_label"] == "Google Gemini" and r["evaluator"]["model"] == "gemini-3.8-flash"
-    assert r["usage"]["llm_calls"] >= 2  # the audio interpretation, then B
     assert [t["role"] for t in r["transcript"][:2]] == ["AGENT", "BORROWER"] and not any(
         t["unreliable"] for t in r["transcript"])
-    first = _Gemini.seen[0]
-    parts = first["body"]["contents"][0]["parts"]
-    assert parts[0]["inlineData"]["mimeType"] == "audio/wav" and base64.b64decode(parts[0]["inlineData"]["data"]) == audio
-    gen = first["body"]["generationConfig"]
-    assert gen["responseMimeType"] == "application/json" and gen["responseSchema"]["required"][-1] == "turns"
-    assert gen["temperature"] == 0.0 and "systemInstruction" in first["body"]
-    assert first["path"] == "/v1beta/models/gemini-3.8-flash:generateContent" and first["key"] == FAKE_KEY
-    assert "my-call-name" not in json.dumps(first["body"])  # the file name never reaches the model (P-17)
+    first = _Gemini.seen[0]  # the transcription request
+    assert first["path"] == "/v1beta/models/gemini-3.5-transcribe:generateContent" and first["key"] == FAKE_KEY
+    part = first["body"]["contents"][0]["parts"][0]
+    assert part["inlineData"]["mimeType"] == "audio/wav" and base64.b64decode(part["inlineData"]["data"]) == audio
+    assert first["body"]["generationConfig"] == {"audioTranscriptionConfig": {"diarization": True, "wordTimestamp": True}}
+    assert "my-call-name" not in json.dumps(first["body"])  # the file name never reaches a model (P-17)
+    rest = _Gemini.seen[1:]  # B: the evaluator model, text only; the transcription model never judges
+    assert rest and all(x["path"] == "/v1beta/models/gemini-3.8-flash:generateContent" for x in rest)
+    assert not any("inlineData" in json.dumps(x["body"]) for x in rest)
     everything = resp.text + live.get("/api/calls").text + caplog.text
     assert FAKE_KEY not in everything and FAKE_KEY not in first["path"]
 
 
+@pytest.mark.parametrize("shape", ["annotations", "words", "prefix"])
+def test_transcription_response_shapes_give_the_same_turns(shape):
+    from ignosis_eval.app import audio_gemini as AG
+
+    tr = AG.parse_transcription(json.dumps(_transcription(shape)))
+    res, info = AG.to_result(tr, AG.GeminiTranscriber())
+    assert info["role_status"] == "CLEAR" and len(res.turns) == 9 and res.mapping_confidence == 1.0
+    assert [t.role.value for t in res.turns[:3]] == ["AGENT", "BORROWER", "AGENT"]
+    assert res.turns[6].text == DEMOS["demo-settlement"]["transcript"].strip().splitlines()[6].split(":", 1)[1].strip()
+    assert info["timestamps"] is (shape != "prefix") and info["diarized"] is True
+    if shape == "words":
+        assert info["language"] == "en-IN" and res.turns[0].start_s == pytest.approx(0.2)
+
+
+@pytest.mark.parametrize("kw,status", [({"lead": ("spk_2", "Hello?")}, "CONFLICT"),
+                                       ({"third": 4}, "SPEAKER_COUNT"),
+                                       ({"shape": "plain"}, "NO_DIARIZATION")])
+def test_role_rule_never_guesses(kw, status):
+    """R-02 outbound-call rule: roles only when exactly two speakers agree on 'opens the call' and 'speaks most'."""
+    from ignosis_eval.app import audio_gemini as AG
+
+    res, info = AG.to_result(AG.parse_transcription(json.dumps(_transcription(**kw))), AG.GeminiTranscriber())
+    assert info["role_status"] == status and info["role_separation"] == "UNCERTAIN" and info["speakers"] == {}
+    assert res.mapping_confidence == 0.0 and {t.role.value for t in res.turns} == {"UNKNOWN"}
+
+
 def test_live_audio_uncertain_speakers_are_not_forced(live):
-    _Gemini.audio_reply = _interp("UNCERTAIN")
+    _Gemini.audio_reply = _transcription(lead=("spk_2", "Hello?"))  # the callee answers first: the rule disagrees
     r = _eval(live, mode="audio", files={"audio_file": ("call.wav", _wav(), "audio/wav")}).json()
     assert r["source"] == "LIVE" and r["verdict"]["code"] == "NOT_EVALUABLE"
     assert "ROLE_UNCERTAIN" in r["uncertainty"]["reason_codes"] and r["usage"]["llm_calls"] == 1  # no judging
     assert {t["role"] for t in r["transcript"]} == {"UNKNOWN"} and all(t["unreliable"] for t in r["transcript"])
-    assert r["experimental_audio"]["speaker_attribution"]["status"] == "UNCERTAIN"
+    sa = r["experimental_audio"]["speaker_attribution"]
+    assert (sa["status"], sa["rule_status"]) == ("UNCERTAIN", "CONFLICT") and "No speaker identity was guessed" in sa["text"]
 
 
-def test_live_audio_unknown_or_unclear_turns_are_unreliable(live):
-    _Gemini.audio_reply = _interp(unknown=(2,), unclear=(4,))
+def test_live_audio_without_speaker_labels_is_not_evaluable_and_logs_keys_only(live, caplog):
+    caplog.set_level(logging.WARNING)
+    _Gemini.audio_reply = _transcription("plain")
+    r = _eval(live, mode="audio", files={"audio_file": ("call.wav", _wav(), "audio/wav")}).json()
+    assert r["verdict"]["code"] == "NOT_EVALUABLE" and r["experimental_audio"]["speaker_attribution"]["rule_status"] \
+        == "NO_DIARIZATION"
+    assert "no speaker labels; response keys: ['candidates', 'modelVersion', 'usageMetadata']" in caplog.text
+    assert "Rohan" not in caplog.text and FAKE_KEY not in caplog.text  # key names only, never content
+
+
+def test_live_audio_unlabelled_turns_are_unreliable(live):
+    _Gemini.audio_reply = _transcription(unlabeled=(4,))
     r = _eval(live, mode="audio", files={"audio_file": ("call.wav", _wav(), "audio/wav")}).json()
     assert r["status"] == "OK" and r["experimental_audio"]["speaker_attribution"]["status"] == "PARTIAL"
-    assert [t["turn"] for t in r["transcript"] if t["unreliable"]] == [2, 4]
-    assert r["transcript"][1]["role"] == "UNKNOWN" and r["experimental_audio"]["transcription"]["unclear_turns"] == 1
+    assert [t["turn"] for t in r["transcript"] if t["unreliable"]] == [4] and r["transcript"][3]["role"] == "UNKNOWN"
 
 
 @pytest.mark.parametrize("mode,reply,expect", [("http500", None, "could not be reached"),
                                                ("http403", None, "returned an error"),
-                                               ("auto", "not json at all", "not usable"),
+                                               ("http404_transcribe", None, "GEMINI_TRANSCRIBE_MODEL"),
+                                               ("auto", {"candidates": []}, "not usable"),
                                                ("blocked", None, "declined")])
 def test_live_audio_failures_are_evaluation_failed_never_a_verdict(live, mode, reply, expect, caplog):
     _Gemini.mode, _Gemini.audio_reply = mode, reply
@@ -369,22 +446,57 @@ def test_live_audio_failures_are_evaluation_failed_never_a_verdict(live, mode, r
     assert FAKE_KEY not in json.dumps(r) + caplog.text
 
 
-def test_audio_interpretation_maps_to_the_existing_contracts():
-    """The audio path reuses ASRResult / NormalizedInput: no second data model, no forced roles."""
+@pytest.mark.parametrize("model", ["gemini-3.5-transcribe-live", "gemini-transcribe-latest"])
+def test_invalid_transcription_model_is_unavailable_not_a_call(live, monkeypatch, model):
+    monkeypatch.setenv(PC.TRANSCRIBE_MODEL_ENV, model)
+    _Gemini.seen = []
+    r = _eval(live, mode="audio", files={"audio_file": ("call.wav", _wav(), "audio/wav")}).json()
+    assert r["source"] == "UNAVAILABLE" and r["verdict"] is None and _Gemini.seen == []
+    assert "GEMINI_TRANSCRIBE_MODEL" in r["key_finding"]["explanation"]
+    t = _eval(live, mode="transcript", transcript=STUB).json()  # the evaluator model is unaffected
+    assert t["source"] == "LIVE" and t["status"] == "OK"
+
+
+def test_regression_audio_derived_evidence_is_not_discarded(live):
+    """Regression: extracted events on transcribed audio turns survive the evidence verifier whichever source tag the
+    model gives them (the settlement script tags every quote 'supplied'); the verifier itself is unchanged."""
     from ignosis_eval.app import audio_gemini as AG
     from ignosis_eval.contracts.canonical_input import AudioRef
-    from ignosis_eval.pipeline.normalize import normalize_audio_result
+    from ignosis_eval.contracts.extraction import ExtractionOutput
+    from ignosis_eval.engine.extraction import verify_extraction
+    from ignosis_eval.pipeline.normalize import normalize_audio_result, normalize_supplied
+    from ignosis_eval.pipeline.intake import parse_txt
+    from ignosis_eval.contracts.enums import UnitMode
 
-    interp = AG.parse_interpretation(json.dumps(_interp(unknown=(3,))))
-    res = AG.to_result(interp, AG.GeminiAudioInterpreter())
+    script = DEMOS["demo-settlement"]["script"]
+    res, _ = AG.to_result(AG.parse_transcription(json.dumps(_transcription())), AG.GeminiTranscriber())
     ni = normalize_audio_result(res, SP, audio=AudioRef(sha256="0" * 64, format="wav"))
-    assert ni.unit_mode.value == "A" and ni.header.call_start_ts is None and ni.has_timestamps is False
-    assert ni.asr is not None and ni.asr.engine == AG.ENGINE and ni.role_mapping_confidence == 1.0
-    assert all(t.supplied_text == t.asr_text == t.text for t in ni.turns) and ni.turns[2].unreliable
-    uncertain = AG.to_result(AG.parse_interpretation(json.dumps(_interp("UNCERTAIN"))), AG.GeminiAudioInterpreter())
-    assert uncertain.mapping_confidence == 0.0 and {t.role.value for t in uncertain.turns} == {"UNKNOWN"}
-    with pytest.raises(AG.OutputSchemaError):
-        AG.parse_interpretation(json.dumps({"turns": []}))
+    ex = ExtractionOutput.model_validate(script["extraction"])
+    assert len(verify_extraction(ex, ni, SP).events) == len(ex.events) == 9
+    as_asr = ExtractionOutput.model_validate({**script["extraction"], "events": [
+        {**e, "source": "asr"} for e in script["extraction"]["events"]]})
+    assert len(verify_extraction(as_asr, ni, SP).events) == 9
+    # benchmark semantics unchanged: in a TRANSCRIPT unit an 'asr'-tagged quote still has no ASR text to verify
+    tni = normalize_supplied(parse_txt(DEMOS["demo-settlement"]["transcript"]), UnitMode.TRANSCRIPT, SP)
+    assert len(verify_extraction(as_asr, tni, SP).events) == 0
+    # end to end: the live audio path keeps the events, so the hard-rule finding is reported
+    _Gemini.extraction_reply, _Gemini.answers_reply = script["extraction"], script["answers"]
+    r = _eval(live, mode="audio", files={"audio_file": ("call.wav", _wav(), "audio/wav")}).json()
+    assert r["verdict"]["code"] == "CRITICAL_FAIL" and r["findings"][0]["code"] == "G4"
+    assert r["findings"][0]["evidence"][0]["turn"] == 7
+
+
+def test_regression_out_of_range_citation_is_evaluation_failed_not_500(live, caplog):
+    """Regression: model output citing turns the call does not have (the settlement script on a 3-turn call) must end
+    as EVALUATION_FAILED at the app boundary: never a 500, never a verdict."""
+    _Gemini.extraction_reply = DEMOS["demo-settlement"]["script"]["extraction"]
+    resp = _eval(live, mode="transcript", transcript=STUB)
+    assert resp.status_code == 200
+    r = resp.json()
+    assert (r["status"], r["verdict"]["code"], r["record"]["record_status"]) == ("EVALUATION_FAILED", None,
+                                                                               "EVALUATION_FAILED")
+    assert "nothing was judged" in r["key_finding"]["explanation"] and not r["findings"]
+    assert FAKE_KEY not in json.dumps(r) + caplog.text
 
 
 # ------------------------------------------------------------------------------------------ rendering data

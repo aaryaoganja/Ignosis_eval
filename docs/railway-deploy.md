@@ -10,9 +10,9 @@ services cannot use it, so the few settings below are set once in the Railway da
 |---|---|
 | Build | `Dockerfile` at the repository root (Python 3.11 slim). It installs the package with the `[web]` extra and copies only the package, the frozen spec pack and the committed DEV report. No benchmark items, drafts, gold, runs or tests enter the image. |
 | Start | Image `CMD ["python", "-m", "ignosis_eval.app"]`. It serves on `0.0.0.0:$PORT` (default 8000 when `PORT` is unset). A test covers this. |
-| Health | `GET /api/health` returns HTTP 200 `{"status":"ok","version":...,"live_evaluation":true/false}`. |
+| Health | `GET /api/health` returns HTTP 200 `{"status":"ok","version":...,"live_evaluation":true/false,"models":{"evaluator":"gemini-3.8-flash","transcription":"gemini-3.5-transcribe"}}` (model ids only, never the key). |
 | Secrets | `GEMINI_API_KEY` is read at runtime by the server only (`evaluators/provider_config.py`). The Dockerfile declares no `ARG`, so Railway passes no variable into the build and no build layer contains the key. `.dockerignore` excludes `.env*`. The key is sent only in the `x-goog-api-key` header to Google and is redacted from errors. It never appears in responses, logs, records or reports (tests: `test_secrets.py`, `test_app.py`). |
-| Model | `GEMINI_MODEL` is used exactly as given. `latest` / `preview` / `exp` aliases are refused, and there is no fallback. An unavailable model makes every live evaluation "Evaluation Failed", with a message naming the model and `GEMINI_MODEL`. Each record stores the provider (`system.llm_backend`) and model (`system.model_snapshot_id`); the Result screen also shows the version Google served. |
+| Models | Two models, each used exactly as given, with no fallback. `GEMINI_MODEL` (the evaluator: extraction, judgments) and `GEMINI_TRANSCRIBE_MODEL` (used ONLY by the experimental audio-only path: speech-to-text, speaker diarization, word timestamps; a Live/streaming model is refused). `latest` / `preview` / `exp` aliases are refused. An unavailable model makes the evaluation "Evaluation Failed" with a message naming the model and its variable; an invalid id makes it "no verdict" before any call. Each record stores the evaluator provider (`system.llm_backend`) and model (`system.model_snapshot_id`); audio-only results also name the transcription model. |
 | Without a key | The app still starts and is healthy. Demo calls run as **DEMO / REPLAY**. Custom calls show **EVALUATOR UNAVAILABLE** ("GEMINI_API_KEY is not set"), never a verdict. |
 | Failures | Timeouts, rate limits, 5xx, invalid or blocked output all become **Evaluation Failed**, never a pass. |
 
@@ -21,7 +21,8 @@ services cannot use it, so the few settings below are set once in the Railway da
 | Variable | Required | Secret? | Value |
 |---|---|---|---|
 | `GEMINI_API_KEY` | yes | **yes** | your Gemini API key (from Google AI Studio). Add it as a sealed variable. |
-| `GEMINI_MODEL` | yes | no | `gemini-3.8-flash` |
+| `GEMINI_MODEL` | yes | no | `gemini-3.8-flash` (the evaluator) |
+| `GEMINI_TRANSCRIBE_MODEL` | yes | no | `gemini-3.5-transcribe` (audio-only transcription and speaker diarization) |
 | `PORT` | no | no | Railway provides it. Do not set it. |
 
 No other variable is needed. `GEMINI_BASE_URL` exists only for a proxy or a test double; leave it unset. Do not set
@@ -58,6 +59,7 @@ No other variable is needed. `GEMINI_BASE_URL` exists only for a proxy or a test
 9. Service **Variables** tab:
    - **New Variable** `GEMINI_API_KEY` = your key, then seal it (the "Seal" option in the variable's menu);
    - **New Variable** `GEMINI_MODEL` = `gemini-3.8-flash`;
+   - **New Variable** `GEMINI_TRANSCRIBE_MODEL` = `gemini-3.5-transcribe`;
    - do not add `PORT`.
 
 **D. Deploy and expose**
@@ -69,48 +71,58 @@ No other variable is needed. `GEMINI_BASE_URL` exists only for a proxy or a test
 
 **E. Check it**
 
-12. Open `https://<your-service>.up.railway.app/api/health`. Expect `"status":"ok"` and `"live_evaluation":true`.
-    If you see `false`, the key is missing, or `GEMINI_MODEL` is invalid or an alias.
-13. Open `https://<your-service>.up.railway.app/`. The top-right badge should read
-    **Live evaluation on · Google Gemini · gemini-3.8-flash**.
-14. Test the three modes in the browser (all content is fictional):
-    - **Transcript (live).** Step 1: on any demo card, click **Open in step 2**. Step 2: keep **Transcript** and
-      choose **Live evaluation with gemini-3.8-flash**. Step 3: click **Evaluate call**. The result banner must read
-      **LIVE EVALUATION · Provider: Google Gemini · Model: gemini-3.8-flash**, never DEMO / REPLAY.
-    - **Audio only (live, experimental).** Step 2: choose **Audio** (badge EXPERIMENTAL AUDIO) → **Use the sample
-      recording** → choose **Live: Gemini listens to the recording**. Step 3: **Evaluate call**. Expect the
-      **LIVE EVALUATION** banner, the **EXPERIMENTAL AUDIO EVALUATION** banner, a verdict, the transcript Gemini
-      heard, and **Audio reliability: Not independently calibrated**. You can also upload any .wav / .mp3 recording
-      (up to 14 MB).
-    - **Audio + Transcript (live).** Step 2: choose **Audio + Transcript** → **Use the sample recording** (it also
-      fills the transcript) → **Live evaluation**. Step 3: **Evaluate call**. Expect **LIVE EVALUATION**; the
-      transcript is judged and the recording is attached.
-    - **Demo replay.** Step 1: click **View evaluation** on a demo card. Expect **DEMO / REPLAY**.
-    - If a result shows "Evaluation Failed" and names the model, change `GEMINI_MODEL` to a model your key can use and
-      redeploy. Failures never show a verdict.
+12. Run this one manual test sequence on the deployed app (all content is fictional; `<app>` =
+    `https://ignosiseval-production.up.railway.app`):
 
-15. Or run the whole live check from any machine with Python 3 (no key needed on that machine: the key stays in
+    1. Open `<app>/api/health`. Expect `"status":"ok"`, `"live_evaluation":true` and
+       `"models":{"evaluator":"gemini-3.8-flash","transcription":"gemini-3.5-transcribe"}`. If `live_evaluation` is
+       `false`, the key is missing or a model id is invalid.
+    2. Open `<app>/`. The top-right badge reads **Live evaluation on · Google Gemini · gemini-3.8-flash**.
+    3. Step 1: on any demo card click **Open in step 2**. Step 2: select **Transcript**.
+    4. Turn replay OFF: under "How should this demo call be evaluated?" choose **Live evaluation with
+       gemini-3.8-flash** (not "Recorded demo evaluation").
+    5. Step 3: click **Evaluate call** (10 to 60 s).
+    6. Confirm the result banner reads **LIVE EVALUATION · Provider: Google Gemini · Evaluator: gemini-3.8-flash**
+       (never DEMO / REPLAY) and that a verdict is shown.
+    7. Click **← Evaluate another call**. Step 2: select **Audio** (badge EXPERIMENTAL AUDIO).
+    8. Click **Use the sample recording**, then choose **Live (experimental): transcribed by gemini-3.5-transcribe,
+       evaluated by gemini-3.8-flash**, then **Evaluate call** (20 to 90 s).
+    9. Confirm the **EXPERIMENTAL AUDIO EVALUATION** banner with **Transcription: gemini-3.5-transcribe · Evaluator:
+       gemini-3.8-flash** and "Audio transcription and speaker attribution are not included in final reliability
+       claims.", a verdict, and the **Audio reliability** section (speaker attribution: spk_1 → agent, spk_2 →
+       borrower; or "Not assigned (no guess)", which makes the call NOT EVALUABLE by design).
+    10. Click **← Evaluate another call**. Step 2: select **Audio + Transcript**, click **Use the sample recording**
+        (it also fills the transcript), choose **Live evaluation**.
+    11. Click **Evaluate call**.
+    12. Confirm **LIVE EVALUATION · Provider: Google Gemini · Evaluator: gemini-3.8-flash**, no experimental banner
+        (the supplied transcript is judged; the recording is attached), and a verdict.
+
+    Demo calls (Step 1 → **View evaluation**) must show **DEMO / REPLAY**. If a result shows "Evaluation Failed" and
+    names a model, set that model's variable to a model your key can use and redeploy. Failures never show a verdict.
+
+13. Or run the same checks from any machine with Python 3 (no key needed on that machine: the key stays in
     Railway):
 
     ```bash
-    python scripts/railway_live_check.py https://<your-service>.up.railway.app
+    python scripts/railway_live_check.py https://ignosiseval-production.up.railway.app
     ```
 
-    It checks health and that live evaluation is configured, then runs, with fictional content only:
+    It checks health, both model ids and that live evaluation is configured, then runs, with fictional content only:
     - **Transcript, LIVE**: request → Gemini → extraction and judgments accepted → evaluation record created;
       provider `gemini` and model `gemini-3.8-flash` recorded;
-    - **Audio only, LIVE, EXPERIMENTAL**: the sample recording → Gemini audio understanding → turns → B → record,
-      labelled EXPERIMENTAL AUDIO EVALUATION;
+    - **Audio only, LIVE, EXPERIMENTAL**: the sample recording → `gemini-3.5-transcribe` → role rule → B on
+      `gemini-3.8-flash` → record, labelled EXPERIMENTAL AUDIO EVALUATION and naming both models;
     - **Audio + Transcript, LIVE**: record created, unit A+T;
     - **DEMO / REPLAY** still labelled apart; a failure is never a verdict.
 
     Every line should read PASS. The script prints each verdict; they are plumbing checks on fictional calls, not
     reliability results.
 
-Upload limits: Transcript 256 KB; Audio only .wav / .mp3 up to 14 MB (sent inline to Gemini, which keeps the whole
-request under Gemini's 20 MB inline limit; the Files API is not used, so the recording is not stored at Google for
-later requests); Audio + Transcript .wav / .mp3 / .m4a up to 25 MB (fingerprinted only). Nothing uploaded is written
-to disk. A live audio evaluation usually takes 20 to 90 seconds (one audio request of up to 180 s timeout, then B).
+Upload limits: Transcript 256 KB; Audio only .wav / .mp3 up to 14 MB (sent inline to the transcription model,
+which keeps the whole request under the 20 MB inline limit; the Files API is not used, so the recording is not
+stored at Google for later requests); Audio + Transcript .wav / .mp3 / .m4a up to 25 MB (fingerprinted only).
+Nothing uploaded is written to disk. A live audio evaluation usually takes 20 to 90 seconds (one transcription
+request, 180 s timeout, then B's calls on the evaluator model).
 
 Later pushes to `spec/frozen-stage4` redeploy automatically. Changing a variable needs a redeploy (Railway stages
 it; click Deploy).
@@ -118,15 +130,16 @@ it; click Deploy).
 ## 4. Gemini connectivity on Railway
 
 - There is **no separate "Gemini connection"** in Railway, and no Railway integration or plugin to add. Setting
-  `GEMINI_API_KEY` (and `GEMINI_MODEL`) on the service is sufficient.
+  `GEMINI_API_KEY` (and `GEMINI_MODEL`, `GEMINI_TRANSCRIBE_MODEL`) on the service is sufficient.
 - The server makes outbound HTTPS calls to
-  `https://generativelanguage.googleapis.com/v1beta/models/<GEMINI_MODEL>:generateContent`. The key goes in the
+  `https://generativelanguage.googleapis.com/v1beta/models/<GEMINI_MODEL>:generateContent` (and, for audio-only,
+  `.../models/<GEMINI_TRANSCRIBE_MODEL>:generateContent`). The key goes in the
   `x-goog-api-key` header, never in the URL.
 - Railway services can make outbound internet requests by default. No networking configuration, private
   networking or static outbound IP is required. (Static outbound IPs are a paid Railway feature, needed only if
   your Google project restricts the key by IP; it is not needed by default.)
 - Google-side prerequisites are yours: a Gemini API key from Google AI Studio for a project with the Generative
-  Language API enabled, and access to the model you set in `GEMINI_MODEL`.
+  Language API enabled, and access to the models you set in `GEMINI_MODEL` and `GEMINI_TRANSCRIBE_MODEL`.
 
 ## 5. Run locally with Gemini
 
@@ -141,6 +154,7 @@ pip install -e ".[dev]"                 # includes the web extra and the test to
 
 read -rs GEMINI_API_KEY && export GEMINI_API_KEY   # paste the key, press Enter (kept out of shell history)
 export GEMINI_MODEL=gemini-3.8-flash
+export GEMINI_TRANSCRIBE_MODEL=gemini-3.5-transcribe
 
 ignosis-eval dev smoke                  # live check: request, parsing, extraction + judgment schemas, records
 python -m ignosis_eval.app              # the app on http://localhost:8000 (LIVE EVALUATION badge)
@@ -159,7 +173,8 @@ Run the same image locally with Docker (optional):
 
 ```bash
 docker build -t ignosis-review .
-docker run --rm -p 8000:8000 -e GEMINI_API_KEY -e GEMINI_MODEL=gemini-3.8-flash ignosis-review
+docker run --rm -p 8000:8000 -e GEMINI_API_KEY -e GEMINI_MODEL=gemini-3.8-flash \
+  -e GEMINI_TRANSCRIBE_MODEL=gemini-3.5-transcribe ignosis-review
 # -e GEMINI_API_KEY with no value passes the variable from your shell; the key is not typed on the command line
 ```
 

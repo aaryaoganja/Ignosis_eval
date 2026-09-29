@@ -5,8 +5,9 @@
 The Gemini key stays on the server: this script calls only the app's public API and never sees or sends a key.
 It exercises the three input modes and the demo replay with fictional content only:
   1. Transcript, LIVE: a demo call's transcript -> Gemini (B's extraction and judgments) -> rule engine -> record;
-  2. Audio only, LIVE, EXPERIMENTAL: the app's synthetic sample recording -> Gemini audio understanding -> turns ->
-     B -> record; the result must carry the EXPERIMENTAL AUDIO EVALUATION label;
+  2. Audio only, LIVE, EXPERIMENTAL: the app's synthetic sample recording -> GEMINI_TRANSCRIBE_MODEL (transcription,
+     speaker diarization) -> outbound-call role rule -> B on GEMINI_MODEL -> record; the result must carry the
+     EXPERIMENTAL AUDIO EVALUATION label and name both models;
   3. Audio + Transcript, LIVE: the sample recording with its own transcript (the transcript is judged);
   4. DEMO / REPLAY: the recorded demo evaluation, labelled apart from live results.
 It checks that each request succeeded, a validated record was created, the provider and model are recorded, and a
@@ -60,11 +61,17 @@ def main(argv: list[str]) -> int:
 
     health = _get(base, "/api/health")
     check("health endpoint /api/health", health.get("status") == "ok", json.dumps(health))
+    models = health.get("models") or {}
+    check("models: evaluator + transcription (no fallback)", bool(models.get("evaluator") and models.get("transcription")),
+          f"evaluator={models.get('evaluator')} transcription={models.get('transcription')}")
     cfg = _get(base, "/api/config")
     ev = cfg["evaluator"]
     check("live evaluation configured (key present, valid model)", cfg["live_available"],
           f"provider={ev['provider']} model={ev['model_id']} ({ev['model_source']}); key configured: "
           f"{ev['api_key_configured']}; model id valid: {ev['model_id_valid']}")
+    check("transcription model valid (GEMINI_TRANSCRIBE_MODEL)", ev.get("transcribe_model_valid") is True,
+          f"{ev.get('transcribe_model_id')} ({ev.get('transcribe_model_source')}) "
+          f"{ev.get('transcribe_model_problem') or ''}")
     check("config exposes key presence only, never a key",
           {k for k in ev if k.startswith("api_key")} <= {"api_key_env", "api_key_configured"}
           and isinstance(ev["api_key_configured"], bool), "")
@@ -103,11 +110,15 @@ def main(argv: list[str]) -> int:
         check("audio only: labelled LIVE + EXPERIMENTAL AUDIO EVALUATION",
               aud["source"] == "LIVE" and xa.get("label") == "EXPERIMENTAL AUDIO EVALUATION",
               f"{aud['source_label']} / {xa.get('label')} / audio reliability: {xa.get('audio_reliability')}")
-        check("audio only: Gemini listened, B judged, record created",
+        check("audio only: transcription and evaluator models reported",
+              xa.get("transcription_model") == ev.get("transcribe_model_id") and xa.get("evaluator_model") ==
+              ev["model_id"], f"transcription={xa.get('transcription_model')} evaluator={xa.get('evaluator_model')}")
+        check("audio only: transcribed, roles named, B judged, record created",
               aud["status"] == "OK" and (aud.get("record") or {}).get("unit_mode") == "A",
               (aud.get("key_finding") or {}).get("explanation", "")[:300] if aud["status"] != "OK" else
               f"verdict={aud['verdict']['code']} turns={aud['call']['n_turns']} speakers="
-              f"{(xa.get('speaker_attribution') or {}).get('status')} calls={aud['usage'].get('llm_calls')} "
+              f"{(xa.get('speaker_attribution') or {}).get('rule_status')} "
+              f"[{(xa.get('speaker_attribution') or {}).get('speakers')}] calls={aud['usage'].get('llm_calls')} "
               f"latency={aud['usage'].get('latency_s')}s")
         check("audio only: a failure is never a verdict",
               aud["status"] != "EVALUATION_FAILED" or (aud["verdict"] or {}).get("code") is None, aud["status"])

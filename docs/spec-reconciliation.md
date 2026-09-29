@@ -402,39 +402,42 @@ H (a result would be wrong or unsafe), M (a metric or process would be incompara
     Tests: `test_app.py` (incl. `test_sample_recording_is_fictional_synthetic_and_linked`), `test_secrets.py`.
 50. **EXPERIMENTAL audio-only evaluation in the review app (owner authorization 2026-09-29: "pragmatic prototype",
     not a validated audio QA system)** (`app/audio_gemini.py`, `pipeline/normalize.normalize_audio_result`).
-    - **What it is.** Gemini's native audio understanding used as an ASR adapter (`ASRAdapter` → `ASRResult`, the
-      existing contract): the recording goes inline (no Files API, no file name, P-17) with a JSON response schema;
-      Gemini returns ordered turns, a role per turn (AGENT / BORROWER / OTHER / UNKNOWN), an `unclear` flag per turn
-      and a call-level `role_separation` (CLEAR / UNCERTAIN). The existing A-unit front end and Evaluator B then run
-      unchanged. Events and evidence spans come from B's extraction over those turns: no second data model.
+    - **Two models, two jobs** (`evaluators/provider_config.py`, no fallback for either). `GEMINI_TRANSCRIBE_MODEL`
+      (`gemini-3.5-transcribe`) is the ASR adapter: `generateContent` with the recording inline (no Files API, no
+      file name, P-17) and `audioTranscriptionConfig {diarization, wordTimestamp}` (verbatim, the default mode).
+      `GEMINI_MODEL` (`gemini-3.8-flash`) runs Evaluator B on the resulting turns, unchanged. The transcription model
+      never judges; the evaluator never hears audio. A Live (streaming) transcription model is refused.
     - **It is not B-06.** No ASR or diarizer is chosen for the benchmark; the B-11 audio thresholds stay PENDING and
       the DC-01-audio / diarization steps stay `pending_signoff`. Calibration against them has not happened.
-    - **Conventions (prototype only).**
-      - `role_separation` CLEAR / UNCERTAIN is Gemini's categorical self-report, mapped to the DC-00 gate value
-        1.0 / 0.0. It is not a measured confidence and is never shown as a score. UNCERTAIN also turns every role into
-        UNKNOWN, so no speaker identity is forced; the call is NOT EVALUABLE (ROLE_UNCERTAIN).
-      - UNKNOWN-role and `unclear` turns are span-unreliable (AJ-05), so checks citing them are INCONCLUSIVE or capped
-        (a gate that needed such a turn as evidence can fire only as SUSPECTED / LOW).
-      - No timestamps are requested (Gemini's are approximate): the unit has no timestamps, timing signals are not
-        measured, and TRT-06 falls back to word count.
-      - Gemini's transcription is recorded as both `asr_text` and `supplied_text`: it is the only text the evaluator
-        sees, so a quote verifies against the same words whichever source tag B's extraction gives it. Without this,
-        the verifier drops every event whose tag is "supplied" in an AUDIO unit (observed with scripted output; the
-        model sees one text per turn and cannot tell the sources apart). The verifier and the benchmark A-unit path
-        are unchanged.
-      - Formats: .wav / .mp3 (the app formats that Gemini documents for audio input); ≤ 14 MB so the base64 request
-        stays under Gemini's 20 MB inline limit; contents are sniffed (a mismatch is AUDIO_MALFORMED).
+    - **Speaker roles: the R-02 outbound-call heuristic, defined here (spec-interpretation choice).** R-02 forbids an
+      LLM role fallback and names "diarization plus outbound-call heuristic" without defining the heuristic. Here:
+      with exactly two diarized speakers, the speaker who opens the call and also speaks the most words is the AGENT
+      and the other the BORROWER. No speaker labels, one speaker, three or more (Google marks 3+ speaker attribution
+      experimental), or the two criteria disagreeing (e.g. the borrower answers "Hello?" first) → no role is
+      assigned, every turn is UNKNOWN, mapping value 0.0, and DC-00 makes the call NOT EVALUABLE (ROLE_UNCERTAIN).
+      Turns that carry no speaker label are UNKNOWN and span-unreliable (AJ-05). The mapping value is 1.0 / 0.0 by
+      rule, never a measured confidence, and none is shown.
+    - **Timing.** Turn start / end come from the model's word timestamps when every turn has them (then PLT-01 and the
+      TRT-06 duration basis use them); otherwise the unit has no timestamps.
+    - **Response format.** The exact `generateContent` field names for diarized words could not be confirmed from the
+      container (Google's pages are not reachable there). The parser accepts word entries anywhere in the response
+      (`word_info`-style annotations or word lists; snake_case or camelCase speaker / offset keys; `1.2s`, number or
+      `{seconds, nanos}` offsets) and `spk_N:` line prefixes. With no speaker labels the call is NOT EVALUABLE
+      (NO_DIARIZATION) and only the response's key names are logged. Not verified against the live API.
+    - **Evidence verification (regression).** The transcription is recorded as both `asr_text` and `supplied_text`:
+      it is the only text the evaluator sees, so an extracted quote verifies against the same words whichever
+      source tag B's extraction gives it. Without this the verifier dropped every "supplied"-tagged event in an AUDIO
+      unit. The verifier and the benchmark A-unit path are unchanged (a TRANSCRIPT unit still rejects "asr" tags).
     - **Labelling.** Every audio-only result, including failed and unavailable ones, carries "EXPERIMENTAL AUDIO
-      EVALUATION", "Audio transcription/speaker attribution has not been independently calibrated for this
-      prototype." and "Audio reliability: Not independently calibrated". No key → no verdict; the sample recording
-      replays its demo script (labelled DEMO / REPLAY as well).
+      EVALUATION", "Transcription: <model> · Evaluator: <model>", "Audio transcription and speaker attribution are
+      not included in final reliability claims." and "Audio reliability: Not independently calibrated". No key →
+      no verdict; the sample recording replays its demo script (labelled DEMO / REPLAY as well).
     - **Isolation.** The module is app-only; no run, benchmark, gold, scorer, metric or evaluator module imports the
-      app (`test_experimental_audio_path_stays_in_the_review_app`). The reliability screen states that audio-only is
-      not part of any reliability claim.
-    - **Fail closed.** An unexpected evaluator error (e.g. model output citing a commitment turn the call does not
-      have, which the rule engine does not screen) now ends as EVALUATION_FAILED in the app instead of a 500.
-    Tests: `test_app.py` (audio upload, request shape, malformed / unsupported / oversized audio, missing key,
-    provider failures, uncertain and unknown speakers, labelling, key never exposed), `test_architecture_boundaries.py`.
+      app (`test_experimental_audio_path_stays_in_the_review_app`).
+    - **Fail closed (regression).** Model output citing a turn the call does not have (which the rule engine does not
+      screen) ends as EVALUATION_FAILED at the app boundary, never a 500 and never a verdict; the engine is unchanged.
+    Tests: `test_app.py` (request shape, response shapes, role rule, uncertain / unlabelled speakers, model errors
+    incl. 404 and Live ids, the two regressions, labelling, key never exposed), `test_architecture_boundaries.py`.
 
 ## 4. Open questions / inconsistencies found in the spec (for the spec owner)
 

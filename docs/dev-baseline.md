@@ -26,6 +26,32 @@ The first DEV measurements of the evaluator, run on the 25 DEV transcript drafts
 | Front end | Executed on the 18 scored drafts: evaluability and G7 agree with the design on every item. |
 | Consistency harness | Executed (`dev consistency`). The front-end input hashes and the K0 records are identical across repetitions. |
 
+## Measured / Pending / Experimental
+
+### Measured
+Actual results only, from the committed report (`reports/dev-baseline/`, run `devdraft-20260929T134347200882Z` at
+commit `fd469eb`, 18 scored DEV drafts, intent-referenced; not gold):
+- **K0 (keyword floor; lexicon empty, B-04)**: verdict matched the design intent on 5 of 18 calls (27.8%); intended
+  hard-rule failures caught 0 of 13; no false alarm on the 4 must-not-fire traps (4 of 4); pairs told apart 0 of 3;
+  defect recall 0 of 11; Dangerous Win and Clean Loss tags matched on 14 of 18. Defect precision and evidence
+  faithfulness are UNMEASURED (K0 asserts no findings). As expected for a floor with no reviewed terms.
+- **Front end**: evaluability and calling-hours (G7) agree with the design intent on 18 of 18.
+- **Reproducibility**: 3 repetitions; front-end input hashes and K0 records identical (stable).
+
+### Pending
+- **Real Gemini DEV run** of A, A+ and B on `gemini-3.8-flash`: not executed (`GEMINI_API_KEY` is not available where
+  the baseline was produced). Run `scripts/dev_gemini_baseline.sh` with the key in the environment.
+- **Human transcript review** of the DEV drafts (native Hindi / Hinglish; `human_review_pending: true`).
+- **Gold labels** (B-02), **holdout** run, **red-team** run.
+- **Final reliability validation**: pending until all of the above exist. No number here is evidence that the
+  evaluator works.
+
+### Experimental
+- **Audio-only evaluation in the review app** (`gemini-3.5-transcribe` transcription with speaker diarization, then
+  B on `gemini-3.8-flash`) is functional for demonstration but excluded from final reliability claims: it is never
+  run on the benchmark, never scored and never enters these metrics. ASR / diarization calibration (B-06, B-11)
+  remains pending.
+
 Items excluded from the call-level baseline:
 - the six snippets (SN-D01..D06) are component tests of the normalizer, which needs the B-04 lexicon;
 - G-02-N5 is a tuning-only audio copy; its audio comes after B-06 / B-09.

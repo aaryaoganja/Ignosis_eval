@@ -1,7 +1,7 @@
 /* Ignosis Call Quality Judge: single-page client for AI Quality Reviewers.
    It talks only to this server's /api and never holds a provider key. Every dynamic string is inserted with
-   textContent (no HTML injection). Journey: 1 Choose a call -> 2 Choose how it is provided -> 3 Evaluate ->
-   4 Review verdict and evidence -> 5 Explore reliability. Audio-only results are EXPERIMENTAL and always labelled. */
+   textContent (no HTML injection). Journey: 1 Choose a call -> 2 Choose input type -> 3 Evaluate ->
+   4 Review result -> 5 Explore reliability. Audio-only results are EXPERIMENTAL and always labelled. */
 "use strict";
 
 const state = {
@@ -88,8 +88,8 @@ function notice(kind, title, lines, actions) {
     (lines || []).length ? h("ul", {}, lines.map(l => h("li", {}, l))) : null,
     actions ? h("div", { class: "row gap-s mt-s" }, actions) : null);
 }
-const STEPS = [["Choose a call", "Call"], ["Choose how it's provided", "Input"], ["Evaluate", "Evaluate"],
-  ["Review verdict & evidence", "Review"], ["Explore reliability", "Explore"]];
+const STEPS = [["Choose a call", "Call"], ["Choose input type", "Input"], ["Evaluate", "Evaluate"],
+  ["Review result", "Review"], ["Explore reliability", "Explore"]];
 function stepper(current, busy) {
   return h("ol", { class: "stepper", id: "stepper", "aria-label": "Your progress" }, STEPS.map(([long, short], i) => h("li", {
     class: i < current ? "done" : i === current ? "current" + (busy ? " busy" : "") : "",
@@ -111,11 +111,11 @@ function helpPanel() {
       h("button", { type: "button", class: "btn btn-quiet", onclick: () => toggleHelp(false) }, "Got it, hide this")),
     h("ol", { class: "help-steps" },
       h("li", {}, h("strong", {}, "Choose a call. "), "Start with a fictional demo call, or bring your own."),
-      h("li", {}, h("strong", {}, "Choose how it's provided. "), "Transcript, Audio (experimental) or Audio + Transcript."),
+      h("li", {}, h("strong", {}, "Choose input type. "), "Transcript, Audio (experimental) or Audio + Transcript."),
       h("li", {}, h("strong", {}, "Evaluate. "), "The judge checks the agent against the collections rules."),
       h("li", {}, h("strong", {}, "Review. "), "Verdict first; select a finding to see its transcript lines."),
       h("li", {}, h("strong", {}, "Explore. "), "Past calls in the Call library; accuracy under Evaluator reliability.")),
-    h("p", { class: "small muted help-foot" }, "Results are labelled LIVE EVALUATION (judged now by Google Gemini), DEMO / REPLAY (a fictional call with a recorded evaluation) or EXPERIMENTAL AUDIO (Gemini listened to a recording; not independently calibrated)."));
+    h("p", { class: "small muted help-foot" }, "Results are labelled LIVE EVALUATION (judged now by Google Gemini), DEMO / REPLAY (a fictional call with a recorded evaluation) or EXPERIMENTAL AUDIO (a recording transcribed by Gemini, then judged; not part of any reliability claim)."));
 }
 function toggleHelp(show) {
   const slot = document.getElementById("help-slot");
@@ -176,7 +176,7 @@ function renderEvaluate() {
           h("li", {}, "Mark unclear speech with [inaudible]; those lines are not judged as if clear.")))));
 
   const audioHelp = audioMode
-    ? formats.join(" or ") + ", up to " + cfg.limits.audio_only_mb + " MB. Sent to Google Gemini for this evaluation only (without its file name) and not stored."
+    ? formats.join(" or ") + ", up to " + cfg.limits.audio_only_mb + " MB. Sent to Google Gemini (" + cfg.evaluator.transcribe_model_id + ") for transcription only, without its file name, and not stored."
     : formats.join(", ") + ", up to " + cfg.limits.audio_mb + " MB. Fingerprinted in memory, attached to the result and not stored; it never overrides the transcript.";
   const audioField = state.mode === "transcript" ? null : h("div", { class: "field" },
     h("span", { class: "field-label", id: "audio-label" }, "Call recording"),
@@ -194,14 +194,14 @@ function renderEvaluate() {
     h("label", { class: "radio-line" }, h("input", { type: "radio", name: "method", checked: !f.live || null, onchange: () => { f.live = false; renderEvaluate(); } }),
       " Recorded demo evaluation (instant, DEMO / REPLAY)"),
     h("label", { class: "radio-line" }, h("input", { type: "radio", name: "method", checked: f.live || null, onchange: () => { f.live = true; renderEvaluate(); } }),
-      audioMode ? " Live: Gemini listens to the recording (" + cfg.evaluator.model_id + ", experimental, up to a minute or two)"
+      audioMode ? " Live (experimental): transcribed by " + cfg.evaluator.transcribe_model_id + ", evaluated by " + cfg.evaluator.model_id + " (up to a minute or two)"
         : " Live evaluation with " + cfg.evaluator.model_id + " (up to a minute)")) : null;
 
   const expectation = audioMode
     ? (!f.audio ? "Choose a recording, or use the sample recording."
       : sampleAudio && (!live || !f.live) ? "Shows the recorded demo evaluation of the sample recording (DEMO / REPLAY, experimental audio)."
-      : live ? "EXPERIMENTAL AUDIO: Gemini (" + cfg.evaluator.model_id + ") listens to the recording, then the judge checks each rule. Usually 20 to 90 seconds."
-      : "Live evaluation isn't configured on this server, so an uploaded recording can't be listened to: you will get no verdict. The sample recording still shows its recorded demo evaluation.")
+      : live ? "EXPERIMENTAL AUDIO: " + cfg.evaluator.transcribe_model_id + " transcribes the recording and separates the speakers, then " + cfg.evaluator.model_id + " evaluates the call. Usually 20 to 90 seconds."
+      : "Live evaluation isn't configured on this server, so an uploaded recording can't be transcribed: you will get no verdict. The sample recording still shows its recorded demo evaluation.")
     : demo && !(live && f.live) ? "Shows the recorded evaluation of this fictional demo call (DEMO / REPLAY)."
     : live ? "Evaluated live by Google Gemini (" + cfg.evaluator.model_id + "). This usually takes 10 to 60 seconds."
     : "Live evaluation isn't configured on this server: your call gets the automatic pre-checks only, with no verdict. Demo calls still show their recorded evaluations.";
@@ -226,7 +226,7 @@ function renderEvaluate() {
       h("div", { class: "demo-grid" }, demoCards),
       h("div", { id: "demo-status", "aria-live": "polite" })),
     h("section", { class: "panel", id: "own-call", "aria-labelledby": "own-title" },
-      h("h2", { id: "own-title" }, h("span", { class: "step-tag" }, "Step 2"), " Choose how the call is provided"),
+      h("h2", { id: "own-title" }, h("span", { class: "step-tag" }, "Step 2"), " Choose input type"),
       modeCards,
       h("div", { class: "notice " + (modeInfo.experimental ? "exp" : "info") }, modeInfo.experimental ? h("strong", {}, "EXPERIMENTAL AUDIO. ") : null, modeInfo.note || ""),
       demo && !audioMode ? h("div", { class: "loaded-demo" }, "Loaded demo call: ", h("strong", {}, demo.title), " ", sourceChip("DEMO_REPLAY", "DEMO"),
@@ -335,7 +335,7 @@ function submitForm() {
   const replay = audioMode ? f.audio.sample && !(f.live && cfg.live_available) : !!f.demoId && !(f.live && cfg.live_available);
   const live = cfg.live_available && !replay;
   evaluate(fd, document.getElementById("evaluate-btn"), document.getElementById("eval-status"),
-    live && audioMode ? "EXPERIMENTAL AUDIO: Gemini is listening to the recording, then the judge checks each rule…"
+    live && audioMode ? "EXPERIMENTAL AUDIO: " + cfg.evaluator.transcribe_model_id + " is transcribing the recording, then " + cfg.evaluator.model_id + " evaluates it…"
       : live ? "Evaluating live with Google Gemini (" + cfg.evaluator.model_id + "): reading the call, then checking each rule…" : "Evaluating…");
 }
 function errorPanel(err) {
@@ -362,13 +362,14 @@ function renderResult(r) {
     fromLibrary ? null : h("a", { class: "btn btn-link btn-sm", href: "#/library" }, "Open the call library"));
 
   const xa = r.experimental_audio;
-  const who = "Provider: " + (r.evaluator.provider_label || r.evaluator.provider) + " · Model: " + r.evaluator.model;
+  const who = "Provider: " + (r.evaluator.provider_label || r.evaluator.provider) + " · Evaluator: " + r.evaluator.model;
   const srcText = { LIVE: r.evaluator.model_called ? who + " · judged just now." : "Decided just now by the automatic pre-checks; no model call was needed.",
     DEMO_REPLAY: "A fictional demo call. This is its recorded evaluation, replayed through the real rules engine, not a live model result.",
     UNAVAILABLE: "Live evaluation isn't available on this server, so this call was not judged." }[r.source];
   const banner = h("div", { class: "source-banner src-" + r.source }, h("strong", {}, r.source === "UNAVAILABLE" ? "NO VERDICT" : r.source_label), h("span", {}, srcText));
   const xBanner = xa ? h("div", { class: "exp-banner", role: "note" }, h("strong", {}, xa.label),
-    h("span", {}, xa.caveat + " Audio reliability: " + xa.audio_reliability + ". " + xa.reliability_scope)) : null;
+    h("span", { class: "exp-models" }, "Transcription: " + xa.transcription_model + " · Evaluator: " + xa.evaluator_model),
+    h("span", {}, xa.caveat + " Audio reliability: " + xa.audio_reliability + ".")) : null;
 
   // 1 VERDICT + 2 WHY
   const verdictLabel = v ? v.label : r.status === "EVALUATION_FAILED" ? "Evaluation failed" : "No verdict";
@@ -415,8 +416,8 @@ function renderResult(r) {
   const commitTurns = new Set((r.unverified_commitments || []).map(e => e.turn));
   const anyUnreliable = (r.transcript || []).some(t => t.unreliable);
   const evidence = (r.transcript || []).length ? h("section", { class: "panel", "aria-labelledby": "evidence-title" },
-    h("h2", { id: "evidence-title" }, xa ? "Evidence: the transcript Gemini heard (experimental)" : "Evidence: the transcript"),
-    xa ? h("p", { class: "small muted" }, xa.source === "DEMO_REPLAY" ? "Replay: these turns come from the sample recording's own script." : "Transcribed and speaker-labelled by Gemini from the recording. Not independently checked: listen to the recording before acting on a finding.") : null,
+    h("h2", { id: "evidence-title" }, xa ? "Evidence: the transcript of the recording (experimental)" : "Evidence: the transcript"),
+    xa ? h("p", { class: "small muted" }, xa.source === "DEMO_REPLAY" ? "Replay: these turns come from the sample recording's own script." : "Transcribed and diarized by " + xa.transcription_model + "; speakers named by the outbound-call rule. Not independently checked: listen to the recording before acting on a finding.") : null,
     findings.length || anyUnreliable ? h("p", { class: "legend small" }, findings.length ? [h("span", { class: "sw sw-strong" }), " selected finding  ", h("span", { class: "sw sw-soft" }), " other cited lines  "] : null,
       commitTurns.size ? [h("span", { class: "sw sw-commit" }), " agent promise (unverified)  "] : null,
       anyUnreliable ? [h("span", { class: "sw sw-unrel" }), " unreliable: unknown speaker or unclear speech"] : null) : null,
@@ -436,8 +437,9 @@ function renderResult(r) {
     h("p", { class: "small" }, xa.caveat),
     h("dl", { class: "kv" },
       h("dt", {}, "How the recording was read"), h("dd", {}, xa.interpreter),
-      h("dt", {}, "Speaker attribution"), h("dd", {}, xa.speaker_attribution ? [h("strong", {}, { CLEAR: "Agent and borrower separated", PARTIAL: "Partly separated", UNCERTAIN: "Could not be separated", NO_SPEECH: "No conversation heard" }[xa.speaker_attribution.status] || xa.speaker_attribution.status), ". ", xa.speaker_attribution.text,
-        xa.speaker_attribution.note ? h("span", { class: "muted" }, " Gemini's own note: “" + xa.speaker_attribution.note + "”") : null] : "Not run."),
+      h("dt", {}, "Speaker attribution"), h("dd", {}, xa.speaker_attribution ? [h("strong", {}, { CLEAR: "Agent and borrower named by rule", PARTIAL: "Named by rule; some turns unlabelled", UNCERTAIN: "Not assigned (no guess)", NO_SPEECH: "No speech" }[xa.speaker_attribution.status] || xa.speaker_attribution.status), ". ", xa.speaker_attribution.text,
+        xa.speaker_attribution.speakers ? h("span", { class: "muted" }, " (" + xa.speaker_attribution.speakers + ")") : null] : "Not run."),
+      h("dt", {}, "Role rule"), h("dd", { class: "small" }, xa.role_rule),
       h("dt", {}, "Transcription"), h("dd", {}, xa.transcription ? xa.transcription.text + (xa.transcription.language ? " Language: " + xa.transcription.language + "." : "") : "Not run."),
       h("dt", {}, "Timing"), h("dd", {}, xa.timing),
       h("dt", {}, "Reliability claims"), h("dd", {}, xa.reliability_scope)),
@@ -547,7 +549,8 @@ function evaluatorPanel(r) {
       h("dt", {}, "Source"), h("dd", {}, sourceChip(r.source, r.source_label)),
       h("dt", {}, "Evaluator"), h("dd", {}, e.system + " " + e.system_version),
       h("dt", {}, "Provider"), h("dd", {}, e.provider_label || e.provider),
-      r.experimental_audio ? [h("dt", {}, "Input"), h("dd", {}, "Audio: EXPERIMENTAL (" + (e.audio_prompt_version || "") + ")")] : null,
+      r.experimental_audio ? [h("dt", {}, "Input"), h("dd", {}, "Audio: EXPERIMENTAL (" + (e.audio_pipeline_version || "") + ")"),
+        e.transcription_model ? [h("dt", {}, "Transcription"), h("dd", { class: "mono" }, e.transcription_model)] : null] : null,
       h("dt", {}, "Model"), h("dd", { class: "mono" }, e.model),
       (e.served_model_versions || []).length ? [h("dt", {}, "Served version"), h("dd", { class: "mono" }, e.served_model_versions.join(", "))] : null,
       h("dt", {}, "Prompt"), h("dd", { class: "mono" }, e.prompt_version),

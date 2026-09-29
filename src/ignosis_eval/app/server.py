@@ -1,11 +1,11 @@
 """HTTP server for the review app (FastAPI). The browser talks only to this backend; every Gemini call is made here,
 server side, with the key from the runtime environment. No endpoint returns, logs or echoes the key.
 
-    GET  /api/health             liveness (Railway health check)
+    GET  /api/health             liveness (Railway health check), live flag, evaluator/transcription model ids
     GET  /api/config             product text, evaluator configuration (key presence only), modes, profile panel
     GET  /api/demo-calls         synthetic demo calls (DEMO / REPLAY)
     POST /api/evaluate           multipart: mode, transcript | transcript_file, audio_file, demo_id, replay, call_name
-                                 (mode=audio is the EXPERIMENTAL Gemini audio path: .wav / .mp3, up to 14 MB)
+                                 (mode=audio: EXPERIMENTAL, GEMINI_TRANSCRIBE_MODEL then B; .wav / .mp3, up to 14 MB)
     GET  /api/calls              call library (in memory; resets on restart)
     GET  /api/calls/{id}         one result
     GET  /api/reliability        DEV engineering measurement (committed report), FINAL VALIDATION: PENDING
@@ -32,6 +32,7 @@ from ignosis_eval.app.service import (
     EvaluateRequest,
     ReviewService,
 )
+from ignosis_eval.evaluators import provider_config
 from ignosis_eval.spec.loader import load_spec
 from ignosis_eval.versions import PACKAGE_VERSION
 
@@ -82,7 +83,9 @@ def create_app(service: ReviewService | None = None) -> FastAPI:
 
     @app.get("/api/health")
     def health() -> dict[str, Any]:
-        return {"status": "ok", "version": PACKAGE_VERSION, "live_evaluation": svc.live_available()}
+        pc = provider_config.settings()  # model ids only (never the key): what a live evaluation would use
+        return {"status": "ok", "version": PACKAGE_VERSION, "live_evaluation": svc.live_available(),
+                "models": {"evaluator": pc.model_id, "transcription": pc.transcribe_model_id}}
 
     @app.get("/api/config")
     def config() -> dict[str, Any]:
