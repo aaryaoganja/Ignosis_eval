@@ -95,6 +95,9 @@ def test_llm_systems_plumbing_and_report(tmp_path):
     assert rep["systems"]["B"]["pair_accuracy"]["value"] == UNMEASURED  # no complete pair in this subset
     md = render_markdown(rep)
     assert "Reproducibility smoke run" in md and "Not run." in md
+    assert "## Measured (this DEV run)" in md and "## Pending (not measured" in md
+    assert any(x.startswith("B: verdict accuracy") for x in rep["measured_vs_pending"]["measured"])
+    assert "final reliability validation" in rep["measured_vs_pending"]["pending"]
     assert "NOT gold" in md and "| B |" in md and "human review pending: **True**" in md
     assert any((res.run_dir / "B" / i / "TRANSCRIPT" / "r1" / "derivation_log.json").exists() for i in items)
 

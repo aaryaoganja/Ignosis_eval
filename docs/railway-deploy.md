@@ -80,6 +80,22 @@ No other variable is needed. `GEMINI_BASE_URL` exists only for a proxy or a test
     - If it shows "Evaluation Failed" and names the model, change `GEMINI_MODEL` to a model your key can use and
       redeploy.
 
+15. Or run the whole live check from any machine with Python 3 (no key needed on that machine: the key stays in
+    Railway):
+
+    ```bash
+    python scripts/railway_live_check.py https://<your-service>.up.railway.app
+    ```
+
+    It sends one fictional demo call for a LIVE evaluation and checks:
+    - health, and that live evaluation is configured;
+    - request → Gemini response → extraction and judgments accepted → evaluation record created;
+    - provider `gemini` and model `gemini-3.8-flash` are recorded;
+    - a failure is never a verdict;
+    - DEMO / REPLAY is still labelled apart.
+
+    Every line should read PASS.
+
 Later pushes to `spec/frozen-stage4` redeploy automatically. Changing a variable needs a redeploy (Railway stages
 it; click Deploy).
 

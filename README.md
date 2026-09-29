@@ -94,7 +94,8 @@ python -m ignosis_eval.app       # http://localhost:8000
 
 ## Deploy on Railway
 
-Exact steps: [`docs/railway-deploy.md`](docs/railway-deploy.md). Railway builds the repository `Dockerfile`; the
+Exact steps: [`docs/railway-deploy.md`](docs/railway-deploy.md). After deploying, run
+`python scripts/railway_live_check.py https://<your-service>.up.railway.app` to check the live Gemini path end to end. Railway builds the repository `Dockerfile`; the
 image runs `python -m ignosis_eval.app` on `0.0.0.0:$PORT`. Set the healthcheck path to `/api/health`.
 
 ### Railway Variables

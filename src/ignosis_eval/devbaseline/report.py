@@ -17,9 +17,16 @@ from ignosis_eval.devbaseline.metrics import (
     system_metrics,
 )
 
-REPORT_VERSION = "dev-baseline/1.1.0"
+REPORT_VERSION = "dev-baseline/1.2.0"
 LABEL = "DEV ENGINEERING MEASUREMENT — NOT FINAL RELIABILITY EVIDENCE"
 FINAL_VALIDATION = "FINAL RELIABILITY VALIDATION: PENDING"
+PENDING_ALWAYS = (
+    "native human review of the DEV transcripts (human_review_pending: true)",
+    "final gold labels (B-02): nothing here is scored against gold",
+    "holdout evaluation: not started",
+    "red-team evaluation: not started",
+    "final reliability validation",
+)
 REFERENCE = "frozen DEV design intent (bench/public blueprint and case cards), NOT gold"
 
 
@@ -64,7 +71,24 @@ def build_report(run_dir: Path, design: DevDesign, public_dir: Path, *, quote_ma
                      "pending_steps": sorted({s for i in items for s in fe[i]["steps_pending"]})},
         "systems": systems, "summary_table": summary_rows(systems), "comparison": compare_systems(by_system, refs),
         "disagreement_counts": counts, "consistency_smoke": consistency, "per_item": rows,
-    }
+    } | {"measured_vs_pending": measured_vs_pending(systems, fe_eval, fe_g7, len(items), consistency)}
+
+
+def measured_vs_pending(systems: dict[str, Any], fe_eval: int, fe_g7: int, n: int,
+                        consistency: dict[str, Any] | None) -> dict[str, list[str]]:
+    """What this run actually measured, and what is still pending (never presented as measured)."""
+    measured = [f"Deterministic front end: evaluability agreement {fe_eval}/{n}, G7 agreement {fe_g7}/{n}"]
+    for row in summary_rows(systems):
+        if row["status"] == "EXECUTED":
+            measured.append(f"{row['evaluator']}: verdict accuracy {row['verdict_accuracy']}, critical recall "
+                            f"{row['critical_recall']}, must-not-fire precision {row['must_not_fire_precision']}, "
+                            f"pair accuracy {row['pair_accuracy']}")
+    if consistency:
+        measured.append(f"Reproducibility smoke run: {consistency['repetitions']} repetitions, stable: "
+                        f"{consistency['stable']}")
+    pending = [f"{name}: {m.get('reason', 'not executed')}" for name, m in systems.items()
+               if m.get("status") != "EXECUTED"] + list(PENDING_ALWAYS)
+    return {"measured": measured, "pending": pending}
 
 
 def _pct(r: Any) -> str:
@@ -110,6 +134,11 @@ def render_markdown(r: dict[str, Any]) -> str:
     add(f"Run `{run['run_id']}` · commit `{(run['git_commit'] or '')[:12]}` · repetitions {run['repetitions']} · "
         f"unit mode {run['unit_mode']} · ASR: {run['asr_mode']} · P-17 strings checked: "
         f"{run['p17_payload_strings_checked']}\n")
+    mp = r["measured_vs_pending"]
+    add("## Measured (this DEV run)\n")
+    add("\n".join(f"- {x}" for x in mp["measured"]) + "\n")
+    add("## Pending (not measured; never shown as a result)\n")
+    add("\n".join(f"- {x}" for x in mp["pending"]) + "\n")
     add("## Evaluator configuration\n")
     add("| Field | Value |\n|---|---|")
     for k, v in r["evaluator_configuration"].items():
@@ -215,4 +244,5 @@ def render_markdown(r: dict[str, Any]) -> str:
     return "\n".join(out) + "\n"
 
 
-__all__ = ["FINAL_VALIDATION", "LABEL", "REPORT_VERSION", "build_report", "render_markdown", "summary_rows"]
+__all__ = ["FINAL_VALIDATION", "LABEL", "REPORT_VERSION", "build_report", "measured_vs_pending", "render_markdown",
+           "summary_rows"]
